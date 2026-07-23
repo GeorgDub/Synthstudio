@@ -218,7 +218,19 @@ export type MidiLearnTarget =
    * Erlaubt Performance-Mode-Bindings wie "MIDI-Note → mute alle Drums".
    */
   | { type: "muteGroup"; groupId: string; groupName?: string }
-  | { type: "soloGroup"; groupId: string; groupName?: string };
+  | { type: "soloGroup"; groupId: string; groupName?: string }
+  // ── Audio-Track / Loop-Sampler (Volume/Pan/Mute/Solo) ────────────────────
+  /**
+   * MIDI-Learn auf Audio-Track-Kanäle (inkl. der pattern-unabhängigen
+   * Loop-Sampler-Lanes). FX-Params sind bereits über das geteilte `fxParam`-
+   * Target abgedeckt (partId = "audiotrack:…"); hier kommen Volume/Pan/Mute/Solo
+   * dazu. Events: midi:audioTrackVolume/Pan (value) + midi:audioTrackMute/Solo
+   * (bare trackId, Toggle) → useMidiEventBridge → updateAudioTrack + Engine.
+   */
+  | { type: "audioTrackVolume"; trackId: string; trackName?: string }
+  | { type: "audioTrackPan"; trackId: string; trackName?: string }
+  | { type: "audioTrackMute"; trackId: string; trackName?: string }
+  | { type: "audioTrackSolo"; trackId: string; trackName?: string };
 
 /** Ein Schritt in einer Function-Chain (v1.77). */
 export interface ChainStep {
@@ -558,6 +570,14 @@ export function labelForTarget(target: MidiLearnTarget): string {
       return `Mute-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
     case "soloGroup":
       return `Solo-Group: ${target.groupName ?? target.groupId.slice(0, 8)}`;
+    case "audioTrackVolume":
+      return `Audio Volume: ${target.trackName ?? target.trackId.slice(0, 12)}`;
+    case "audioTrackPan":
+      return `Audio Pan: ${target.trackName ?? target.trackId.slice(0, 12)}`;
+    case "audioTrackMute":
+      return `Audio Mute: ${target.trackName ?? target.trackId.slice(0, 12)}`;
+    case "audioTrackSolo":
+      return `Audio Solo: ${target.trackName ?? target.trackId.slice(0, 12)}`;
     default:
       return "Unbekannt";
   }
@@ -629,6 +649,11 @@ export function targetsMatch(a: MidiLearnTarget, b: MidiLearnTarget): boolean {
     case "muteGroup":
     case "soloGroup":
       return a.groupId === (b as { groupId: string }).groupId;
+    case "audioTrackVolume":
+    case "audioTrackPan":
+    case "audioTrackMute":
+    case "audioTrackSolo":
+      return a.trackId === (b as { trackId: string }).trackId;
     default:
       // Single-target types ohne Param: bpm, playStop, record, tapTempo,
       // bpmUp, bpmDown, masterVolume, partUp, partDown, patternNext,
@@ -1861,6 +1886,38 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         if (on) {
           window.dispatchEvent(
             new CustomEvent("midi:subMixBusSolo", { detail: t.busId })
+          );
+        }
+        break;
+      // ── Audio-Track / Loop-Sampler ───────────────────────────────────────
+      case "audioTrackVolume": {
+        // 0..127 → 0..2 (Audio-Track-Volume-Range).
+        window.dispatchEvent(
+          new CustomEvent("midi:audioTrackVolume", {
+            detail: { trackId: t.trackId, value: (value / 127) * 2 },
+          })
+        );
+        break;
+      }
+      case "audioTrackPan": {
+        window.dispatchEvent(
+          new CustomEvent("midi:audioTrackPan", {
+            detail: { trackId: t.trackId, value: (value / 127) * 2 - 1 },
+          })
+        );
+        break;
+      }
+      case "audioTrackMute":
+        if (on) {
+          window.dispatchEvent(
+            new CustomEvent("midi:audioTrackMute", { detail: t.trackId })
+          );
+        }
+        break;
+      case "audioTrackSolo":
+        if (on) {
+          window.dispatchEvent(
+            new CustomEvent("midi:audioTrackSolo", { detail: t.trackId })
           );
         }
         break;

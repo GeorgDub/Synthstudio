@@ -18,11 +18,18 @@
  * Keine direkte `window.electronAPI`-Nutzung – alle native Calls über
  * `useElectron()`-Hook.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { X, ZoomIn, Play, Square, Sliders } from "lucide-react";
 import { AudioEngine, DEFAULT_CHANNEL_FX } from "@/audio/AudioEngine";
 import type { ChannelFx } from "@/audio/AudioEngine";
 import { FxPanelBody } from "@/components/DrumMachine/FxPanel";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
 import {
   setAudioTrackFx,
   updateAudioTrack,
@@ -120,6 +127,30 @@ export function AudioTrackStrip({
 
   const broken = runtime.broken === true;
 
+  // Right-Click-MIDI-Learn für Volume/Pan/Mute/Solo dieses Audio-Tracks
+  // (inkl. Loop-Sampler-Lanes). FX-Params sind bereits über FxPanelBody
+  // (fxParam-Target) lernbar.
+  const volumeLearn = useMidiLearn({
+    type: "audioTrackVolume",
+    trackId: track.id,
+    trackName: track.name,
+  });
+  const panLearn = useMidiLearn({
+    type: "audioTrackPan",
+    trackId: track.id,
+    trackName: track.name,
+  });
+  const muteLearn = useMidiLearn({
+    type: "audioTrackMute",
+    trackId: track.id,
+    trackName: track.name,
+  });
+  const soloLearn = useMidiLearn({
+    type: "audioTrackSolo",
+    trackId: track.id,
+    trackName: track.name,
+  });
+
   // TASK-245 / TASK-267: Per-Track Play/Stop. Component-local (kein Store) —
   // ephemer. TASK-267 ENTKOPPELT den Button vom globalen Transport: jeder Track
   // ist unabhängig start-/stoppbar, auch während Global läuft. `playing` ist die
@@ -132,7 +163,7 @@ export function AudioTrackStrip({
     laneStateOnGlobalChange(AudioEngine.isPlaying || isPlaying, {
       muted: track.muted,
       broken,
-    }),
+    })
   );
 
   // Effektiver Playing-Zustand = lokales playing (nach TASK-267 keine OR mehr).
@@ -142,7 +173,9 @@ export function AudioTrackStrip({
   const [zoomEditOpen, setZoomEditOpen] = useState(false);
   // TASK-268: Insert-FX-Panel (collapsible) — Parität zu Drum-Part/Mixer-Kanälen.
   const [fxOpen, setFxOpen] = useState(false);
-  const [editorCursorSample, setEditorCursorSample] = useState<number | null>(null);
+  const [editorCursorSample, setEditorCursorSample] = useState<number | null>(
+    null
+  );
 
   // TASK-267: Globaler Play/Stop (self-subscribed) — synct den lokalen `playing`
   // auf das, was die Engine bei Global-Play tatsächlich startet
@@ -151,7 +184,7 @@ export function AudioTrackStrip({
   // Deps: muted/broken werden gelesen → MÜSSEN in der Dep-Liste stehen (sonst
   // stale-closure: erst muten, dann Global-Play würde fälschlich playing setzen).
   useEffect(() => {
-    const unsub = AudioEngine.onPlayStateChange((p) => {
+    const unsub = AudioEngine.onPlayStateChange(p => {
       setPlaying(laneStateOnGlobalChange(p, { muted: track.muted, broken }));
     });
     return unsub;
@@ -159,7 +192,7 @@ export function AudioTrackStrip({
 
   // Playhead-Position via Engine-Callback
   useEffect(() => {
-    const unsub = AudioEngine.onAudioTrackPosition(track.id, (p) => {
+    const unsub = AudioEngine.onAudioTrackPosition(track.id, p => {
       setPos01(p);
     });
     return unsub;
@@ -174,7 +207,7 @@ export function AudioTrackStrip({
   // (kein Loop), per-Track `playing` zurücksetzen. Idempotent.
   useEffect(() => {
     const unsub = AudioEngine.onAudioTrackEnded(track.id, () => {
-      setPlaying((p) => nextAudioTrackPlayState(p, "ended"));
+      setPlaying(p => nextAudioTrackPlayState(p, "ended"));
     });
     return unsub;
   }, [track.id]);
@@ -202,7 +235,11 @@ export function AudioTrackStrip({
       destructive: true,
     });
     if (!ok) return;
-    try { AudioEngine.disposeAudioTrack(track.id); } catch { /* ignore */ }
+    try {
+      AudioEngine.disposeAudioTrack(track.id);
+    } catch {
+      /* ignore */
+    }
     removeAudioTrack(track.id);
   }, [confirm, track.id, track.name]);
 
@@ -231,7 +268,11 @@ export function AudioTrackStrip({
           markBroken(track.id, true);
           return;
         }
-        AudioEngine.registerAudioTrack({ ...track, filePath: newPath, fileName });
+        AudioEngine.registerAudioTrack({
+          ...track,
+          filePath: newPath,
+          fileName,
+        });
         // Peaks (Electron oder Client-Decode)
         let peaks: Float32Array | undefined;
         if (electron.isElectron) {
@@ -241,7 +282,9 @@ export function AudioTrackStrip({
             if (r.success && Array.isArray(r.peaks)) {
               peaks = Float32Array.from(r.peaks);
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
         if (!peaks) peaks = downsamplePeaks(buf, 200);
         setRuntimeWaveform(track.id, buf.duration, peaks);
@@ -293,7 +336,7 @@ export function AudioTrackStrip({
       updateAudioTrack(track.id, { volume: v });
       AudioEngine.setAudioTrackVolume(track.id, v);
     },
-    [track.id],
+    [track.id]
   );
 
   const handlePan = useCallback(
@@ -301,7 +344,7 @@ export function AudioTrackStrip({
       updateAudioTrack(track.id, { pan: p });
       AudioEngine.setAudioTrackPan(track.id, p);
     },
-    [track.id],
+    [track.id]
   );
 
   const handleMute = useCallback(() => {
@@ -314,11 +357,14 @@ export function AudioTrackStrip({
    * Solo-Toggle. Default: additive (toggle nur diesen Track). Shift+Click:
    * exclusive (un-solo't alle anderen Audio-Tracks — FOLLOWUP-102-3 inverse-default).
    */
-  const handleSolo = useCallback((opts: { shiftKey: boolean }) => {
-    const next = !track.soloed;
-    setAudioTrackSoloed(track.id, next, opts.shiftKey);
-    AudioEngine.setAudioTrackSolo(track.id, next);
-  }, [track.id, track.soloed]);
+  const handleSolo = useCallback(
+    (opts: { shiftKey: boolean }) => {
+      const next = !track.soloed;
+      setAudioTrackSoloed(track.id, next, opts.shiftKey);
+      AudioEngine.setAudioTrackSolo(track.id, next);
+    },
+    [track.id, track.soloed]
+  );
 
   // ── Play / Stop (TASK-245) ───────────────────────────────────────────────
   // Per-Track-Playback gewired an die (isomorphe) Engine-API. Toggle-Verhalten:
@@ -348,7 +394,7 @@ export function AudioTrackStrip({
       const fresh = { ...track, syncMode: mode };
       AudioEngine.registerAudioTrack(fresh);
     },
-    [track],
+    [track]
   );
 
   // ── Feature-Detection + Limit-Check für "timestretch" ──────────────────────
@@ -359,16 +405,18 @@ export function AudioTrackStrip({
     try {
       const ctx = AudioEngine.getAudioContext();
       // Wenn kein ctx vorhanden → in Browser-Test ableiten von window.AudioWorklet.
-      if (ctx && (ctx as unknown as { audioWorklet?: unknown }).audioWorklet) return true;
-      if (typeof window !== "undefined" && "AudioWorklet" in window) return true;
+      if (ctx && (ctx as unknown as { audioWorklet?: unknown }).audioWorklet)
+        return true;
+      if (typeof window !== "undefined" && "AudioWorklet" in window)
+        return true;
       return false;
     } catch {
       return false;
     }
   })();
   const isAlreadyTimestretch = track.syncMode === "timestretch";
-  const tsLimitReached = !isAlreadyTimestretch
-    && countTimestretchTracks() >= MAX_TIMESTRETCH_TRACKS;
+  const tsLimitReached =
+    !isAlreadyTimestretch && countTimestretchTracks() >= MAX_TIMESTRETCH_TRACKS;
   const timestretchDisabled = !audioWorkletSupported || tsLimitReached;
   const timestretchTooltip = !audioWorkletSupported
     ? "Browser unterstützt AudioWorklet nicht"
@@ -393,7 +441,7 @@ export function AudioTrackStrip({
       updateAudioTrack(track.id, { originalBpm: valid });
       AudioEngine.registerAudioTrack({ ...track, originalBpm: valid });
     },
-    [track],
+    [track]
   );
 
   // ── Time-Stretch (v3.52.0 + v3.53.0 UI-Polish) ────────────────────────────
@@ -414,10 +462,11 @@ export function AudioTrackStrip({
     projectBpm,
     track.originalBpm,
     track.syncMode,
-    stretchRatio,
+    stretchRatio
   );
   // Snap-to-1.0 für Reset-Button: bei |ratio - 1| < threshold zählt als "neutral".
-  const isNeutralRatio = Math.abs(stretchRatio - 1.0) < STRETCH_SNAP_THRESHOLD / 5;
+  const isNeutralRatio =
+    Math.abs(stretchRatio - 1.0) < STRETCH_SNAP_THRESHOLD / 5;
 
   const handleStretchRatio = useCallback(
     (v: number) => {
@@ -427,7 +476,7 @@ export function AudioTrackStrip({
       setTrackStretchRatio(track.id, snapped);
       AudioEngine.registerAudioTrack({ ...track, stretchRatio: snapped });
     },
-    [track],
+    [track]
   );
 
   // v3.53.0: Reset-Button setzt explizit auf 1.0 (kein Slider-Detour).
@@ -448,7 +497,7 @@ export function AudioTrackStrip({
       setTrackBpmHint(track.id, valid);
       AudioEngine.registerAudioTrack({ ...track, bpmHint: valid ?? undefined });
     },
-    [track],
+    [track]
   );
 
   const handleWarpToBpm = useCallback(() => {
@@ -476,7 +525,7 @@ export function AudioTrackStrip({
       });
       AudioEngine.setChannelSend(track.id, bus, v);
     },
-    [track.id, track.sends],
+    [track.id, track.sends]
   );
 
   // ── Insert-FX (TASK-268) ──────────────────────────────────────────────────
@@ -489,7 +538,7 @@ export function AudioTrackStrip({
       setAudioTrackFx(track.id, partial);
       AudioEngine.setAudioTrackFx(track.id, partial);
     },
-    [track.id],
+    [track.id]
   );
 
   // ── Seek ───────────────────────────────────────────────────────────────────
@@ -499,7 +548,7 @@ export function AudioTrackStrip({
       if (dur <= 0) return;
       AudioEngine.seekAudioTrack(track.id, pos * dur);
     },
-    [runtime.durationSec, track.id],
+    [runtime.durationSec, track.id]
   );
 
   // ── Peaks für Display ──────────────────────────────────────────────────────
@@ -521,7 +570,9 @@ export function AudioTrackStrip({
   // Bei undefined channelIndex (z.B. Tests ohne Mixer) wird kein Color-Tint
   // gerendert und kein Picker eingeblendet.
   const resolvedColor =
-    channelIndex !== undefined ? resolveChannelColor(track.color, channelIndex) : null;
+    channelIndex !== undefined
+      ? resolveChannelColor(track.color, channelIndex)
+      : null;
 
   return (
     <div
@@ -539,20 +590,22 @@ export function AudioTrackStrip({
         minWidth: "140px",
         maxWidth: "180px",
         // v3.74.0: 3px-Tint am oberen Strip-Rand via boxShadow (kein Layout-Shift).
-        boxShadow: resolvedColor ? `inset 0 3px 0 0 ${resolvedColor}` : undefined,
+        boxShadow: resolvedColor
+          ? `inset 0 3px 0 0 ${resolvedColor}`
+          : undefined,
       }}
     >
       {/* v3.74.0: Channel-Color-Picker (oben links, neben dem Namen). */}
       {channelIndex !== undefined && (
         <div
           className="absolute top-1 left-1 z-10"
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
         >
           <ChannelColorPicker
             channelName={track.name}
             color={track.color}
             index={channelIndex}
-            onColorChange={(c) => setAudioTrackColor(track.id, c)}
+            onColorChange={c => setAudioTrackColor(track.id, c)}
             testIdPrefix={`audio-track-color-${track.id}`}
           />
         </div>
@@ -564,22 +617,22 @@ export function AudioTrackStrip({
             type="text"
             value={draftName}
             autoFocus
-            onChange={(e) => setDraftName(e.target.value)}
+            onChange={e => setDraftName(e.target.value)}
             onBlur={commitName}
-            onKeyDown={(e) => {
+            onKeyDown={e => {
               if (e.key === "Enter") commitName();
               else if (e.key === "Escape") {
                 setDraftName(track.name);
                 setEditingName(false);
               }
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
             className="flex-1 min-w-0 px-1 py-0.5 text-[10px] bg-bg-elevated text-text-primary border border-border-color rounded"
             aria-label="Track Name"
           />
         ) : (
           <span
-            onDoubleClick={(e) => {
+            onDoubleClick={e => {
               e.stopPropagation();
               setEditingName(true);
             }}
@@ -593,14 +646,18 @@ export function AudioTrackStrip({
         <button
           type="button"
           data-testid={`audio-track-play-${track.id}`}
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
             handlePlayStop();
           }}
           disabled={broken}
           aria-label={effectivePlaying ? "Stop" : "Play"}
           aria-pressed={effectivePlaying}
-          title={effectivePlaying ? "Stop (nur dieser Track)" : "Play (nur dieser Track)"}
+          title={
+            effectivePlaying
+              ? "Stop (nur dieser Track)"
+              : "Play (nur dieser Track)"
+          }
           className={[
             "w-5 h-5 flex items-center justify-center rounded transition-colors",
             "disabled:opacity-40 disabled:cursor-not-allowed",
@@ -615,9 +672,9 @@ export function AudioTrackStrip({
         <button
           type="button"
           data-testid={`audio-track-fx-toggle-${track.id}`}
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
-            setFxOpen((v) => !v);
+            setFxOpen(v => !v);
           }}
           aria-label="FX"
           aria-pressed={fxOpen}
@@ -633,7 +690,7 @@ export function AudioTrackStrip({
         </button>
         <button
           type="button"
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
             handleRemove();
           }}
@@ -646,7 +703,7 @@ export function AudioTrackStrip({
       </div>
 
       {/* ── Mini-Waveform + Zoom-Toggle ──────────────────────────────────── */}
-      <div onClick={(e) => e.stopPropagation()} className="w-full relative">
+      <div onClick={e => e.stopPropagation()} className="w-full relative">
         <WaveformDisplay
           peaks={peaksArr.current}
           duration={runtime.durationSec ?? 0}
@@ -662,9 +719,9 @@ export function AudioTrackStrip({
           data-testid={`audio-track-zoom-toggle-${track.id}`}
           aria-label="Open zoomable waveform editor"
           title="Sample-precise Zoom-Editor öffnen"
-          onClick={(e) => {
+          onClick={e => {
             e.stopPropagation();
-            setZoomEditOpen((v) => !v);
+            setZoomEditOpen(v => !v);
           }}
           className="absolute bottom-0.5 right-0.5 p-0.5 rounded bg-bg-panel/80 text-text-dim hover:text-accent-primary transition-colors"
         >
@@ -676,7 +733,7 @@ export function AudioTrackStrip({
       {zoomEditOpen && (
         <div
           data-testid={`audio-track-zoom-panel-${track.id}`}
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           className="w-full"
         >
           <AudioTrackZoomEditor
@@ -703,7 +760,7 @@ export function AudioTrackStrip({
           <div className="flex gap-1">
             <button
               type="button"
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 void handleRelocate();
               }}
@@ -713,7 +770,7 @@ export function AudioTrackStrip({
             </button>
             <button
               type="button"
-              onClick={(e) => {
+              onClick={e => {
                 e.stopPropagation();
                 handleRemove();
               }}
@@ -736,32 +793,38 @@ export function AudioTrackStrip({
             max={2}
             step={0.01}
             value={track.volume}
-            onChange={(e) => handleVolume(parseFloat(e.target.value))}
-            onClick={(e) => e.stopPropagation()}
+            onChange={e => handleVolume(parseFloat(e.target.value))}
+            onClick={e => e.stopPropagation()}
+            onContextMenu={volumeLearn.onContextMenu}
             disabled={broken}
             className="h-24 w-3 accent-accent-primary cursor-pointer disabled:opacity-40"
             style={{
               writingMode: "vertical-lr",
               direction: "rtl",
-              appearance: "slider-vertical" as React.CSSProperties["appearance"],
+              appearance:
+                "slider-vertical" as React.CSSProperties["appearance"],
             }}
-            title={volToDb(track.volume)}
+            title={`${volToDb(track.volume)} — Rechtsklick: MIDI-Learn`}
           />
-          <span className="text-[8px] text-text-dim font-mono">{volToDb(track.volume)}</span>
+          <span className="text-[8px] text-text-dim font-mono">
+            {volToDb(track.volume)}
+          </span>
+          {volumeLearn.menu}
         </div>
 
         {/* M/S Buttons */}
         <div className="flex flex-col gap-1">
           <button
             type="button"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
               handleMute();
             }}
+            onContextMenu={muteLearn.onContextMenu}
             disabled={broken}
             aria-label="Mute"
             aria-pressed={track.muted}
-            title="Mute"
+            title="Mute — Rechtsklick: MIDI-Learn"
             className={[
               "w-6 h-5 rounded text-[9px] font-bold transition-colors",
               "disabled:opacity-40 disabled:cursor-not-allowed",
@@ -774,14 +837,15 @@ export function AudioTrackStrip({
           </button>
           <button
             type="button"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
               handleSolo({ shiftKey: e.shiftKey });
             }}
+            onContextMenu={soloLearn.onContextMenu}
             disabled={broken}
             aria-label="Solo"
             aria-pressed={track.soloed}
-            title="Solo — Shift+Click = exclusive (un-solo't andere Tracks)"
+            title="Solo — Shift+Click = exclusive · Rechtsklick: MIDI-Learn"
             className={[
               "w-6 h-5 rounded text-[9px] font-bold transition-colors",
               "disabled:opacity-40 disabled:cursor-not-allowed",
@@ -792,6 +856,8 @@ export function AudioTrackStrip({
           >
             S
           </button>
+          {muteLearn.menu}
+          {soloLearn.menu}
         </div>
       </div>
 
@@ -805,18 +871,21 @@ export function AudioTrackStrip({
           max={1}
           step={0.01}
           value={track.pan}
-          onChange={(e) => handlePan(parseFloat(e.target.value))}
-          onClick={(e) => e.stopPropagation()}
+          onChange={e => handlePan(parseFloat(e.target.value))}
+          onClick={e => e.stopPropagation()}
+          onContextMenu={panLearn.onContextMenu}
           disabled={broken}
           className="w-full accent-accent-primary cursor-pointer disabled:opacity-40"
           title={
-            track.pan === 0
+            (track.pan === 0
               ? "C"
               : track.pan > 0
                 ? `R ${Math.round(track.pan * 100)}`
-                : `L ${Math.round(-track.pan * 100)}`
+                : `L ${Math.round(-track.pan * 100)}`) +
+            " — Rechtsklick: MIDI-Learn"
           }
         />
+        {panLearn.menu}
         <span className="text-[8px] text-text-dim font-mono">
           {track.pan === 0
             ? "C"
@@ -837,11 +906,13 @@ export function AudioTrackStrip({
         <select
           aria-label="Sync Mode"
           value={track.syncMode ?? "free"}
-          onChange={(e) => {
+          onChange={e => {
             e.stopPropagation();
-            handleSyncMode(e.target.value as "free" | "stretch" | "timestretch");
+            handleSyncMode(
+              e.target.value as "free" | "stretch" | "timestretch"
+            );
           }}
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           disabled={broken}
           title="Free = Originaltempo. Stretch = schneller/langsamer + höher/tiefer (DJ-Pitch). Time-Stretch = nur Tempo, Pitch bleibt (OLA-Algorithmus, optimal ±50%)."
           className="w-full px-1 py-0.5 text-[9px] bg-bg-elevated text-text-primary border border-border-color rounded disabled:opacity-40"
@@ -866,7 +937,8 @@ export function AudioTrackStrip({
             data-testid="timestretch-limit-banner"
             className="mt-1 text-[9px] text-accent-secondary leading-tight"
           >
-            ⚠ Max {MAX_TIMESTRETCH_TRACKS} Time-Stretch-Tracks (CPU). Frei für diesen Track: Free/Stretch.
+            ⚠ Max {MAX_TIMESTRETCH_TRACKS} Time-Stretch-Tracks (CPU). Frei für
+            diesen Track: Free/Stretch.
           </div>
         )}
         {showQualityBadge && (
@@ -887,11 +959,11 @@ export function AudioTrackStrip({
             step={1}
             value={track.originalBpm ?? ""}
             placeholder="Orig BPM"
-            onChange={(e) => {
+            onChange={e => {
               const v = parseFloat(e.target.value);
               handleOriginalBpm(v);
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
             disabled={broken}
             title="Original-BPM des Samples (für Tempo-Sync)"
             className="w-full mt-0.5 px-1 py-0.5 text-[9px] bg-bg-elevated text-text-primary border border-border-color rounded font-mono disabled:opacity-40"
@@ -903,10 +975,12 @@ export function AudioTrackStrip({
       <div
         data-testid="audio-track-stretch-section"
         className="flex flex-col gap-0.5 w-full mt-1 px-1 py-1 rounded border border-border-subtle bg-bg-elevated/40"
-        onClick={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <span className="text-[8px] text-text-dim uppercase tracking-wide">Stretch</span>
+          <span className="text-[8px] text-text-dim uppercase tracking-wide">
+            Stretch
+          </span>
           <span
             data-testid="audio-track-stretch-ratio-label"
             className="text-[8px] text-text-muted font-mono"
@@ -930,7 +1004,7 @@ export function AudioTrackStrip({
             // Log-Mapping: slider in [-1,1] → ratio in [0.25, 4.0], 0 = 1.0
             // ratio = 4^slider (denn 4^(-1)=0.25, 4^0=1, 4^1=4)
             value={Math.log(stretchRatio) / Math.log(4)}
-            onChange={(e) => {
+            onChange={e => {
               const sliderVal = parseFloat(e.target.value);
               const ratio = Math.pow(4, sliderVal);
               handleStretchRatio(ratio);
@@ -993,7 +1067,7 @@ export function AudioTrackStrip({
             step={1}
             value={bpmHint ?? ""}
             placeholder="Src BPM"
-            onChange={(e) => {
+            onChange={e => {
               const v = parseFloat(e.target.value);
               handleBpmHint(v);
             }}
@@ -1030,7 +1104,8 @@ export function AudioTrackStrip({
             className="text-[8px] text-text-muted font-mono mt-0.5 text-center"
             title="Effektives Tempo bei aktueller Stretch-Ratio"
           >
-            {bpmHint!.toFixed(0)} → {effectiveBpm.toFixed(1)} BPM ({stretchRatio.toFixed(3)}x)
+            {bpmHint!.toFixed(0)} → {effectiveBpm.toFixed(1)} BPM (
+            {stretchRatio.toFixed(3)}x)
           </span>
         )}
         {/* v3.53.0: Kombinierte Effective-Rate (BPM-Sync × manualStretch).
@@ -1038,12 +1113,15 @@ export function AudioTrackStrip({
             ist UND ein originalBpm gesetzt ist (sonst ist effectiveStretch.rate
             identisch mit manualRatio = stretchRatio, also redundant). */}
         {(track.syncMode === "stretch" || track.syncMode === "timestretch") &&
-          track.originalBpm && track.originalBpm > 0 && (
+          track.originalBpm &&
+          track.originalBpm > 0 && (
             <span
               data-testid="audio-track-effective-rate"
               className={[
                 "text-[8px] font-mono mt-0.5 text-center",
-                effectiveStretch.clamped ? "text-accent-danger" : "text-text-muted",
+                effectiveStretch.clamped
+                  ? "text-accent-danger"
+                  : "text-text-muted",
               ].join(" ")}
               title={
                 effectiveStretch.clamped
@@ -1052,12 +1130,16 @@ export function AudioTrackStrip({
               }
             >
               {effectiveStretch.clamped && (
-                <span aria-label="Warning" data-testid="audio-track-effective-rate-warn">
+                <span
+                  aria-label="Warning"
+                  data-testid="audio-track-effective-rate-warn"
+                >
                   ⚠{" "}
                 </span>
               )}
-              Effective: {effectiveStretch.rate.toFixed(3)}x ({projectBpm.toFixed(0)}{" "}
-              / {track.originalBpm} × {effectiveStretch.manualRatio.toFixed(3)})
+              Effective: {effectiveStretch.rate.toFixed(3)}x (
+              {projectBpm.toFixed(0)} / {track.originalBpm} ×{" "}
+              {effectiveStretch.manualRatio.toFixed(3)})
             </span>
           )}
       </div>
@@ -1073,8 +1155,8 @@ export function AudioTrackStrip({
             max={1}
             step={0.01}
             value={track.sends?.reverb ?? 0}
-            onChange={(e) => handleSend("reverb", parseFloat(e.target.value))}
-            onClick={(e) => e.stopPropagation()}
+            onChange={e => handleSend("reverb", parseFloat(e.target.value))}
+            onClick={e => e.stopPropagation()}
             disabled={broken}
             className="w-full accent-accent-secondary cursor-pointer disabled:opacity-40"
           />
@@ -1088,8 +1170,8 @@ export function AudioTrackStrip({
             max={1}
             step={0.01}
             value={track.sends?.delay ?? 0}
-            onChange={(e) => handleSend("delay", parseFloat(e.target.value))}
-            onClick={(e) => e.stopPropagation()}
+            onChange={e => handleSend("delay", parseFloat(e.target.value))}
+            onClick={e => e.stopPropagation()}
             disabled={broken}
             className="w-full accent-accent-secondary cursor-pointer disabled:opacity-40"
           />
@@ -1103,7 +1185,7 @@ export function AudioTrackStrip({
       {fxOpen && (
         <div
           data-testid={`audio-track-fx-panel-${track.id}`}
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           className="w-full mt-1 px-1.5 py-2 rounded border border-border-subtle bg-bg-elevated/60"
         >
           <FxPanelBody
@@ -1122,7 +1204,10 @@ export function AudioTrackStrip({
  * Helper: lädt Peaks für einen Audio-Buffer (200 Bins).
  * Wird vom Mixer beim Add-Track + Relocate genutzt.
  */
-export function computePeaksFromBuffer(buffer: AudioBuffer, numPeaks = 200): Float32Array {
+export function computePeaksFromBuffer(
+  buffer: AudioBuffer,
+  numPeaks = 200
+): Float32Array {
   return downsamplePeaks(buffer, numPeaks);
 }
 
@@ -1149,7 +1234,7 @@ export type AudioTrackPlayAction = "play" | "stop" | "toggle" | "ended";
 export function nextAudioTrackPlayState(
   current: boolean,
   action: AudioTrackPlayAction,
-  opts?: { broken?: boolean },
+  opts?: { broken?: boolean }
 ): boolean {
   if (opts?.broken) return false;
   switch (action) {
@@ -1246,7 +1331,7 @@ function AudioTrackZoomEditor({
         AudioEngine.setAudioTrackLoopPoints(trackId);
       }
     },
-    [trackId],
+    [trackId]
   );
 
   const handleEnableLoopToggle = useCallback(() => {
@@ -1257,7 +1342,12 @@ function AudioTrackZoomEditor({
     // läuft (sonst hätte source.loop=true aber loopStart=loopEnd=0).
     let nextStart = loopStartSample;
     let nextEnd = loopEndSample;
-    if (nextEnabled && loopStartSample === null && loopEndSample === null && totalSamples > 0) {
+    if (
+      nextEnabled &&
+      loopStartSample === null &&
+      loopEndSample === null &&
+      totalSamples > 0
+    ) {
       nextStart = Math.floor(totalSamples * 0.25);
       nextEnd = Math.floor(totalSamples * 0.75);
       setTrackLoopPoints(trackId, nextStart, nextEnd);
@@ -1293,7 +1383,7 @@ function AudioTrackZoomEditor({
         AudioEngine.setAudioTrackLoopPoints(trackId);
       }
     },
-    [trackId],
+    [trackId]
   );
 
   if (!channelData) {
@@ -1354,7 +1444,7 @@ function AudioTrackZoomEditor({
             max={LOOP_CROSSFADE_MAX_MS}
             step={1}
             value={Math.round(loopCrossfadeMs)}
-            onChange={(e) => handleCrossfadeChange(Number(e.target.value))}
+            onChange={e => handleCrossfadeChange(Number(e.target.value))}
             className="flex-1 h-1 accent-accent-secondary"
             title={`Smooth loop boundary with ${Math.round(loopCrossfadeMs)} ms crossfade`}
           />
