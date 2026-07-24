@@ -40,6 +40,9 @@ export interface EsxImportDialogProps {
    */
   stepCap?: 16 | 32 | 64 | 128;
   onSetStepCap?: (cap: 16 | 32 | 64 | 128) => void;
+  /** v3.287: beim Laden auch die Bank-Samples den Parts zuweisen (hörbar). */
+  loadSamples?: boolean;
+  onSetLoadSamples?: (v: boolean) => void;
   /** Konvertiert die Bank zu E2S (mit der gewählten Reduktions-Strategie). */
   onConvert: (strategy: StepReductionStrategy) => void;
   /** Lädt Patterns + Samples in den Sequenzer. */
@@ -64,6 +67,8 @@ export function EsxImportDialog({
   onClearPart,
   stepCap = 128,
   onSetStepCap,
+  loadSamples = true,
+  onSetLoadSamples,
   onConvert,
   onLoadToSequencer,
   onExportSamples,
@@ -342,6 +347,21 @@ export function EsxImportDialog({
             </button>
           )}
           <div className="flex-1" />
+          {onSetLoadSamples && (
+            <label
+              className="flex items-center gap-1.5 text-[11px] text-text-muted cursor-pointer select-none px-1"
+              title="Beim Laden die zugehörigen Bank-Samples den Parts zuweisen (Pattern wird hörbar). Mute-Zustände werden ebenfalls übernommen."
+              data-testid="esx-import-load-samples"
+            >
+              <input
+                type="checkbox"
+                checked={loadSamples}
+                onChange={e => onSetLoadSamples(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              🔊 Samples mitladen
+            </label>
+          )}
           <button
             onClick={() => onConvert(strategy)}
             disabled={busy || preview.patternCount === 0}

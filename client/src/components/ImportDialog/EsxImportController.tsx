@@ -85,6 +85,9 @@ export function EsxImportController({
   // v3.286: Step-Cap für Anzeige + Laden. 128 = volle Länge (nichts kürzen);
   // 64/32/16 = auf die ersten N Steps abschneiden.
   const [stepCap, setStepCap] = useState<16 | 32 | 64 | 128>(128);
+  // v3.287: beim „In Sequenzer laden" auch die Bank-Samples den Parts zuweisen
+  // (hörbar). Default an — der User kann es im Dialog abwählen.
+  const [loadSamples, setLoadSamples] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -201,28 +204,30 @@ export function EsxImportController({
       // ableiten — so landen die User-Edits im Sequenzer.
       const result = editable ?? (await deriveResultFromBank());
 
-      // Sample-Audio hörbar machen: PCM jedes Bank-Slots → WAV → Blob-URL,
-      // dann per sampleId an die Parts hängen (rein via attachSampleUrls).
-      // Encoding ist ein Browser-Seiteneffekt → hier im Controller.
-      const { buildEsxSampleWavMap } =
-        await import("@/utils/korg/esxSampleWav");
-      const { attachSampleUrlsToImportResult } =
-        await import("@/utils/imports/attachSampleUrls");
-      const wavMap = buildEsxSampleWavMap(bank);
-      const urlBySampleId = new Map<number, string>();
-      for (const [sampleId, bytes] of wavMap) {
-        // Frische Kopie → sauberer BlobPart (kein SharedArrayBuffer-Union).
-        const copy = new Uint8Array(bytes.byteLength);
-        copy.set(bytes);
-        urlBySampleId.set(
-          sampleId,
-          URL.createObjectURL(new Blob([copy.buffer], { type: "audio/wav" }))
-        );
+      // v3.287: Sample-Audio nur wenn der User es will (Dialog-Checkbox).
+      // PCM jedes Bank-Slots → WAV → Blob-URL, per sampleId an die Parts hängen.
+      let linked = result;
+      let linkedCount = 0;
+      if (loadSamples) {
+        const { buildEsxSampleWavMap } =
+          await import("@/utils/korg/esxSampleWav");
+        const { attachSampleUrlsToImportResult } =
+          await import("@/utils/imports/attachSampleUrls");
+        const wavMap = buildEsxSampleWavMap(bank);
+        const urlBySampleId = new Map<number, string>();
+        for (const [sampleId, bytes] of wavMap) {
+          // Frische Kopie → sauberer BlobPart (kein SharedArrayBuffer-Union).
+          const copy = new Uint8Array(bytes.byteLength);
+          copy.set(bytes);
+          urlBySampleId.set(
+            sampleId,
+            URL.createObjectURL(new Blob([copy.buffer], { type: "audio/wav" }))
+          );
+        }
+        const attached = attachSampleUrlsToImportResult(result, urlBySampleId);
+        linked = attached.result;
+        linkedCount = attached.linkedCount;
       }
-      const { result: linked, linkedCount } = attachSampleUrlsToImportResult(
-        result,
-        urlBySampleId
-      );
 
       // v3.286: auf den gewählten Step-Cap kürzen (128 = volle Länge → No-op).
       const { result: reduced, reducedCount } = reduceImportResultSteps(
@@ -345,6 +350,8 @@ export function EsxImportController({
       onClearPart={handleClearPart}
       stepCap={stepCap}
       onSetStepCap={setStepCap}
+      loadSamples={loadSamples}
+      onSetLoadSamples={setLoadSamples}
       busy={busy}
       onConvert={handleConvert}
       onLoadToSequencer={handleLoad}

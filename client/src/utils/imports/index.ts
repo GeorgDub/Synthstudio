@@ -93,7 +93,8 @@ export function importResultToPatterns(result: ImportResult): Array<{
       // ein Sample-Part (sourceType "sample"), sonst bleibt es undefined.
       sampleUrl: part.sampleUrl,
       sourceType: part.sampleUrl ? ("sample" as const) : undefined,
-      muted: false,
+      // v3.287: Mute-Zustand aus dem Quell-Pattern (z.B. ESX muteStatus).
+      muted: part.muted === true,
       soloed: false,
       volume: part.volume ?? 0.8,
       pan: part.pan ?? 0,

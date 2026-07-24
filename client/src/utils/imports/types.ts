@@ -32,6 +32,8 @@ export interface ImportedPart {
   steps: ImportedStep[];
   volume?: number; // 0-1
   pan?: number; // -1..+1
+  /** v3.287: Mute-Zustand (z.B. aus ESX-Pattern-muteStatus). Default false. */
+  muted?: boolean;
 }
 
 export interface ImportedPattern {

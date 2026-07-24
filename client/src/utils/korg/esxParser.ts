@@ -228,6 +228,12 @@ export interface EsxPart {
   fxAmount: number;
   /** Trigger-Steps, Laenge === ESX1_DEFAULT_STEPS. */
   steps: EsxStepEvent[];
+  /**
+   * v3.287: Mute-Zustand aus der Pattern-muteStatus-Maske (Header-Offset 16).
+   * Best-Effort — Bit-Reihenfolge/Polarität gegen reale Files plausibilisiert,
+   * aber final erst mit Hardware verifizierbar (siehe ESX1_MUTE_* Konstanten).
+   */
+  muted?: boolean;
   /** Reserviert fuer Motion-Sequencer (v3.5: stets undefined). */
   motionSequencer?: undefined;
 }
@@ -285,6 +291,11 @@ export interface EsxPattern {
   effectiveSteps: number;
   /** Swing 0..100 (Best-Effort). */
   swing: number;
+  /**
+   * v3.287: rohe 16-Bit muteStatus-Maske (Header @16, BE). Für Export + Debug.
+   * Per-Part-Mute steht dekodiert in `parts[i].muted`.
+   */
+  muteMask?: number;
   /** 16 Parts (immer voll besetzt; leere Parts haben alle Steps inactive). */
   parts: EsxPart[];
   /**
@@ -637,6 +648,30 @@ const ESX1_STRETCHSLICE_STRIDE = 32;
 const ESX1_STRETCHSLICE_STEPS_OFFSET = 16;
 const ESX1_PITCH_NEUTRAL_RAW = 0x40;
 
+// ─── Mute-Status (Pattern-Header) ────────────────────────────────────────────
+// PatternHeader-Offset 16: 16-Bit muteStatus (per-Part). Storage-Order der
+// Parts: Drum 0..8 → Bits 0..8, Keyboard 0..1 → Bits 9..10, Stretch/Slice 0..2
+// → Bits 11..13, AudioIn → Bit 14, Accent → Bit 15.
+//
+// Polarität (best-effort, gegen reale .esx plausibilisiert): Bit GESETZT = Part
+// SPIELT, Bit 0 = Part GEMUTET. (lukn kicks: Maske 0x77FF → nur Bits 11 & 15
+// clear = passt zu „fast alles spielt".) Endianness = BE (open-electribe-editor).
+// Beide leicht umkehrbar, falls Hardware-Check das Gegenteil zeigt.
+const ESX1_MUTE_STATUS_OFFSET = 16;
+const ESX1_MUTE_BIT_SET_MEANS_PLAYING = true;
+/** Storage-Order-Bit für einen dekodierten Part-Index (0..13). */
+function esxMuteBitForPart(partIndex: number): number {
+  if (partIndex < 9) return partIndex; // Drum 0..8 → Bit 0..8
+  if (partIndex < 12) return 11 + (partIndex - 9); // Stretch/Slice → Bit 11..13
+  return 9 + (partIndex - 12); // Keyboard/Synth → Bit 9..10
+}
+/** true = Part ist gemutet (gemäß Maske + Polarität). */
+function esxIsPartMuted(muteMask: number, partIndex: number): boolean {
+  const bit = esxMuteBitForPart(partIndex);
+  const set = (muteMask & (1 << bit)) !== 0;
+  return ESX1_MUTE_BIT_SET_MEANS_PLAYING ? !set : set;
+}
+
 // ─── Keyboard-Parts (verifiziert gegen open-electribe-editor v1.2.0) ─────────
 // Der ESX-1 hat 2 Keyboard/Synth-Parts, jeder 274 Bytes, direkt nach den 9
 // Drum-Parts: Offset 330 (0x14A) + k*274. Anders als Drum-Parts (16 Trigger)
@@ -932,6 +967,9 @@ export function parseEsxPattern(
   let swing = raw[15] & 0x7f;
   if (swing > 100) swing = 100;
 
+  // v3.287: muteStatus @16 (BE u16) → per-Part-Mute.
+  const muteMask = dv.getUint16(ESX1_MUTE_STATUS_OFFSET, false);
+
   // Build 16 Parts. v3.20.0:
   //   v3.286 (verifiziertes Layout):
   //   parts 0..8   → decodeDrumPart          (9 Drum, Stride 34 @ 24)
@@ -955,8 +993,9 @@ export function parseEsxPattern(
       | undefined
   ) => {
     const partIndex = parts.length;
+    const muted = esxIsPartMuted(muteMask, partIndex);
     if (decoded) {
-      parts.push({ partIndex, ...decoded });
+      parts.push({ partIndex, muted, ...decoded });
     } else {
       parts.push({
         partIndex,
@@ -965,6 +1004,7 @@ export function parseEsxPattern(
         pan: 64,
         pitch: 0,
         fxAmount: 0,
+        muted,
         steps: new Array(ESX1_PATTERN_MAX_STEPS)
           .fill(null)
           .map(() => ({ active: false, velocity: 0 })),
@@ -995,6 +1035,7 @@ export function parseEsxPattern(
     patternLength,
     effectiveSteps,
     swing,
+    muteMask,
     parts,
     keyboardParts,
     raw,

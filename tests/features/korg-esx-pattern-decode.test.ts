@@ -72,6 +72,48 @@ describe("v3.286 samplePointer", () => {
   });
 });
 
+describe("v3.287 muteStatus decode", () => {
+  // muteStatus @16 (BE u16). Polarität: Bit gesetzt = spielt, Bit 0 = gemutet.
+  // Storage-Order: Drum 0..8 → Bits 0..8, Keyboard 0..1 → Bits 9..10,
+  // Stretch/Slice 0..2 → Bits 11..13. Parts-Reihenfolge im Ergebnis:
+  // Drum 0..8, Stretch/Slice 9..11, Synth 12..13.
+  function setMute(b: Uint8Array, mask: number) {
+    b[16] = (mask >> 8) & 0xff;
+    b[17] = mask & 0xff;
+  }
+
+  it("Bit gesetzt = spielt (nicht gemutet)", () => {
+    const b = baseBlock("Mute", 120);
+    setMute(b, 0xffff); // alle Bits gesetzt → nichts gemutet
+    const pat = parseEsxPattern(b, 0)!;
+    expect(pat.parts.every(p => p.muted === false)).toBe(true);
+  });
+
+  it("Bit 0 clear → Drum-Part 0 gemutet, Rest spielt", () => {
+    const b = baseBlock("Mute", 120);
+    setMute(b, 0xffff & ~(1 << 0));
+    const pat = parseEsxPattern(b, 0)!;
+    expect(pat.parts[0].muted).toBe(true);
+    expect(pat.parts[1].muted).toBe(false);
+  });
+
+  it("Bit 11 clear → Stretch/Slice-Part 0 (Index 9) gemutet", () => {
+    const b = baseBlock("Mute", 120);
+    setMute(b, 0xffff & ~(1 << 11));
+    const pat = parseEsxPattern(b, 0)!;
+    expect(pat.parts[9].muted).toBe(true);
+    expect(pat.parts[0].muted).toBe(false);
+  });
+
+  it("Bit 9 clear → Keyboard-Part 0 (Index 12) gemutet", () => {
+    const b = baseBlock("Mute", 120);
+    setMute(b, 0xffff & ~(1 << 9));
+    const pat = parseEsxPattern(b, 0)!;
+    expect(pat.parts[12].muted).toBe(true);
+    expect((pat as { muteMask?: number }).muteMask).toBe(0xffff & ~(1 << 9));
+  });
+});
+
 describe("v3.286 Keyboard note/gate decode", () => {
   it("Note bit7=OFF-Flag: Note-on nur bei gesetzten Noten, Note# = note&0x7f", () => {
     const b = baseBlock("Synth", 128);

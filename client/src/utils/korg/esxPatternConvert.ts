@@ -64,6 +64,8 @@ export interface SynthstudioDrumPartImport {
    * der ESX-1-Keyboard-Parts in den Sequencer.
    */
   pitches: number[];
+  /** v3.287: Mute-Zustand aus der ESX-Pattern-muteStatus-Maske. */
+  muted: boolean;
 }
 
 /** Synthstudio-Pattern-Import wie es der Caller in die Stores faechert. */
@@ -169,6 +171,7 @@ export function convertEsxPatternToSynthstudio(
       steps,
       velocities,
       pitches,
+      muted: part.muted === true,
     };
   });
 

@@ -182,28 +182,37 @@ export function esxBankToImportResult(
 ): ImportResult {
   const converted = convertEsxPatternsToSynthstudio(bank.patterns);
 
+  // v3.287: echte Sample-Namen aus der Bank per Slot-Index (== part.sampleId).
+  const nameBySampleId = new Map<number, string>();
+  for (const s of [...bank.monoSamples, ...bank.stereoSamples]) {
+    if (s.name) nameBySampleId.set(s.index, s.name);
+  }
+
   const patterns: ImportedPattern[] = converted.map(
     (pat): ImportedPattern => ({
       name: pat.name,
       stepCount: pat.stepCount,
       bpm: pat.bpm,
-      parts: pat.drumParts.map(
-        (dp): ImportedPart => ({
-          name: dp.sampleHint,
-          sampleName: dp.sampleHint,
+      parts: pat.drumParts.map((dp): ImportedPart => {
+        // Echter Sample-Name aus der Bank, sonst der generische Hint.
+        const realName = nameBySampleId.get(dp.sampleId);
+        return {
+          name: realName || dp.sampleHint,
+          sampleName: realName || dp.sampleHint,
           // sampleId erhalten → der Controller kann das PCM des passenden
           // Bank-Slots als Blob-URL nachreichen (hörbares „In Sequenzer laden").
           sampleId: dp.sampleId,
           volume: dp.volume,
           pan: dp.pan,
+          muted: dp.muted, // v3.287: Mute-Zustand aus dem ESX-Pattern.
           steps: dp.steps.map((active, i) => ({
             active,
             velocity: dp.velocities[i] ?? 100,
             // v3.286: Per-Step-Pitch (Synth/Keyboard-Melodie) durchreichen.
             pitch: dp.pitches[i] ?? 0,
           })),
-        })
-      ),
+        };
+      }),
     })
   );
 
