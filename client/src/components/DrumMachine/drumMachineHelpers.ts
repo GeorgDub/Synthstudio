@@ -43,6 +43,21 @@ export function resizeSteps<T>(steps: T[], count: number, makeStep: () => T): T[
   return steps.slice(0, count);
 }
 
+/**
+ * v3.292: NICHT-destruktives Step-Resizing für den Live-Umschalter
+ * (16↔32↔64↔128). Anders als `resizeSteps` wird NIE abgeschnitten — höhere
+ * Steps bleiben im Array erhalten und werden nur ausgeblendet (Anzeige +
+ * Playback sind ohnehin durch `pattern.stepCount` begrenzt). So kann der User
+ * beliebig zwischen den Auflösungen wechseln, ohne Daten zu verlieren.
+ *
+ * - `count > steps.length` → auffüllen (padden) auf count.
+ * - `count <= steps.length` → Array unverändert zurückgeben (ref-stabil).
+ */
+export function growSteps<T>(steps: T[], count: number, makeStep: () => T): T[] {
+  if (count <= steps.length) return steps;
+  return [...steps, ...Array.from({ length: count - steps.length }, makeStep)];
+}
+
 // ─── v3.40 64-Step Page-Switcher Helpers ───────────────────────────────────
 //
 // Bei stepCount > 16 wird das Step-Grid in 16er-Pages aufgeteilt damit Cells

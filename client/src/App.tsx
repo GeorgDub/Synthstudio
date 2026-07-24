@@ -126,6 +126,12 @@ import {
   WELCOME_EVENT_NAME,
   type WelcomeTryItDetail,
 } from "@/store/useWelcomeStore";
+// v3.292: Startup-Projekt-Picker (neu / laden / letztes öffnen).
+import { StartupProjectPicker } from "@/components/Startup/StartupProjectPicker";
+import {
+  shouldShowStartupPicker,
+  lastProjectLabel,
+} from "@/components/Startup/startupPicker";
 import { KorgBankEditor } from "@/components/KorgBank/KorgBankEditor";
 // v3.18.0: OmniTribe-Tab (VU + Spectrum + Chord + Performance-Pads).
 // v3.19.0: Browser-Support-Banner + DeviceConnectionPanel im Tab.
@@ -1833,18 +1839,46 @@ export default function App() {
     [electron, restoreProject]
   );
 
-  // Beim Start: letztes Projekt aus Cache laden
+  // v3.292: Beim Start NICHT mehr automatisch laden. Stattdessen den
+  // Startup-Picker zeigen (neu / laden / letztes öffnen). Der gecachte Snapshot
+  // wird gemerkt, damit „Letztes öffnen" ihn restoren kann. Der First-Run-
+  // Welcome-Wizard hat Vorrang — dann kein Picker.
   useEffect(() => {
     const cached = loadCachedProject();
+    startupCachedRef.current = cached ?? null;
+    setStartupLastName(lastProjectLabel(cached));
     if (
-      cached &&
-      project.projectName === "Neues Projekt" &&
-      project.samples.length === 0
+      shouldShowStartupPicker({
+        welcomeWizardOpen: showWelcomeWizard,
+        alreadyShown: false,
+      })
     ) {
-      restoreProject(cached);
+      setShowStartupPicker(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleStartupOpenLast = useCallback(() => {
+    const cached = startupCachedRef.current;
+    if (cached) {
+      restoreProject(cached);
+      toast(`Projekt geladen: ${cached.projectName}`, { kind: "success" });
+    }
+    setShowStartupPicker(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoreProject]);
+
+  const handleStartupNew = useCallback(() => {
+    project.newProject();
+    setShowStartupPicker(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project]);
+
+  const handleStartupOpen = useCallback(() => {
+    setShowStartupPicker(false);
+    void doLoadProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doLoadProject]);
 
   // Auto-Save (konfigurierbares Intervall, ein-/ausschaltbar) — Browser-Cache.
   const apiSettings2 = useApiSettingsStore();
@@ -2317,6 +2351,13 @@ export default function App() {
       return false;
     }
   });
+
+  // v3.292: Startup-Projekt-Picker. Beim Start wird NICHTS automatisch geladen —
+  // der User wählt neues Projekt / laden / letztes öffnen. Der gecachte Snapshot
+  // wird in einem Ref gehalten, damit „Letztes öffnen" ihn restoren kann.
+  const startupCachedRef = React.useRef<ReturnType<typeof loadCachedProject>>(null);
+  const [showStartupPicker, setShowStartupPicker] = useState<boolean>(false);
+  const [startupLastName, setStartupLastName] = useState<string | null>(null);
 
   // ── Theme beim Start laden ─────────────────────────────────────────────────
   React.useEffect(() => {
@@ -6523,6 +6564,15 @@ export default function App() {
         <WelcomeWizard
           open={showWelcomeWizard}
           onClose={() => setShowWelcomeWizard(false)}
+        />
+        {/* v3.292: Startup-Projekt-Picker — beim Start nichts geladen, User wählt. */}
+        <StartupProjectPicker
+          open={showStartupPicker}
+          lastProjectName={startupLastName}
+          onNew={handleStartupNew}
+          onOpen={handleStartupOpen}
+          onOpenLast={handleStartupOpenLast}
+          onClose={() => setShowStartupPicker(false)}
         />
         {/* v3.3.0: KORG Sample-Bank-Modal (ESX-1 .esx + E2S .all Read-Only). */}
         <KorgBankModal

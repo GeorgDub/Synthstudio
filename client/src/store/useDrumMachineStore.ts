@@ -20,7 +20,7 @@ import type {
   StepCount,
 } from "../audio/AudioEngine";
 import { DEFAULT_CHANNEL_FX } from "../audio/AudioEngine";
-import { resizeSteps } from "../components/DrumMachine/drumMachineHelpers";
+import { growSteps } from "../components/DrumMachine/drumMachineHelpers";
 import { DEFAULT_SYNTH_PARAMS } from "../audio/SynthEngine";
 import { euclidean } from "../utils/euclidean";
 import { clampStepLength } from "../utils/polymeter";
@@ -235,12 +235,13 @@ function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** Ein einzelner Default-Step (inaktiv). Faktory für growSteps/resizeSteps. */
+function makeStepDefault(): StepData {
+  return { active: false, velocity: 100, pitch: 0 };
+}
+
 function makeSteps(count: number): StepData[] {
-  return Array.from({ length: count }, () => ({
-    active: false,
-    velocity: 100,
-    pitch: 0,
-  }));
+  return Array.from({ length: count }, makeStepDefault);
 }
 
 function makePart(name: string, stepCount: number): PartData {
@@ -1513,15 +1514,13 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
           return {
             ...p,
             stepCount: count,
+            // v3.292: NICHT-destruktiv. Umschalten 16↔32↔64↔128 blendet höhere
+            // Steps nur aus (Anzeige/Playback sind durch stepCount begrenzt) —
+            // die Step-Daten bleiben erhalten, sodass man beliebig hin- und
+            // herwechseln kann. Wir wachsen nur (padden), schneiden NIE ab.
             parts: p.parts.map(pt => {
-              if (pt.steps.length === count) return pt;
-              if (count > pt.steps.length) {
-                return {
-                  ...pt,
-                  steps: [...pt.steps, ...makeSteps(count - pt.steps.length)],
-                };
-              }
-              return { ...pt, steps: pt.steps.slice(0, count) };
+              const grown = growSteps(pt.steps, count, makeStepDefault);
+              return grown === pt.steps ? pt : { ...pt, steps: grown };
             }),
           };
         })
@@ -1539,14 +1538,12 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
         ps.map(p => ({
           ...p,
           stepCount: count,
-          parts: p.parts.map(pt => ({
-            ...pt,
-            steps: resizeSteps(pt.steps, count, () => ({
-              active: false,
-              velocity: 100,
-              pitch: 0,
-            })),
-          })),
+          // v3.292: ebenfalls nicht-destruktiv — höhere Steps bleiben erhalten
+          // (nur ausgeblendet), nur Auffüllen bei Bedarf.
+          parts: p.parts.map(pt => {
+            const grown = growSteps(pt.steps, count, makeStepDefault);
+            return grown === pt.steps ? pt : { ...pt, steps: grown };
+          }),
         }))
       );
     },

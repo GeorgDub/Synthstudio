@@ -5,7 +5,10 @@
  * alle Patterns anwenden" (Synth.md: höhere Ebene statt pro Pattern).
  */
 import { describe, it, expect } from "vitest";
-import { resizeSteps } from "../../client/src/components/DrumMachine/drumMachineHelpers";
+import {
+  resizeSteps,
+  growSteps,
+} from "../../client/src/components/DrumMachine/drumMachineHelpers";
 
 const mk = () => ({ active: false, velocity: 100, pitch: 0 });
 
@@ -86,5 +89,51 @@ describe("resizeSteps", () => {
     const out = resizeSteps(Array.from({ length: 16 }, mk), 128, mk);
     expect(out).toHaveLength(128);
     expect(out.filter(s => s.active)).toHaveLength(0);
+  });
+});
+
+// v3.292: growSteps — nicht-destruktiver Live-Umschalter (16↔32↔64↔128).
+describe("growSteps (non-destruktiv)", () => {
+  it("wächst 16 → 64 (padded), behält die ersten 16", () => {
+    const steps = Array.from({ length: 16 }, (_, i) => ({
+      active: true,
+      velocity: i,
+      pitch: 0,
+    }));
+    const out = growSteps(steps, 64, mk);
+    expect(out).toHaveLength(64);
+    expect(out[0]).toEqual({ active: true, velocity: 0, pitch: 0 });
+    expect(out[15].active).toBe(true);
+    expect(out[16]).toEqual({ active: false, velocity: 100, pitch: 0 });
+  });
+
+  it("schneidet NIE ab: 128 → 16 lässt das 128er-Array unverändert", () => {
+    const steps = Array.from({ length: 128 }, (_, i) => ({
+      active: i >= 64, // Daten in der oberen Hälfte
+      velocity: 100,
+      pitch: 0,
+    }));
+    const out = growSteps(steps, 16, mk);
+    // Ref-stabil + volle Länge → höhere Steps bleiben erhalten (nur ausgeblendet).
+    expect(out).toBe(steps);
+    expect(out).toHaveLength(128);
+    expect(out[100].active).toBe(true);
+  });
+
+  it("Round-Trip 128 → 16 → 128 verliert keine hohen Steps", () => {
+    const steps = Array.from({ length: 128 }, (_, i) => ({
+      active: i === 120,
+      velocity: 100,
+      pitch: 0,
+    }));
+    const down = growSteps(steps, 16, mk); // bleibt 128
+    const up = growSteps(down, 128, mk); // bleibt 128
+    expect(up[120].active).toBe(true);
+    expect(up).toHaveLength(128);
+  });
+
+  it("gleiche Länge → ref-stabil (kein Kopieren)", () => {
+    const steps = Array.from({ length: 32 }, mk);
+    expect(growSteps(steps, 32, mk)).toBe(steps);
   });
 });
