@@ -94,35 +94,40 @@ describe("v3.293 Filter→ChannelFx Mapping", () => {
     expect(esxResonanceToQ(127)).toBeCloseTo(12, 2);
   });
 
-  it("neutraler LPF (cutoff 127, res 0) → enabled=false (transparent)", () => {
-    const f = esxFilterToImportedFilter({
-      filterType: 0,
-      cutoff: 127,
-      resonance: 0,
-      egIntensity: 0,
-      modType: 0,
-      modDest: 0,
-      modSpeed: 0,
-      modDepth: 0,
-    });
-    expect(f?.enabled).toBe(false);
+  const mk = (o: Partial<Parameters<typeof esxFilterToImportedFilter>[0] & object>) => ({
+    filterType: 0,
+    cutoff: 64,
+    resonance: 0,
+    egIntensity: 0,
+    modType: 0,
+    modDest: 0,
+    modSpeed: 0,
+    modDepth: 0,
+    ...o,
   });
 
-  it("aktiver HPF → enabled=true mit gemapptem freq/q/type", () => {
-    const f = esxFilterToImportedFilter({
-      filterType: 1,
-      cutoff: 64,
-      resonance: 100,
-      egIntensity: 0,
-      modType: 0,
-      modDest: 0,
-      modSpeed: 0,
-      modDepth: 0,
-    })!;
+  it("offener LPF (cutoff 127) → undefined (kein Filter, transparent)", () => {
+    expect(esxFilterToImportedFilter(mk({ filterType: 0, cutoff: 127 }))).toBeUndefined();
+  });
+
+  it("geschlossener LPF (cutoff < 127) → enabled lowpass mit freq/q", () => {
+    const f = esxFilterToImportedFilter(mk({ filterType: 0, cutoff: 64, resonance: 100 }))!;
     expect(f.enabled).toBe(true);
-    expect(f.type).toBe("highpass");
+    expect(f.type).toBe("lowpass");
     expect(f.freq).toBe(esxCutoffToHz(64));
     expect(f.q).toBe(esxResonanceToQ(100));
+  });
+
+  it("offener HPF (cutoff 0) → undefined; aktiver HPF (cutoff>0) → enabled", () => {
+    expect(esxFilterToImportedFilter(mk({ filterType: 1, cutoff: 0 }))).toBeUndefined();
+    const f = esxFilterToImportedFilter(mk({ filterType: 1, cutoff: 40 }))!;
+    expect(f.enabled).toBe(true);
+    expect(f.type).toBe("highpass");
+  });
+
+  it("Bandpass/BPF+ (2/3) → undefined (nicht auto-angewandt, Stumm-Gefahr)", () => {
+    expect(esxFilterToImportedFilter(mk({ filterType: 2, cutoff: 64 }))).toBeUndefined();
+    expect(esxFilterToImportedFilter(mk({ filterType: 3, cutoff: 127 }))).toBeUndefined();
   });
 
   it("undefined-Filter → undefined", () => {

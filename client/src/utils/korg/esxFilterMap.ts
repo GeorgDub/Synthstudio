@@ -59,13 +59,25 @@ export function esxResonanceToQ(res: number): number {
 }
 
 /**
- * Baut aus einem ESX-Filter das ImportedFilter für einen Part.
+ * Baut aus einem ESX-Filter das ImportedFilter für einen Part — ODER undefined,
+ * wenn der Filter nicht SICHER anwendbar ist (dann bleibt der Part-Filter aus).
  *
- * `enabled` nur, wenn der Filter hörbar etwas tut: LPF muss dann nicht offen
- * (cutoff 127) und ohne Resonanz sein; jeder Nicht-LPF-Typ oder Resonanz > 0
- * oder ein nicht voll geöffneter Cutoff aktiviert ihn. So bleibt ein neutraler
- * ESX-Part (LPF offen, Res 0) auch in Synthstudio transparent.
+ * WARUM konservativ (v3.294, nach Bug-Report „überall Bandpass 20000"):
+ * Reale ESX-Patterns tragen sehr häufig Tiefpass voll offen (cutoff 127) ODER
+ * Bandpass/BPF+ — und ein Web-Audio-Bandpass mit ESX-Cutoff als Center würde bei
+ * hohem Cutoff das Signal quasi stumm schalten (nur ~20 kHz durchlassen). Das ist
+ * musikalisch destruktiv und war die Ursache des Bugs. Deshalb wird NUR das
+ * angewandt, was eindeutig und gefahrlos abbildbar ist:
+ *   - Tiefpass (LPF): nur wenn NICHT voll offen (cutoff < 127) → verdunkelt, nie stumm.
+ *   - Hochpass (HPF): nur wenn NICHT voll offen (cutoff > 0) → dünnt aus, nie stumm.
+ *   - Bandpass/BPF+ (2/3): NICHT auto-angewandt (Center-Mapping unverifiziert,
+ *     Stumm-Gefahr) → undefined; der Part spielt normal, kein Fehl-Filter.
+ * So bleibt der Import hilfreich (echte LPF/HPF-Sweeps kommen mit), macht aber
+ * nie einen Part kaputt.
  */
+const LPF_FULLY_OPEN = 127;
+const HPF_FULLY_OPEN = 0;
+
 export function esxFilterToImportedFilter(
   f: EsxPartFilter | undefined | null
 ): ImportedFilter | undefined {
@@ -73,7 +85,15 @@ export function esxFilterToImportedFilter(
   const type = esxFilterTypeToChannel(f.filterType);
   const freq = esxCutoffToHz(f.cutoff);
   const q = esxResonanceToQ(f.resonance);
-  const isNeutralLowpass =
-    type === "lowpass" && f.cutoff >= 127 && f.resonance <= 0;
-  return { enabled: !isNeutralLowpass, type, freq, q };
+
+  if (type === "lowpass") {
+    if (f.cutoff >= LPF_FULLY_OPEN) return undefined; // offen → aus
+    return { enabled: true, type, freq, q };
+  }
+  if (type === "highpass") {
+    if (f.cutoff <= HPF_FULLY_OPEN) return undefined; // offen → aus
+    return { enabled: true, type, freq, q };
+  }
+  // bandpass / BPF+ → nicht auto-anwenden (Stumm-Gefahr, unverifiziertes Center).
+  return undefined;
 }

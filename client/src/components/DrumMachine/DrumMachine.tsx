@@ -1548,15 +1548,19 @@ function DrumMachineInner({
   const applyMutator = useCallback(
     (mutator: (p: boolean[]) => boolean[]) => {
       if (!pattern) return;
+      // v3.294: Mutator NUR auf den SICHTBAREN Bereich (pattern.stepCount)
+      // anwenden. Seit dem nicht-destruktiven Step-Umschalten kann part.steps
+      // länger sein als stepCount (ausgeblendete höhere Steps) — ein Fill/Roll
+      // muss trotzdem im sichtbaren letzten Drittel landen, nicht in den
+      // versteckten Steps. Der ausgeblendete Rest bleibt unverändert erhalten.
+      const visible = pattern.stepCount;
       for (const part of pattern.parts) {
-        const oldSteps = part.steps.map(s => s.active);
-        const mutated = mutator(oldSteps);
-        // Pad/trim auf Originallaenge → setPartSteps erwartet exakt n Steps.
-        const n = oldSteps.length;
-        const newSteps: boolean[] = new Array(n).fill(false);
-        for (let i = 0; i < Math.min(n, mutated.length); i++) {
-          newSteps[i] = mutated[i];
-        }
+        const full = part.steps.map(s => s.active);
+        const mutated = mutator(full.slice(0, visible));
+        // Länge exakt wie part.steps beibehalten (setPartSteps erwartet das);
+        // versteckten Tail (>= visible) unangetastet lassen.
+        const newSteps = full.slice();
+        for (let i = 0; i < visible; i++) newSteps[i] = mutated[i] ?? false;
         dm.setPartSteps(part.id, newSteps);
       }
     },
