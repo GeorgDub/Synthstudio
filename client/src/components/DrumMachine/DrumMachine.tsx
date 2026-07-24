@@ -60,6 +60,7 @@ import { parseMidiFile } from "../../../../src/utils/midiParser.js";
 import { parseFlp, flpPositionToStep, groupNotesByBar, calculateBarCount } from "@/utils/flpImport";
 import {
   parseElectribeBank,
+  parseElectribePattern,
   convertParsedPatternToSynthstudio,
   type ParsedPattern,
   type SynthstudioPatternImport,
@@ -69,8 +70,10 @@ import { parseE2sBank } from "@/utils/korg/e2sBankReader";
 import { buildE2sSampleMap } from "@/utils/korg/e2sPatternSampleLink";
 import { encodeWavStereo } from "@/audio/wavEncoder";
 import { requireProFeature, PRO_FEATURE_ELECTRIBE_IMPORT, PRO_FEATURE_KORG_BANK_IMPORT, PRO_FEATURE_KORG_BANK_WRITE, PRO_FEATURE_E2_PATTERN_EXPORT } from "@/utils/proFeatures";
-import { buildE2PatternFileV2, buildE2AllPatFile } from "@/utils/e2sExport";
+import { buildE2PatternFileV2, buildE2AllPatFile, buildE2PatternBody } from "@/utils/e2sExport";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
+import { wrapPatternBodyAsFile } from "@/utils/korg/e2NativeSysex";
+import { requestPatternFromDevice, sendPatternToDevice } from "@/audio/E2NativeSysexTransfer";
 import { useElectron } from "../../../../electron/useElectron";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { GranularSynthPanel } from "./GranularSynthPanel";
@@ -1189,6 +1192,9 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
   const sliceImportRef = useRef<HTMLInputElement>(null);
   const [selectedStep, setSelectedStep] = useState<{ partId: string; stepIndex: number } | null>(null);
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
+  /** v3.268.0: laufender Sysex-Transfer mit der echten Electribe. Sperrt beide
+   *  Buttons, damit ein zweiter Transfer nicht in den ersten hineinfunkt. */
+  const [e2SysexBusy, setE2SysexBusy] = useState<"load" | "send" | null>(null);
   // TASK-237: nach Bank-Parse haelt der Dialog die Pattern-Liste fuer User-Auswahl.
   const [electribePicker, setElectribePicker] = useState<{
     fileName: string;
@@ -3635,6 +3641,91 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
         />
           </div>
         </div>
+
+        {/* ── Live-Sysex mit echter Electribe 2 (v3.268.0) ────────────────────
+            Natives Korg-Protokoll F0 42 …, NICHT unser OTP. Holt bzw. schickt
+            das Pattern direkt über MIDI — ohne Umweg über SD-Karte. */}
+        <button
+          onClick={async () => {
+            if (!requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT)) return;
+            if (!pattern) {
+              toast("Kein Pattern aktiv", { kind: "warning" });
+              return;
+            }
+            setE2SysexBusy("load");
+            try {
+              const res = await requestPatternFromDevice();
+              if (!res.ok) {
+                toast(res.error, { kind: "error" });
+                return;
+              }
+              const r = res.response;
+              if (r.kind !== "currentPatternDump" && r.kind !== "patternDump") {
+                toast(
+                  r.kind === "nak"
+                    ? `Gerät meldet Fehler: ${r.reason}`
+                    : `Unerwartete Antwort vom Gerät (${r.kind})`,
+                  { kind: "error" },
+                );
+                return;
+              }
+              // Roh-Body → .e2spat-Datei → bestehender, erprobter Import-Pfad.
+              const parsed = parseElectribePattern(wrapPatternBodyAsFile(r.body));
+              importElectribePatternIntoActive(parsed, "Korg Electribe (MIDI)");
+              toast(`Pattern von der Korg geladen: ${parsed.name || "(ohne Namen)"}`, { kind: "success" });
+            } catch (err) {
+              console.error("[E2 Sysex Load] error:", err);
+              toast(`Laden fehlgeschlagen: ${(err as Error)?.message ?? "unbekannt"}`, { kind: "error" });
+            } finally {
+              setE2SysexBusy(null);
+            }
+          }}
+          disabled={e2SysexBusy !== null}
+          title="Aktives Pattern per MIDI-Sysex von der angeschlossenen Electribe 2 holen (überschreibt das aktive Synthstudio-Pattern)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-wait"
+          data-testid="e2-sysex-load"
+        >
+          {e2SysexBusy === "load" ? "⏳ Lade…" : "⬇ Von Korg"}
+          <ProLockBadge feature={PRO_FEATURE_ELECTRIBE_IMPORT} />
+        </button>
+
+        <button
+          onClick={async () => {
+            if (!requireProFeature(PRO_FEATURE_E2_PATTERN_EXPORT)) return;
+            const currentPattern = dm.getActivePattern();
+            if (!currentPattern) {
+              toast("Kein Pattern aktiv", { kind: "warning" });
+              return;
+            }
+            setE2SysexBusy("send");
+            try {
+              const e2Input = convertSynthstudioPatternToE2(currentPattern, { globalBpm: bpm });
+              const body = buildE2PatternBody(e2Input);
+              const res = await sendPatternToDevice(body);
+              if (!res.ok) {
+                toast(res.error, { kind: "error" });
+                return;
+              }
+              if (res.response.kind === "nak") {
+                toast(`Gerät hat abgelehnt: ${res.response.reason}`, { kind: "error" });
+                return;
+              }
+              toast("Pattern an die Korg gesendet (Edit-Buffer — am Gerät speichern!)", { kind: "success" });
+            } catch (err) {
+              console.error("[E2 Sysex Send] error:", err);
+              toast(`Senden fehlgeschlagen: ${(err as Error)?.message ?? "unbekannt"}`, { kind: "error" });
+            } finally {
+              setE2SysexBusy(null);
+            }
+          }}
+          disabled={e2SysexBusy !== null}
+          title="Aktives Pattern per MIDI-Sysex in den Edit-Buffer der Electribe 2 schicken (überschreibt KEIN gespeichertes Pattern — am Gerät selbst speichern)"
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-wait"
+          data-testid="e2-sysex-send"
+        >
+          {e2SysexBusy === "send" ? "⏳ Sende…" : "⬆ Zur Korg"}
+          <ProLockBadge feature={PRO_FEATURE_E2_PATTERN_EXPORT} />
+        </button>
 
         {/* Pattern Morph */}
         <button
