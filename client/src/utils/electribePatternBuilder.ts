@@ -109,6 +109,12 @@ export interface E2PartInput {
   pitch?: number;
   /** 0..127 — Effect-Send. Default 0. */
   fxSend?: number;
+  /**
+   * v3.288: Part-Mute-Zustand. Wird beim Export in das E2-Pattern geschrieben
+   * (Offset aus verifizierter Reverse-Eng), damit die exportierte Bank die
+   * Mutes wie im Quell-Pattern hat. Default false.
+   */
+  muted?: boolean;
   /** Trigger steps. Will be padded to 64 entries with `{active: false}`. */
   steps: E2StepInput[];
 }

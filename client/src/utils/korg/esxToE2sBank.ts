@@ -150,6 +150,8 @@ export function convertEsxToE2sBank(
         volume: part.volume,
         pan: part.pan,
         sampleId: mapped ? mapped.hwNumber : undefined,
+        // v3.288: Mute-Zustand aus dem ESX-Pattern in den E2-Export übernehmen.
+        muted: part.muted === true,
         steps: part.steps.map((s) => ({
           active: !!s.active,
           velocity: typeof s.velocity === "number" ? s.velocity : undefined,
