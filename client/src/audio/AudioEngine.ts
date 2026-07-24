@@ -2113,15 +2113,15 @@ class AudioEngineClass {
   private async _ensureWorklets(): Promise<void> {
     if (this._workletLoaded || !this.ctx) return;
     try {
-      await this.ctx.audioWorklet.addModule(
-        new URL("./worklets/BitcrusherProcessor.js", import.meta.url)
-      );
-      await this.ctx.audioWorklet.addModule(
-        new URL("./worklets/RingModProcessor.js", import.meta.url)
-      );
-      await this.ctx.audioWorklet.addModule(
-        new URL("./worklets/TimeStretchProcessor.js", import.meta.url)
-      );
+      // v3.291: Worklets aus publicDir per STABILER relativer URL laden (analog
+      // recorder-worklet). Der frühere `new URL("./worklets/X.js",
+      // import.meta.url)` liess Vite die Module als `data:`-URLs inlinen; im
+      // gepackten Build blockt `script-src 'self'` `data:`-Worklet-Module →
+      // "Unable to load a worklet's module". PublicDir-Dateien sind
+      // gleich-origin file://-Scripts und laden unter 'self'.
+      await this.ctx.audioWorklet.addModule("./worklets/BitcrusherProcessor.js");
+      await this.ctx.audioWorklet.addModule("./worklets/RingModProcessor.js");
+      await this.ctx.audioWorklet.addModule("./worklets/TimeStretchProcessor.js");
       this._workletLoaded = true;
     } catch (e) {
       console.warn(
