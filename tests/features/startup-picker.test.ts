@@ -30,6 +30,22 @@ describe("shouldShowStartupPicker", () => {
       shouldShowStartupPicker({ welcomeWizardOpen: false, alreadyShown: true })
     ).toBe(false);
   });
+
+  it("unterdrückt unter Automation (navigator.webdriver) — sonst blockiert das Modal alle E2E-Tests", () => {
+    expect(
+      shouldShowStartupPicker({ welcomeWizardOpen: false, isAutomated: true })
+    ).toBe(false);
+  });
+
+  it("forceForTest übersteuert die Automation-Unterdrückung (Picker-E2E-Opt-in)", () => {
+    expect(
+      shouldShowStartupPicker({
+        welcomeWizardOpen: false,
+        isAutomated: true,
+        forceForTest: true,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("lastProjectLabel", () => {

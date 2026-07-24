@@ -1847,10 +1847,23 @@ export default function App() {
     const cached = loadCachedProject();
     startupCachedRef.current = cached ?? null;
     setStartupLastName(lastProjectLabel(cached));
+    // v3.295: unter Automation (Playwright setzt navigator.webdriver) kein
+    // Auto-Modal — sonst blockiert der Picker jeden Web-E2E-Test. Explizites
+    // Opt-in für künftige Picker-Tests via localStorage-Flag.
+    let forceForTest = false;
+    try {
+      forceForTest =
+        localStorage.getItem("synthstudio:startup-picker:e2e-force") === "1";
+    } catch {
+      /* localStorage nicht verfügbar → kein Force */
+    }
     if (
       shouldShowStartupPicker({
         welcomeWizardOpen: showWelcomeWizard,
         alreadyShown: false,
+        isAutomated:
+          typeof navigator !== "undefined" && navigator.webdriver === true,
+        forceForTest,
       })
     ) {
       setShowStartupPicker(true);

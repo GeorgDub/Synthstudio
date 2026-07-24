@@ -18,15 +18,27 @@ export interface CachedProjectInfo {
  * @param opts.welcomeWizardOpen  First-Run-Wizard aktiv → Picker unterdrücken.
  * @param opts.openedViaFile      Projekt kam via Datei-Assoziation/CLI → kein Picker.
  * @param opts.alreadyShown       Wurde in dieser Session schon gezeigt.
+ * @param opts.isAutomated        Automatisierte Umgebung (Playwright/WebDriver,
+ *   `navigator.webdriver === true`) → Picker unterdrücken. Ohne das blockiert
+ *   das Modal JEDEN Web-E2E-Test (Klicks laufen in Timeouts; brach die komplette
+ *   Playwright-Suite inkl. „Audit 3: keine blockierenden Overlays"). Die
+ *   bestehende Test-Konvention seedet Modals per localStorage weg — für ein
+ *   neues Modal müssten ~40 Spec-Files angefasst werden; webdriver-Detection
+ *   deckt alle ab, ohne echte User zu betreffen.
+ * @param opts.forceForTest       Explizites Opt-in (z.B. künftige Picker-E2E-
+ *   Tests via localStorage-Flag) → übersteuert isAutomated.
  */
 export function shouldShowStartupPicker(opts: {
   welcomeWizardOpen: boolean;
   openedViaFile?: boolean;
   alreadyShown?: boolean;
+  isAutomated?: boolean;
+  forceForTest?: boolean;
 }): boolean {
   if (opts.alreadyShown) return false;
   if (opts.welcomeWizardOpen) return false;
   if (opts.openedViaFile) return false;
+  if (opts.isAutomated && !opts.forceForTest) return false;
   return true;
 }
 
