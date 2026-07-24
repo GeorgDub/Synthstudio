@@ -227,6 +227,29 @@ export function EsxImportController({
         const attached = attachSampleUrlsToImportResult(result, urlBySampleId);
         linked = attached.result;
         linkedCount = attached.linkedCount;
+
+        // v3.290: die mitgeladenen Samples zusätzlich in den Sample-Browser
+        // (Project-Store) legen, damit man sie bei Bedarf auf andere Parts
+        // tauschen kann. Der Project-Store lebt in App.tsx (per-Instance-useState),
+        // deshalb via CustomEvent-Bridge (analog esx:load-song).
+        try {
+          const { buildEsxLibrarySamples } =
+            await import("@/utils/korg/esxLibrarySamples");
+          const librarySamples = buildEsxLibrarySamples(
+            bank,
+            urlBySampleId,
+            wavMap
+          );
+          if (librarySamples.length > 0) {
+            window.dispatchEvent(
+              new CustomEvent("esx:add-library-samples", {
+                detail: { samples: librarySamples },
+              })
+            );
+          }
+        } catch (err) {
+          console.warn("[ESX] Library-Samples-Bridge fehlgeschlagen", err);
+        }
       }
 
       // v3.286: auf den gewählten Step-Cap kürzen (128 = volle Länge → No-op).

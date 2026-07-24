@@ -3683,6 +3683,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song]);
 
+  // v3.290: ESX-Import legt die mitgeladenen Samples zusätzlich in den
+  // Sample-Browser (Project-Store). Der Import-Dialog lebt tief in der
+  // DrumMachine; der Project-Store hier in App.tsx — daher CustomEvent-Bridge.
+  useEffect(() => {
+    const handleAddLibrarySamples = (e: Event) => {
+      const detail = (e as CustomEvent<{ samples?: Sample[] }>).detail;
+      const samples = detail?.samples;
+      if (!Array.isArray(samples) || samples.length === 0) return;
+      project.addSamples(samples);
+      toast(
+        `${samples.length} ESX-Sample(s) im Sample-Browser abgelegt`,
+        { kind: "success", duration: 3000 }
+      );
+    };
+    window.addEventListener("esx:add-library-samples", handleAddLibrarySamples);
+    return () =>
+      window.removeEventListener(
+        "esx:add-library-samples",
+        handleAddLibrarySamples
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project]);
+
   // v2.90 (TASK-238-FOLLOWUP-1): sample-slicer:apply — DrumMachine dispatcht
   // diesen Event nachdem der SampleSliceEditor "Apply" gedrueckt hat. Wir
   // legen die Slice-Buffer in useSlicePadStore ab (max 16 Pads). Mehr als 16
