@@ -42,6 +42,7 @@
  *     +0x022  2B   BPM × 10 (u16 LE)
  *     +0x025  1B   step-length code (16→0, 32→1, 64→3)
  *     +0x800  16×816B  parts
+ *       part +0x01  mute   (u8, 0 = plays, 1 = muted)
  *       part +0x15  volume (0..127)
  *       part +0x22  pan    (0..127, 64 = center)
  *       part +0x30  64×12B step records:
@@ -99,6 +100,13 @@ const PART_STRIDE = 816; // 0x330
  *  values span 1..~500 (factory sample numbers), 0 = no/empty sample.
  *  (The read-side parser historically guessed +0x04, which is almost always 0.) */
 const PART_SAMPLE_OFF = 0x08;
+/** Per-part Mute flag (u8) @ part+0x01. 0 = OFF (plays), 1 = ON (muted).
+ *  Verified against Korg's official "electribe MIDI Implementation Rev 1.00"
+ *  (TABLE 6: Part Parameter, offset 1 = "Mute, 0/1 = OFF/ON"), cross-checked
+ *  byte-identical with keijiro/e2edit `struct Part { lastStep; mute; voiceAssign }`
+ *  and maks/elfer's generated PartType. Sits in the device-common sequencer
+ *  part header (bytes 0x00–0x07), directly after Last Step (@0x00). */
+const PART_MUTE_OFF = 0x01;
 const PART_VOLUME_OFF = 0x15;
 const PART_PAN_OFF = 0x22;
 const PART_STEPS_OFF = 0x30;
@@ -225,6 +233,12 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
     if (!part) continue; // leave template part untouched (inactive + valid config)
 
     const partStart = PARTS_OFF + p * PART_STRIDE;
+    // Mute flag @ part+0x01 (u8). Only overlaid when the caller supplies an
+    // explicit boolean; otherwise the template's value (0 = plays) is kept, so
+    // patterns without imported mute state stay audible.
+    if (typeof part.muted === "boolean") {
+      body[partStart + PART_MUTE_OFF] = part.muted ? 1 : 0;
+    }
     if (typeof part.volume === "number") {
       body[partStart + PART_VOLUME_OFF] = clampInt(part.volume, 0, 127, 127);
     }

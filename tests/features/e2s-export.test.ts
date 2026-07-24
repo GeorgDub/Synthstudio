@@ -163,6 +163,35 @@ describe("e2sExport — template-overlay fidelity", () => {
     expect(body[partStart + 0x22]).toBe(0);
   });
 
+  it("part mute overlay writes part+0x01 (1 = muted, 0 = plays)", () => {
+    // Verified offset: Korg official "electribe MIDI Implementation Rev 1.00",
+    // TABLE 6 Part Parameter → offset 1 = Mute (0/1 = OFF/ON); cross-checked with
+    // keijiro/e2edit struct Part {lastStep; mute; …} and maks/elfer PartType.
+    const parts = emptyParts();
+    parts[2] = { muted: true, steps: [] };
+    parts[5] = { muted: false, steps: [] };
+    const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
+    expect(body[0x800 + 2 * 816 + 0x01]).toBe(1); // part 2 muted
+    expect(body[0x800 + 5 * 816 + 0x01]).toBe(0); // part 5 plays
+  });
+
+  it("muting only diffs the single mute byte vs the template", () => {
+    const parts = emptyParts();
+    parts[0] = { muted: true, steps: [] };
+    const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
+    const diffs = diffOffsets(body, TEMPLATE_BODY);
+    expect(diffs).toEqual([0x800 + 0x01]);
+  });
+
+  it("omitting `muted` leaves the template mute byte untouched (part still plays)", () => {
+    const parts = emptyParts();
+    parts[0] = { steps: [{ active: true }] }; // no `muted` field
+    const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
+    // Template default at part+0x01 is 0 (plays); overlay must not force it.
+    expect(body[0x800 + 0x01]).toBe(TEMPLATE_BODY[0x800 + 0x01]);
+    expect(body[0x800 + 0x01]).toBe(0);
+  });
+
   it("clamps out-of-range BPM, note, velocity", () => {
     const body = buildE2PatternBody({ ...NEUTRAL_INPUT, bpm: 99999 });
     const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
