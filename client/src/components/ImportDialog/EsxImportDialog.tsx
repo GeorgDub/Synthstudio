@@ -111,15 +111,20 @@ export function EsxImportDialog({
             <div
               className="flex items-center gap-1"
               data-testid="esx-step-cap"
-              title="Wieviele Steps anzeigen/laden — 128 = volle Länge, 64/32/16 = auf die ersten N kürzen"
+              title="Wieviele Steps laden — 128 = alle (volle Länge), 64/32/16 = auf die ersten N kürzen"
             >
-              <span className="text-[10px] text-text-dim">Steps:</span>
+              <span className="text-[10px] text-text-dim">Steps laden:</span>
               {([16, 32, 64, 128] as const).map(n => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => onSetStepCap(n)}
                   data-testid={`esx-step-cap-${n}`}
+                  title={
+                    n === 128
+                      ? "Alle 128 Steps laden (volle Pattern-Länge)"
+                      : `Auf die ersten ${n} Steps kürzen`
+                  }
                   className={[
                     "px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors",
                     stepCap === n
@@ -127,7 +132,7 @@ export function EsxImportDialog({
                       : "bg-bg-elevated text-text-dim hover:text-text-primary",
                   ].join(" ")}
                 >
-                  {n}
+                  {n === 128 ? "128 · alle" : n}
                 </button>
               ))}
             </div>
