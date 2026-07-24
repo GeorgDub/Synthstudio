@@ -214,6 +214,35 @@ export interface EsxStepEvent {
  *   - `motionSequencer` wird in v3.5 NICHT gesetzt (Motion-Daten-Layout
  *     ist nicht RE-d).
  */
+/**
+ * v3.293: Per-Part Filter/Modulation eines ESX-1-Parts. Offsets VERIFIZIERT
+ * gegen open-electribe-editor v1.2.0 (PartDrumImpl/PartKeyboardImpl/
+ * PartStretchSliceImpl `init()`):
+ *   - filterType: 0=LPF, 1=HPF, 2=BPF, 3=BPF+ (FilterType.java)
+ *   - cutoff/resonance/egIntensity/modSpeed/modDepth: je 1 signed Byte
+ *     (rohes Geräte-0..127; die Editor-Quelle klemmt sie nicht, die 0..127-
+ *     Semantik stammt aus Korgs MIDI-Impl — daher als 0..127 behandelt).
+ *   - modType: 0=Saw,1=Square,2=Tri,3=S&H,4=Env; modDest: 0=Pitch,1=Cutoff,2=Amp,3=Pan.
+ */
+export interface EsxPartFilter {
+  /** 0=LPF, 1=HPF, 2=BPF, 3=BPF+ (BPF-Variante). */
+  filterType: number;
+  /** 0..127 (roh). */
+  cutoff: number;
+  /** 0..127 (roh). */
+  resonance: number;
+  /** 0..127 (roh) — Filter-EG-Intensität. */
+  egIntensity: number;
+  /** 0=Saw,1=Square,2=Tri,3=S&H,4=Env. */
+  modType: number;
+  /** 0=Pitch,1=Cutoff,2=Amp,3=Pan. */
+  modDest: number;
+  /** 0..127 (roh). */
+  modSpeed: number;
+  /** 0..127 (roh). */
+  modDepth: number;
+}
+
 export interface EsxPart {
   partIndex: number;
   /** 0..255 — ESX-1 Sample-Slot-Index. Best-Effort; 0 wenn unbekannt. */
@@ -226,6 +255,8 @@ export interface EsxPart {
   pitch: number;
   /** 0..127. */
   fxAmount: number;
+  /** v3.293: Verifizierte Per-Part Filter/Mod-Werte (siehe EsxPartFilter). */
+  filter?: EsxPartFilter;
   /** Trigger-Steps, Laenge === ESX1_DEFAULT_STEPS. */
   steps: EsxStepEvent[];
   /**
@@ -761,6 +792,69 @@ function bitmaskToSteps(raw: Uint8Array, seqOff: number): EsxStepEvent[] {
 }
 
 /**
+ * v3.293: Byte-Offsets der Filter/Mod-Felder INNERHALB eines Parts, je Part-Typ
+ * (verifiziert gegen open-electribe-editor v1.2.0). Drum und Keyboard teilen
+ * Level/Pan/Fx/Mod-Offsets; Keyboard schiebt nur den Filter-Sub-Block um +1
+ * (glide@4), Stretch/Slice den ganzen Block um −2 (kein sliceNumber/reserved).
+ */
+interface EsxFilterLayout {
+  filterType: number;
+  cutoff: number;
+  resonance: number;
+  egIntensity: number;
+  modByte: number;
+  modSpeed: number;
+  modDepth: number;
+}
+const ESX_FILTER_LAYOUT_DRUM: EsxFilterLayout = {
+  filterType: 4,
+  cutoff: 5,
+  resonance: 6,
+  egIntensity: 7,
+  modByte: 14,
+  modSpeed: 15,
+  modDepth: 16,
+};
+const ESX_FILTER_LAYOUT_KEYBOARD: EsxFilterLayout = {
+  filterType: 5, // glide@4 schiebt den Filter-Sub-Block +1
+  cutoff: 6,
+  resonance: 7,
+  egIntensity: 8,
+  modByte: 14,
+  modSpeed: 15,
+  modDepth: 16,
+};
+const ESX_FILTER_LAYOUT_STRETCHSLICE: EsxFilterLayout = {
+  filterType: 2, // kein sliceNumber/reserved → gesamter Block −2
+  cutoff: 3,
+  resonance: 4,
+  egIntensity: 5,
+  modByte: 12,
+  modSpeed: 13,
+  modDepth: 14,
+};
+
+/** Liest den (verifizierten) Filter/Mod-Block eines Parts. */
+function decodeEsxFilter(
+  raw: Uint8Array,
+  partOff: number,
+  o: EsxFilterLayout
+): EsxPartFilter {
+  const b = (i: number) => Math.max(0, Math.min(127, raw[partOff + i] ?? 0));
+  const modRaw = raw[partOff + o.modByte] ?? 0;
+  return {
+    filterType: (raw[partOff + o.filterType] ?? 0) & 0x03,
+    cutoff: b(o.cutoff),
+    resonance: b(o.resonance),
+    egIntensity: b(o.egIntensity),
+    modDest: modRaw & 0x07, // bits 0-2
+    modType: (modRaw >> 4) & 0x07, // bits 4-6
+    modSpeed: b(o.modSpeed),
+    modDepth: b(o.modDepth),
+  };
+}
+
+/**
  * v3.286: Decoded einen Drum-Part (Index 0..8, 9 Parts) @ 24 + i*34.
  * Layout (PartDrumImpl.java): samplePointer BE @0 (bit15=off), pitch@8,
  * level@9, pan@10, sequenceData @+18 (16 Byte = 128-Bit-Maske).
@@ -775,6 +869,7 @@ function decodeDrumPart(
       pan: number;
       pitch: number;
       fxAmount: number;
+      filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
   | undefined {
@@ -786,6 +881,7 @@ function decodeDrumPart(
   const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
   const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_DRUM);
   const steps = bitmaskToSteps(raw, partOff + ESX1_PART_HEADER_BYTES);
   return {
     sampleId: off ? 0 : sampleId,
@@ -793,6 +889,7 @@ function decodeDrumPart(
     pan,
     pitch,
     fxAmount: 0,
+    filter,
     steps,
   };
 }
@@ -800,8 +897,8 @@ function decodeDrumPart(
 /**
  * v3.286: Decoded einen Stretch/Slice-Part (Index 0..2, 3 Parts) @ 878 + i*32.
  * 32-Byte-Layout: 16-Byte-Header + 16-Byte sequenceData (128-Bit-Maske) @ +16.
- * Header-Feld-Offsets analog Drum (samplePointer@0, pitch@8, level@9, pan@10) —
- * best-effort für die numerischen Werte; die Step-Maske ist verifiziert.
+ * v3.293: Offsets korrigiert (open-electribe-editor v1.2.0 PartStretchSliceImpl):
+ * kein sliceNumber/reserved → pitch@6, level@7, pan@8 (vorher fälschlich @8/9/10).
  */
 function decodeStretchSlicePart(
   raw: Uint8Array,
@@ -813,6 +910,7 @@ function decodeStretchSlicePart(
       pan: number;
       pitch: number;
       fxAmount: number;
+      filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
   | undefined {
@@ -820,9 +918,10 @@ function decodeStretchSlicePart(
   const partOff = ESX1_STRETCHSLICE_OFFSET + index * ESX1_STRETCHSLICE_STRIDE;
   if (partOff + ESX1_STRETCHSLICE_STRIDE > raw.length) return undefined;
   const { sampleId, off } = decodeSamplePointer(raw, partOff);
-  const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
-  const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
-  const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  const pitch = decodePitchByte(raw[partOff + 6] ?? ESX1_PITCH_NEUTRAL_RAW);
+  const volume = Math.max(0, Math.min(127, raw[partOff + 7] ?? 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 8] ?? 64));
+  const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_STRETCHSLICE);
   const steps = bitmaskToSteps(raw, partOff + ESX1_STRETCHSLICE_STEPS_OFFSET);
   return {
     sampleId: off ? 0 : sampleId,
@@ -830,6 +929,7 @@ function decodeStretchSlicePart(
     pan,
     pitch,
     fxAmount: 0,
+    filter,
     steps,
   };
 }
@@ -849,7 +949,9 @@ function decodeStretchSlicePart(
 function decodeKeyboardPart(
   raw: Uint8Array,
   keyIndex: number
-): (EsxKeyboardPart & { steps: EsxStepEvent[] }) | undefined {
+):
+  | (EsxKeyboardPart & { steps: EsxStepEvent[]; filter: EsxPartFilter })
+  | undefined {
   if (keyIndex < 0 || keyIndex >= ESX1_KEYBOARD_PART_COUNT) return undefined;
   const partOff =
     ESX1_KEYBOARD_PART_OFFSET + keyIndex * ESX1_KEYBOARD_PART_STRIDE;
@@ -857,6 +959,7 @@ function decodeKeyboardPart(
   const { sampleId, off } = decodeSamplePointer(raw, partOff);
   const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_KEYBOARD);
   const noteOff = partOff + ESX1_KEYBOARD_NOTE_OFFSET;
   const gateOff = partOff + ESX1_KEYBOARD_GATE_OFFSET;
   const note = raw.slice(noteOff, noteOff + ESX1_KEYBOARD_SEQ_LEN);
@@ -877,6 +980,7 @@ function decodeKeyboardPart(
     pan,
     note,
     gate,
+    filter,
     steps,
   };
 }
@@ -988,6 +1092,7 @@ export function parseEsxPattern(
           pan: number;
           pitch: number;
           fxAmount: number;
+          filter?: EsxPartFilter;
           steps: EsxStepEvent[];
         }
       | undefined
@@ -1019,9 +1124,10 @@ export function parseEsxPattern(
   for (let k = 0; k < ESX1_KEYBOARD_PART_COUNT; k++) {
     const kp = decodeKeyboardPart(raw, k);
     if (kp) {
-      const { steps, note, gate, sampleId, volume, pan, partIndex } = kp;
+      const { steps, note, gate, sampleId, volume, pan, partIndex, filter } =
+        kp;
       keyboardParts.push({ partIndex, sampleId, volume, pan, note, gate });
-      pushPart({ sampleId, volume, pan, pitch: 0, fxAmount: 0, steps });
+      pushPart({ sampleId, volume, pan, pitch: 0, fxAmount: 0, filter, steps });
     } else {
       pushPart(undefined);
     }

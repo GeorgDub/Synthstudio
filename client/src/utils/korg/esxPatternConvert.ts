@@ -26,6 +26,10 @@
 
 import type { EsxPattern, EsxSong, EsxSongEvent } from "./esxParser";
 import { ESX1_SONG_EVENT_END_MARKER } from "./esxParser";
+import {
+  esxFilterToImportedFilter,
+  type ImportedFilter,
+} from "./esxFilterMap";
 import type {
   EsxPatternInput,
   EsxDrumPartInput,
@@ -66,6 +70,12 @@ export interface SynthstudioDrumPartImport {
   pitches: number[];
   /** v3.287: Mute-Zustand aus der ESX-Pattern-muteStatus-Maske. */
   muted: boolean;
+  /**
+   * v3.293: Verifizierter Per-Part Filter (Type/Cutoff/Resonance → ChannelFx),
+   * damit „Filter & Effekte" beim Import direkt angewandt werden. Undefined bei
+   * neutralem Filter (LPF offen, Res 0) → Part bleibt transparent.
+   */
+  filter?: ImportedFilter;
 }
 
 /** Synthstudio-Pattern-Import wie es der Caller in die Stores faechert. */
@@ -172,6 +182,8 @@ export function convertEsxPatternToSynthstudio(
       velocities,
       pitches,
       muted: part.muted === true,
+      // v3.293: verifizierten ESX-Part-Filter → Synthstudio-Filter mappen.
+      filter: esxFilterToImportedFilter(part.filter),
     };
   });
 

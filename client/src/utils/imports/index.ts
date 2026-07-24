@@ -104,10 +104,11 @@ export function importResultToPatterns(result: ImportResult): Array<{
         pitch: s.pitch ?? 0,
       })),
       fx: {
-        filterEnabled: false,
-        filterType: "lowpass",
-        filterFreq: 8000,
-        filterQ: 1,
+        // v3.293: verifizierten ESX-Part-Filter direkt anwenden (sonst Defaults).
+        filterEnabled: part.filter?.enabled ?? false,
+        filterType: part.filter?.type ?? "lowpass",
+        filterFreq: part.filter?.freq ?? 8000,
+        filterQ: part.filter?.q ?? 1,
         filterGain: 0,
         distortionEnabled: false,
         distortionAmount: 50,

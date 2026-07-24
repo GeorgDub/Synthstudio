@@ -34,6 +34,16 @@ export interface ImportedPart {
   pan?: number; // -1..+1
   /** v3.287: Mute-Zustand (z.B. aus ESX-Pattern-muteStatus). Default false. */
   muted?: boolean;
+  /**
+   * v3.293: Per-Part Filter aus dem Quellformat (ESX-1 verifiziert). Wird beim
+   * Load auf die ChannelFx des Parts angewandt. Undefined = kein/neutraler Filter.
+   */
+  filter?: {
+    enabled: boolean;
+    type: "lowpass" | "highpass" | "bandpass" | "notch";
+    freq: number;
+    q: number;
+  };
 }
 
 export interface ImportedPattern {

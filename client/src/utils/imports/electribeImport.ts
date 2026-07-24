@@ -205,6 +205,7 @@ export function esxBankToImportResult(
           volume: dp.volume,
           pan: dp.pan,
           muted: dp.muted, // v3.287: Mute-Zustand aus dem ESX-Pattern.
+          filter: dp.filter, // v3.293: verifizierter Per-Part-Filter → ChannelFx.
           steps: dp.steps.map((active, i) => ({
             active,
             velocity: dp.velocities[i] ?? 100,
