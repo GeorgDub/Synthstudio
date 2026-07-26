@@ -43,8 +43,8 @@
  *     +0x025  1B   step-length code (16→0, 32→1, 64→3)
  *     +0x800  16×816B  parts
  *       part +0x01  mute   (u8, 0 = plays, 1 = muted)
- *       part +0x15  volume (0..127)
- *       part +0x22  pan    (0..127, 64 = center)
+ *       part +0x18  volume = Amp Level (u8 0..127)   [v3.297: vorher falsch 0x15]
+ *       part +0x19  pan    = Amp Pan   (i8, 0=Center) [v3.297: vorher falsch 0x22]
  *       part +0x30  64×12B step records:
  *         byte 0  trigger     (1 = active, 0 = off)
  *         byte 1  note        (0x48 = C5 default)
@@ -71,6 +71,7 @@ import {
   E2_ALLPAT_PATTERN_OFFSET,
   E2_ALLPAT_SLOT_COUNT,
   E2_ALLPAT_FILE_SIZE,
+  e2PanUiToDevice,
 } from "./korg/e2Layout";
 
 // ─── Layout constants (verified against real KORG files) ─────────────────────
@@ -107,8 +108,12 @@ const PART_SAMPLE_OFF = 0x08;
  *  and maks/elfer's generated PartType. Sits in the device-common sequencer
  *  part header (bytes 0x00–0x07), directly after Last Step (@0x00). */
 const PART_MUTE_OFF = 0x01;
-const PART_VOLUME_OFF = 0x15;
-const PART_PAN_OFF = 0x22;
+/** Amp Level (u8) @ +0x18 — v3.297-Korrektur: vorher 0x15 (= EG Decay laut
+ *  TABLE 6); Gerätebefund: gepushte Patterns hatten falsche Lautstärken. */
+const PART_VOLUME_OFF = 0x18;
+/** Amp Pan (i8, 0 = Center) @ +0x19 — v3.297-Korrektur: vorher u8@0x22
+ *  (= IFX Edit). UI-0..127 wird via e2PanUiToDevice konvertiert. */
+const PART_PAN_OFF = 0x19;
 const PART_STEPS_OFF = 0x30;
 const STEP_RECORD_SIZE = 12;
 const STEPS_PER_PART = 64;
@@ -243,7 +248,10 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
       body[partStart + PART_VOLUME_OFF] = clampInt(part.volume, 0, 127, 127);
     }
     if (typeof part.pan === "number") {
-      body[partStart + PART_PAN_OFF] = clampInt(part.pan, 0, 127, 64);
+      // Gerät erwartet i8 mit 0 = Center (TABLE 6 Amp Pan) — UI liefert 0..127.
+      body[partStart + PART_PAN_OFF] = e2PanUiToDevice(
+        clampInt(part.pan, 0, 127, 64)
+      );
     }
     // Per-part sample reference @ +0x08 (u16 LE). Only written when the caller
     // provides one (e.g. repointing parts to imported user samples at 501+);

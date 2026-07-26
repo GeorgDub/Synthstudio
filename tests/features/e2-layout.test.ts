@@ -48,8 +48,13 @@ describe("e2Layout — kanonische Werte", () => {
   it("Body-interne Layout-Konstanten (System A + e2Sysex einig)", () => {
     expect(L.E2_PART_TABLE_OFFSET).toBe(0x800);
     expect(L.E2_PART_STRIDE).toBe(0x330);
-    expect(L.E2_PART_VOLUME_OFFSET).toBe(0x15);
-    expect(L.E2_PART_PAN_OFFSET).toBe(0x22);
+    // v3.297 (Gerätebefund + Korg TABLE 6): Volume = Amp Level @0x18,
+    // Pan = Amp Pan @0x19 (i8, 0=Center). Die alten Ziele 0x15/0x22 sind
+    // EG Decay bzw. IFX Edit und werden nicht mehr als Vol/Pan benutzt.
+    expect(L.E2_PART_VOLUME_OFFSET).toBe(0x18);
+    expect(L.E2_PART_PAN_OFFSET).toBe(0x19);
+    expect(L.E2_PART_EG_DECAY_OFFSET).toBe(0x15);
+    expect(L.E2_PART_IFX_EDIT_OFFSET).toBe(0x22);
     expect(L.E2_STEP_RECORD_SIZE).toBe(0x0c);
     expect(L.E2_STEPS_PER_PART).toBe(64);
     expect(L.E2_STEP_TRIGGER_OFFSET).toBe(0);
@@ -105,5 +110,27 @@ describe("Anti-Drift: alle Module teilen jetzt EINEN Wert", () => {
     expect(ELECTRIBE_ALLPAT_PATTERN_STRIDE).toBe(L.E2_ALLPAT_PATTERN_STRIDE);
     expect(ELECTRIBE_ALLPAT_SLOT_COUNT).toBe(L.E2_ALLPAT_SLOT_COUNT);
     expect(ELECTRIBE_ALLPAT_EXPECTED_SIZE).toBe(L.E2_ALLPAT_FILE_SIZE);
+  });
+});
+
+// v3.297: Pan-Konvertierung UI (0..127, 64=Center) ↔ Gerät (i8, 0=Center).
+import { e2PanUiToDevice, e2PanDeviceToUi } from "@/utils/korg/e2Layout";
+import { describe as d2, it as it2, expect as ex2 } from "vitest";
+
+d2("e2Pan UI↔Device Konvertierung (v3.297)", () => {
+  it2("Center: UI 64 → 0 → UI 64", () => {
+    ex2(e2PanUiToDevice(64)).toBe(0);
+    ex2(e2PanDeviceToUi(0)).toBe(64);
+  });
+  it2("Extreme werden auf ±63 geclampt und runden zurück", () => {
+    ex2(e2PanUiToDevice(0)).toBe(0xc1); // -63
+    ex2(e2PanUiToDevice(127)).toBe(63);
+    ex2(e2PanDeviceToUi(0xc1)).toBe(1); // -63 → UI 1
+    ex2(e2PanDeviceToUi(63)).toBe(127);
+  });
+  it2("Round-Trip innerhalb des Geräte-Bereichs ist verlustfrei", () => {
+    for (let ui = 1; ui <= 127; ui++) {
+      ex2(e2PanDeviceToUi(e2PanUiToDevice(ui))).toBe(ui);
+    }
   });
 });

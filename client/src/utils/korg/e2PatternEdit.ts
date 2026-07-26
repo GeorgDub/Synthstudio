@@ -28,6 +28,7 @@ import {
   PATTERN_NAME_LEN,
   PATTERN_BPM_OFFSET,
 } from "./e2Sysex";
+import { e2PanUiToDevice } from "./e2Layout";
 
 const clamp7 = (n: number) => Math.max(0, Math.min(127, Math.floor(n) || 0));
 const clampU8 = (n: number) => Math.max(0, Math.min(255, Math.floor(n) || 0));
@@ -80,12 +81,13 @@ export function setStepField(
 export type PartField = "volume" | "pan" | "sampleRef";
 
 /**
- * Setzt ein Part-Feld (nicht-destruktive Kopie). volume/sampleRef bestätigt
- * (Factory-Init: Volume @+0x15 = 0x7F). ⚠️ `pan` @+0x22 ist UNVERIFIZIERT: das
- * hacktribe-Factory-Init hat dort 0x14 (20), nicht 0x40 (Mitte) — der Offset
- * könnte ein anderer Part-Param sein. Bis ein Device-Dump das klärt, nur mit
- * Vorsicht nutzen (round-trip-sicher, aber evtl. nicht semantisch Pan).
- * Siehe omnitribe docs/reverse/pattern_format.md.
+ * Setzt ein Part-Feld (nicht-destruktive Kopie).
+ *
+ * v3.297: Volume = Amp Level @+0x18 (u8), Pan = Amp Pan @+0x19 (i8, 0=Center;
+ * `value` kommt in UI-Konvention 0..127 und wird konvertiert). Die frühere
+ * Unsicherheit („pan@0x22 unverifiziert, Factory-Init dort 0x14") ist damit
+ * aufgelöst: 0x22 IST kein Pan, sondern IFX Edit (TABLE 6) — deshalb der
+ * merkwürdige Wert. Gerätebefund bestätigt die Korrektur.
  */
 export function setPartField(
   body: Uint8Array,
@@ -99,7 +101,7 @@ export function setPartField(
   if (field === "volume") {
     out[base + PART_VOLUME_OFFSET] = clamp7(value);
   } else if (field === "pan") {
-    out[base + PART_PAN_OFFSET] = clamp7(value);
+    out[base + PART_PAN_OFFSET] = e2PanUiToDevice(clamp7(value));
   } else {
     const v = Math.max(0, Math.min(0xffff, Math.floor(value) || 0));
     out[base + PART_OSC_REF_OFFSET] = v & 0xff;

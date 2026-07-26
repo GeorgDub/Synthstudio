@@ -74,10 +74,41 @@ export const E2_PART_STRIDE = 0x330; // 816
 
 /** OSC/Sample-Referenz innerhalb eines Parts (u16 LE). */
 export const E2_PART_OSC_REF_OFFSET = 0x08;
-/** Part-Volume (u8 0..127). */
-export const E2_PART_VOLUME_OFFSET = 0x15;
-/** Part-Pan (u8 0..127, 64 = center). */
-export const E2_PART_PAN_OFFSET = 0x22;
+/**
+ * Part-Volume = Amp Level (u8 0..127) @ +0x18.
+ *
+ * v3.297-KORREKTUR (am Gerät bestätigt): vorher wurde 0x15 geschrieben —
+ * das ist laut Korgs offizieller "electribe MIDI Implementation Rev 1.00"
+ * (TABLE 6: Part Parameter) aber **EG Decay/Release**, nicht Level. Symptom
+ * auf realer Hardware: per SysEx gepushte Patterns hatten korrekte Steps,
+ * aber falsche Lautstärken (Level blieb Template-Wert, Decay wurde zerschossen).
+ * TABLE 6 (dreifach quell-verifiziert + Gerätebefund): Amp Level @ 24 (0x18).
+ */
+export const E2_PART_VOLUME_OFFSET = 0x18;
+/**
+ * Part-Pan = Amp Pan (i8, **0 = Center**, -63..+63 ≙ L..R) @ +0x19.
+ *
+ * v3.297-KORREKTUR: vorher u8@0x22 mit 64-Center — 0x22 ist laut TABLE 6
+ * **IFX Edit**. Achtung Semantik: Gerät speichert SIGNED mit 0 = Mitte;
+ * UI-seitige 0..127-Werte (64 = Mitte) müssen beim Schreiben nach i8
+ * (wert-64) und beim Lesen zurück (+64) konvertiert werden.
+ */
+export const E2_PART_PAN_OFFSET = 0x19;
+/** EG Decay/Release (u8) @ +0x15 — das Feld, das fälschlich als Volume beschrieben wurde. */
+export const E2_PART_EG_DECAY_OFFSET = 0x15;
+/** IFX Edit (u8) @ +0x22 — das Feld, das fälschlich als Pan beschrieben wurde. */
+export const E2_PART_IFX_EDIT_OFFSET = 0x22;
+
+/** UI-Pan (0..127, 64=Center) → Geräte-i8-Byte (0=Center), geclampt -63..+63. */
+export function e2PanUiToDevice(pan0127: number): number {
+  const centered = Math.max(-63, Math.min(63, Math.round(pan0127) - 64));
+  return centered & 0xff; // two's complement als Byte
+}
+/** Geräte-Pan-Byte (i8, 0=Center) → UI-Pan 0..127 (64=Center). */
+export function e2PanDeviceToUi(byte: number): number {
+  const signed = byte > 127 ? byte - 256 : byte;
+  return Math.max(0, Math.min(127, signed + 64));
+}
 
 /** Sequenz-Block innerhalb eines Parts: 64 × 12-Byte-Records. */
 export const E2_PART_SEQ_OFFSET = 0x30;

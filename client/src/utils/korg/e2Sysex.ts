@@ -23,6 +23,8 @@
  *      Siehe e2sBankReader.ts / e2sBankBuilder.ts.
  */
 
+import { e2PanDeviceToUi } from "./e2Layout";
+
 // ─── Frame-Konstanten ────────────────────────────────────────────────────────
 export const SYSEX_START = 0xf0;
 export const SYSEX_END = 0xf7;
@@ -267,8 +269,11 @@ export const PART_TABLE_OFFSET = 0x800; // body-relativ
 export const PART_COUNT = 16;
 export const PART_STRIDE = 0x330;
 export const PART_OSC_REF_OFFSET = 0x08; // u16 LE innerhalb eines Parts (Sample/OSC-Ref)
-export const PART_VOLUME_OFFSET = 0x15; // u8 0..127
-export const PART_PAN_OFFSET = 0x22; // u8 0..127 (64 = center)
+// v3.297-KORREKTUR (Gerätebefund + TABLE 6): Volume = Amp Level @0x18 (vorher
+// fälschlich 0x15 = EG Decay), Pan = Amp Pan @0x19 als i8 mit 0 = Center
+// (vorher fälschlich u8@0x22 = IFX Edit). Siehe e2Layout.ts.
+export const PART_VOLUME_OFFSET = 0x18; // u8 0..127 (Amp Level)
+export const PART_PAN_OFFSET = 0x19; // i8, 0 = Center (Amp Pan)
 // v3.296: Per-Part Filter-Block. Offsets dreifach verifiziert (Korgs offizielle
 // "electribe MIDI Implementation Rev 1.00" TABLE 6 + keijiro/e2edit struct Part
 // + maks/elfer PartType): Filter Type @0x0C (0..16), Cutoff @0x0D (0..127),
@@ -408,10 +413,12 @@ export function decodePatternBody(body: Uint8Array): E2PatternDecoded {
       steps.push(step);
     }
     const egRaw = body[base + PART_FILTER_EGINT_OFFSET] ?? 0;
+    const panRaw = body[base + PART_PAN_OFFSET] ?? 0;
     parts.push({
       sampleRef: readU16LE(body, base + PART_OSC_REF_OFFSET),
       volume: body[base + PART_VOLUME_OFFSET] ?? 0,
-      pan: body[base + PART_PAN_OFFSET] ?? 0,
+      // Amp Pan ist i8 (0 = Center) → in die UI-Konvention 0..127 (64=Center).
+      pan: e2PanDeviceToUi(panRaw),
       filterType: body[base + PART_FILTER_TYPE_OFFSET] ?? 0,
       cutoff: Math.min(127, body[base + PART_FILTER_CUTOFF_OFFSET] ?? 127),
       resonance: Math.min(127, body[base + PART_FILTER_RESONANCE_OFFSET] ?? 0),

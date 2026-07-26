@@ -82,6 +82,7 @@ import {
   ELECTRIBE_MAX_BPM,
   PARTS_PER_PATTERN,
 } from "./electribeImport";
+import { e2PanUiToDevice } from "./korg/e2Layout";
 
 // ─── Public API types ────────────────────────────────────────────────────────
 
@@ -181,8 +182,13 @@ export const E2_DEFAULT_PART_PAN = 64;
 // currently decode but we want round-trip-stable defaults for. These are
 // "best-effort" — the read-side ignores them, so they don't affect the
 // declared round-trip property.
-const PART_PITCH_OFFSET = 0x08;
-const PART_FXSEND_OFFSET = 0x0b;
+// v3.297-KORREKTUR (Korg TABLE 6): Oscillator Pitch @0x24 (i8 -63..+63).
+// Vorher wurde 0x08 beschrieben — das ist die VERIFIZIERTE OSC/Sample-Referenz
+// (u16 LE); der "Pitch"-Write hat also das Low-Byte der Sample-Nummer zerstört.
+const PART_PITCH_OFFSET = 0x24;
+// v3.297: MFX Send ist laut TABLE 6 ein On/Off-Byte @0x1B (kein 0..127-Send).
+// Vorher wurde 0x0B beschrieben (= Oscillator Edit).
+const PART_MFX_SEND_OFFSET = 0x1b;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -305,15 +311,16 @@ export function writePartBlock(view: DataView, partStart: number, part: E2PartIn
   const volume = clampInt(part.volume, 0, 127, E2_DEFAULT_PART_VOLUME);
   const pan = clampInt(part.pan, 0, 127, E2_DEFAULT_PART_PAN);
   view.setUint8(partStart + ELECTRIBE_REAL_PART_VOLUME_OFFSET, volume);
-  view.setUint8(partStart + ELECTRIBE_REAL_PART_PAN_OFFSET, pan);
+  // v3.297: Amp Pan @0x19 ist i8 mit 0 = Center — UI-0..127 konvertieren.
+  view.setUint8(partStart + ELECTRIBE_REAL_PART_PAN_OFFSET, e2PanUiToDevice(pan));
 
-  // Pitch: signed -64..+63 → byte (two's complement).
-  const pitch = clampInt(part.pitch, -64, 63, 0);
+  // Oscillator Pitch @0x24: signed -63..+63 → byte (two's complement).
+  const pitch = clampInt(part.pitch, -63, 63, 0);
   view.setInt8(partStart + PART_PITCH_OFFSET, pitch);
 
-  // FxSend 0..127.
+  // MFX Send @0x1B ist On/Off (TABLE 6) — jedes fxSend > 0 schaltet ihn an.
   const fxSend = clampInt(part.fxSend, 0, 127, 0);
-  view.setUint8(partStart + PART_FXSEND_OFFSET, fxSend);
+  view.setUint8(partStart + PART_MFX_SEND_OFFSET, fxSend > 0 ? 1 : 0);
 
   // Step records: 64 × 12 bytes starting at part+0x30.
   const steps = Array.isArray(part.steps) ? part.steps : [];

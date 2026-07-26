@@ -177,6 +177,7 @@ import {
   E2_ALLPAT_PATTERN_STRIDE,
   E2_ALLPAT_SLOT_COUNT,
   E2_ALLPAT_FILE_SIZE,
+  e2PanDeviceToUi,
 } from "./korg/e2Layout";
 
 // ─── Konstanten ───────────────────────────────────────────────────────────────
@@ -250,8 +251,11 @@ export const ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE = 127;
  *   - Pitch: kein Byte zeigt signed-distribution in der Bank.
  *   - FxSend: kein klares default-pattern identifiziert.
  */
-export const ELECTRIBE_REAL_PART_VOLUME_OFFSET = 0x15;
-export const ELECTRIBE_REAL_PART_PAN_OFFSET = 0x22;
+// v3.297-KORREKTUR (Gerätebefund + Korg TABLE 6): Volume = Amp Level @0x18
+// (vorher fälschlich 0x15 = EG Decay/Release), Pan = Amp Pan @0x19 als i8 mit
+// 0 = Center (vorher fälschlich u8@0x22 = IFX Edit). Siehe korg/e2Layout.ts.
+export const ELECTRIBE_REAL_PART_VOLUME_OFFSET = 0x18;
+export const ELECTRIBE_REAL_PART_PAN_OFFSET = 0x19;
 
 /** Hardware-Default fuer Part-Volume (beobachtet in 63.4% aller part-samples). */
 export const ELECTRIBE_REAL_PART_VOLUME_DEFAULT = 127;
@@ -764,16 +768,8 @@ function parseRealPartBlock(
     volume = 127;
   }
 
-  // Pan @ +0x22: 0..127 (64 = center). Defensive clamp.
-  const rawPan = safeU8(ELECTRIBE_REAL_PART_PAN_OFFSET);
-  let pan: number = rawPan;
-  if (pan > 127) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `Electribe-Parser: Part ${partIndex} pan ${rawPan} > 127 — clamp auf 127`
-    );
-    pan = 127;
-  }
+  // Pan = Amp Pan @ +0x19: i8 mit 0 = Center (v3.297) → UI-0..127 (64=Center).
+  const pan = e2PanDeviceToUi(safeU8(ELECTRIBE_REAL_PART_PAN_OFFSET));
 
   // Pitch + FxSend: nicht decodiert → Hardware-Defaults.
   const pitch = 0;
