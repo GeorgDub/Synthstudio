@@ -8,14 +8,17 @@
  * von `E2sSlotInput`-Records. Round-Trip via `parseE2sBank` ist die
  * Goldstandard-Verifizierung (siehe Tests).
  *
- * Layout (verified gegen e2sSample.all-Reference 2026-05-17, identisch
- * zur v3.3 Reader-Konvention):
+ * Layout (v3.286 korrigiert — Herleitung bei
+ * `E2S_ALL_OFFSET_TABLE_START` in constants.ts):
  *
  *   0x0000..0x0010  16B signature  "e2s sample all\x1a\x00"
- *   0x0010..0x07E0  2032B zero-padding (reserved)
- *   0x07E0..0x0BC8  250 × LE32 offset table (0 = empty slot)
- *   0x0BC8..0x1000  0x438 zero-padding to 4 KiB boundary
+ *   0x0010..0x0058  72B header-rest (reserved, bleibt 0)
+ *   0x0058..0x1000  1002 × LE32 offset table (0 = empty slot) — füllt exakt
  *   0x1000..EOF     concatenated RIFF/WAVE chunks (one per non-empty slot)
+ *
+ * Bis v3.285 stand hier „Tabelle @0x07E0, 250 Einträge, davor 2032B padding".
+ * Das war dieselbe Byte-Folge, nur falsch geschnitten: die Werks-Referenzdatei
+ * belegt die Indizes 482..492, und 0x0058 + 482*4 == 0x07E0.
  *
  * Pro Slot:
  *
@@ -32,7 +35,7 @@
  *   Geänderte oder neu hinzugefügte Slots werden re-encoded wie in v3.4.
  *
  * Bounds-Checks:
- *   - max 250 Slots
+ *   - max 1002 Slots (E2S_MAX_SLOTS)
  *   - max 10 MB PCM pro Slot (per-slot cap MAX_BYTES_PER_SLOT)
  *   - max 224 MB total PCM (E2S_MAX_TOTAL_PCM_BYTES)
  *   - max 512 MB total Datei (E2S_FILE_MAX_BYTES)
@@ -279,8 +282,9 @@ export function buildE2sBank(
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {
     dv.setUint32(E2S_ALL_OFFSET_TABLE_START + i * 4, offsetTable[i], true);
   }
-  // (Bytes zwischen Signature 0x10..0x07E0, und zwischen Table-End 0x0BC8..0x1000
-  //  sind bereits 0 dank Uint8Array-Default — kein expliziter memset nötig.)
+  // (Der Header-Rest 0x10..0x0058 ist bereits 0 dank Uint8Array-Default — kein
+  //  expliziter memset nötig. Hinter der Tabelle liegt kein Padding mehr: sie
+  //  endet exakt auf 0x1000.)
 
   // ── Stage 3 — RIFF-Chunks ───────────────────────────────────────────────────
   for (const p of pending) {
@@ -300,6 +304,19 @@ export function buildE2sBank(
   if (E2S_MAX_SLOTS * 4 !== E2S_ALL_OFFSET_TABLE_BYTES) {
     throw new E2sBuildError(
       `internal: offset-table-size mismatch (${E2S_MAX_SLOTS * 4} != ${E2S_ALL_OFFSET_TABLE_BYTES})`,
+    );
+  }
+  // Exact-Fit-Invariante: die Tabelle endet genau da, wo die Sample-Area
+  // beginnt. Genau diese Rechnung hätte den 0x07E0/250-Fehler auffallen lassen
+  // — 0x07E0 + 1000 == 0x0BC8 != 0x1000. Deshalb steht sie jetzt im Code.
+  if (
+    E2S_ALL_OFFSET_TABLE_START + E2S_ALL_OFFSET_TABLE_BYTES !==
+    E2S_ALL_SAMPLE_AREA_START
+  ) {
+    throw new E2sBuildError(
+      `internal: offset table does not end at the sample area ` +
+        `(0x${E2S_ALL_OFFSET_TABLE_START.toString(16)} + ${E2S_ALL_OFFSET_TABLE_BYTES} != ` +
+        `0x${E2S_ALL_SAMPLE_AREA_START.toString(16)})`,
     );
   }
 

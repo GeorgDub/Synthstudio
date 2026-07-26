@@ -34,7 +34,7 @@ import {
 export interface OpenedSlot {
   /** Stable React key. */
   rowId: string;
-  /** Slot-Index 0..249 in the on-disk offset-table. */
+  /** Slot-Index 0..E2S_MAX_SLOTS-1 in the on-disk offset-table. */
   slotIndex: number;
   /** Slot is empty in the source bank (offset=0). UI shows "Empty" placeholder. */
   empty: boolean;
@@ -93,7 +93,7 @@ export interface OpenedSlotSnapshot {
 // ─── Bank → OpenedSlot[] ──────────────────────────────────────────────────────
 
 /**
- * Convert a parsed `E2sBank` into the editor's 250-row slot-list.
+ * Convert a parsed `E2sBank` into the editor's slot-list (E2S_MAX_SLOTS rows).
  *
  * Every position 0..249 is represented — empty slots get `empty: true`
  * placeholders. All loaded slots start with `isDirty: false`.
@@ -423,4 +423,32 @@ export function displayName(s: OpenedSlot): string {
 export function displayCategory(s: OpenedSlot): string {
   if (s.empty) return "";
   return E2S_CATEGORY_NAMES[s.category] ?? "User";
+}
+
+/**
+ * v3.286 — Filter für den Slot-Browser.
+ *
+ * Wurde nötig, als die Offset-Tabelle von (fälschlich) 250 auf 1002 Einträge
+ * korrigiert wurde: eine Hacktribe-Bank hat ihre User-Samples ab Index 501,
+ * davor stehen hunderte leere Slots. Ohne Filter müsste man die durchscrollen.
+ *
+ * Reihenfolge bleibt die Slot-Reihenfolge — es wird nur weggelassen, nie
+ * umsortiert. `hideEmpty` wirkt nicht auf geänderte Slots: was man gerade
+ * bearbeitet hat, darf nicht unter dem Cursor verschwinden.
+ *
+ * Suche trifft den Index (`5`, `005`, `#5`) oder den Namen (case-insensitive).
+ */
+export function filterOpenedSlots(
+  slots: ReadonlyArray<OpenedSlot>,
+  query: string,
+  hideEmpty: boolean,
+): OpenedSlot[] {
+  const q = (query ?? "").trim().toLowerCase().replace(/^#/, "");
+  return slots.filter((s) => {
+    if (hideEmpty && s.empty && !s.isDirty) return false;
+    if (q.length === 0) return true;
+    const idxStr = String(s.slotIndex);
+    if (idxStr === q || idxStr.padStart(3, "0") === q) return true;
+    return s.name.toLowerCase().includes(q);
+  });
 }

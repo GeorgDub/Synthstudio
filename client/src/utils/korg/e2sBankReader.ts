@@ -6,7 +6,7 @@
  *
  * READ-ONLY-SCOPE für v3.3:
  *   - Magic-Check "e2s sample all\x1a\x00"
- *   - 250-Entry Offset-Table
+ *   - 1002-Entry Offset-Table (0x0058..0x1000)
  *   - Pro Slot: RIFF/WAVE-Header + fmt + data + korg/esli Sub-Chunk
  *   - PCM-Decode (16-bit LE → Float32 [-1,+1])
  *   - Korg-Metadata (name, category, loop, slices skeleton)
@@ -80,7 +80,7 @@ export interface E2sSlice {
  * interleaved L,R,L,R,... (gleiche Konvention wie EsxSample).
  */
 export interface E2sSlot {
-  /** Index in der 250-Entry-Offset-Table. */
+  /** Index in der 1002-Entry-Offset-Table. */
   index: number;
   /** OSC_0index (esli +0x08) — vom Gerät angezeigte Sample-Nummer (z.B. 501+).
    *  Link-Key für E2-Pattern-Part-Refs (die ebenfalls diese Nummer tragen). */
@@ -132,7 +132,7 @@ export interface E2sSlot {
 export interface E2sBank {
   /** Quelle (Filename oder "<bytes>"). */
   source: string;
-  /** Array Länge 250; null = leerer Slot. */
+  /** Array Länge E2S_MAX_SLOTS (1002); null = leerer Slot. */
   slots: Array<E2sSlot | null>;
   /** Rohe Offset-Table (für Diagnose / spätere Round-Trip-Writes). */
   offsetTable: Uint32Array;
@@ -577,7 +577,8 @@ export function parseE2sBank(
     throw new E2sParseError(`signature mismatch at offset 0x0000`);
   }
 
-  // Offset-Table (250 × u32 LE = 1000 bytes)
+  // Offset-Table (1002 × u32 LE = 4008 bytes, 0x0058..0x1000 — v3.286 korrigiert,
+  // vorher fälschlich 250 Einträge ab 0x07E0; siehe constants.ts)
   const offsetTable = new Uint32Array(E2S_MAX_SLOTS);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {

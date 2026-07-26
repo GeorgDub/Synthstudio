@@ -90,16 +90,47 @@ export const ESX1_SIZE_FILE_MIN = 0x00250010;
 export const ESX1_EMPTY_OFFSET = 0xffffffff;
 
 // ─── E2S device limits ────────────────────────────────────────────────────────
-// SoT: constants.py:65-74
-export const E2S_MAX_SLOTS = 250;
+// SoT: constants.py:65-102
+/**
+ * Adressierbare Sample-Slots in einem `.all`. Die Offset-Tabelle füllt das
+ * Fenster `E2S_ALL_OFFSET_TABLE_START`..`E2S_ALL_SAMPLE_AREA_START` exakt aus:
+ * `0x0058 + 1002 * 4 === 0x1000`.
+ *
+ * v3.286: **war 250 — das war falsch.** Siehe die Herleitung bei
+ * `E2S_ALL_OFFSET_TABLE_START`. Die 250 stammten aus einer fehlgedeuteten
+ * Tabellen-Startadresse; mit der korrigierten Adresse ergibt sich die
+ * Slot-Zahl zwangsläufig aus der Fenstergröße.
+ *
+ * Praktische Folge: Hacktribe legt User-Samples ab Index 501 ab. Mit 250
+ * Slots war jede Hacktribe-Bank unlesbar — die Offsets lagen jenseits des
+ * gelesenen Bereichs.
+ */
+export const E2S_MAX_SLOTS = 1002;
+/**
+ * Höchster Slot-Index, den das Geräte-UI als wählbaren Sample-Platz zeigt
+ * (exklusiv). Die zwei letzten Tabellen-Einträge sind reserviert und werden
+ * nie als User-Slot angeboten. SoT: constants.py `SAMPLE_SLOT_INDEX_MAX`.
+ */
+export const E2S_SLOT_INDEX_MAX = 1000;
 /** Maximum user-visible sample name length im Device-UI; on-disk speichert das
  *  korg-chunk nur 16 Bytes (ESLI_NAME_LEN). */
 export const E2S_NAME_MAX_CHARS = 24;
+/**
+ * Obergrenze für die Summe aller PCM-Daten einer Bank.
+ *
+ * ACHTUNG — bekannte Abweichung zur SoT: der Python-Editor führt hier seit
+ * TASK-029 `24 * 1024 * 1024` (das echte Sample-Speicher-Limit des Geräts).
+ * Wir behalten bewusst die weitere Grenze: sie ist nur ein Schutz gegen
+ * Speicher-Explosion beim Bauen, und ein Absenken würde Banken zurückweisen,
+ * die sich hier bisher bauen ließen. Das Gerät entscheidet ohnehin selbst,
+ * was es lädt. Ein Absenken (oder eine Warnung ab 24 MB) ist eine
+ * Produktentscheidung, keine Formatkorrektur — deshalb hier nicht mitgezogen.
+ */
 export const E2S_MAX_TOTAL_PCM_BYTES = 224 * 1024 * 1024; // ~224 MB
 export const E2S_GLOBAL_SECTION_SIZE = 256;
 
 // ─── E2S `.all` container layout ──────────────────────────────────────────────
-// SoT: constants.py:76-85 (verified gegen e2sSample.all 2026-05-17)
+// SoT: constants.py:104-139
 /** 16-byte signature: "e2s sample all\x1a\x00". */
 export const E2S_ALL_SIGNATURE = new Uint8Array([
   0x65, 0x32, 0x73, 0x20, // "e2s "
@@ -108,8 +139,32 @@ export const E2S_ALL_SIGNATURE = new Uint8Array([
   0x6c, 0x6c, 0x1a, 0x00, // "ll\x1a\0"
 ]);
 export const E2S_ALL_SIGNATURE_LEN = E2S_ALL_SIGNATURE.length; // 16
-export const E2S_ALL_OFFSET_TABLE_START = 0x07e0;
-export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 1000
+/**
+ * Startadresse der Offset-Tabelle im `.all`.
+ *
+ * v3.286: **war 0x07E0 — das war ein Trugschluss aus einer einzigen
+ * Referenzdatei.** Die Herleitung, empirisch geklärt im Python-Editor gegen
+ * die Werks-`e2sSample.all` von 2014 *und* 13 Dumps echter Geräte von 2025
+ * (Korg_ESX_E2S_Editor, TASK-029, constants.py:110-133):
+ *
+ * Die Werksdatei hat 11 Samples, und die liegen auf den Tabellen-Indizes
+ * 482..492. Weil `0x0058 + 482 * 4 === 0x07E0` ist, stand der erste
+ * *nicht-null* Eintrag genau auf 0x07E0 — die Tabelle sah aus, als würde sie
+ * dort anfangen. Die 482 Null-Einträge davor gingen als „reserved padding"
+ * durch. Die Gerätedumps legen User-Samples ab Index 0 ab und haben das
+ * sofort entlarvt: dort stehen alle Offsets bei `0x0058..`, und die Region
+ * 0x07E0 ist leer.
+ *
+ * Die Werksdatei bleibt mit der korrigierten Adresse bit-exakt: 482 Nullen,
+ * dann die 11 Offsets, dann Nullen bis 0x1000 — dieselben Bytes, nur richtig
+ * interpretiert. Deshalb fiel der Fehler beim Round-Trip nie auf.
+ *
+ * Nicht zu verwechseln mit Hacktribes `get_sample_pointer = i * 4 + 0x10`:
+ * dessen Basis ist nicht der Dateianfang (Differenz 0x48).
+ */
+export const E2S_ALL_OFFSET_TABLE_START = 0x0058;
+/** 1002 × LE32 = 4008 B. Füllt 0x0058..0x1000 exakt aus (siehe Invariante unten). */
+export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 4008
 export const E2S_ALL_SAMPLE_AREA_START = 0x1000;
 
 // ─── korg/esli sub-chunk inside each E2S RIFF/WAVE ───────────────────────────
