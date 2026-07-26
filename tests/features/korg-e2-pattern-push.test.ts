@@ -127,6 +127,35 @@ describe("round-trip: SynthStudio → E2 body → decode → import", () => {
     expect(p0.steps[1].active).toBe(false);
     expect(p0.steps[2]).toMatchObject({ active: true, velocity: 64 });
   });
+
+  // v3.297: Der User-Report "die steps sind zwar richtig aber die vol und
+  // sonstige Werte passen noch nicht" kam von falschen Part-Offsets (Volume war
+  // 0x15=EG-Decay, Pan 0x22=IFX-Edit). Dieser Test sichert, dass die per SysEx
+  // gepushten Werte an den KORREKTEN Offsets (Amp Level 0x18 / Amp Pan 0x19)
+  // landen und beim Zurücklesen unverändert dekodiert werden.
+  it("preserves per-part volume + pan through the SysEx body (0x18/0x19)", () => {
+    const src = pattern({
+      stepCount: 16,
+      parts: [
+        part("Loud L", { volume: 1, pan: -1, steps: [{ active: true, velocity: 100, pitch: 0 }] }),
+        part("Half C", { volume: 0.5, pan: 0, steps: [{ active: true, velocity: 100, pitch: 0 }] }),
+        part("Quiet R", { volume: 0, pan: 1, steps: [{ active: true, velocity: 100, pitch: 0 }] }),
+      ],
+    });
+    const decoded = decodePatternBody(synthstudioPatternToBody(src));
+
+    // Volume: 0..1 → 0..127 (device Amp Level @0x18).
+    expect(decoded.parts[0].volume).toBe(127);
+    expect(decoded.parts[1].volume).toBe(Math.round(0.5 * 127)); // 64
+    expect(decoded.parts[2].volume).toBe(0);
+
+    // Pan: −1/0/+1 → UI 1/64/127 (device Amp Pan @0x19, i8 0=center). Hard-left
+    // UI 0 → Gerät -63 (kein -64 darstellbar) → zurück UI 1 (±63-Clamp, siehe
+    // e2-layout.test.ts). Center + hard-right sind verlustfrei.
+    expect(decoded.parts[0].pan).toBe(1); // hard left (±63-Clamp)
+    expect(decoded.parts[1].pan).toBe(64); // center
+    expect(decoded.parts[2].pan).toBe(127); // hard right
+  });
 });
 
 // ─── Store push via a fake device that ACKs writes ────────────────────────────

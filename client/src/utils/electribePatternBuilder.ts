@@ -101,9 +101,11 @@ export interface E2PartInput {
   /** Optional sample reference. Not currently encoded in the part-header (the
    *  read-side does not decode this field deterministically). Kept for future use. */
   sampleId?: number;
-  /** 0..127 — Part Volume @ part+0x15. Default 127 (Hardware-Standard). */
+  /** 0..127 — Part Volume = Amp Level @ part+0x18. Default 127 (Hardware-Standard).
+   *  (v3.297: vorher fälschlich als 0x15 = EG Decay dokumentiert.) */
   volume?: number;
-  /** 0..127 — Part Pan @ part+0x22 (64 = center). Default 64. */
+  /** 0..127 — Part Pan = Amp Pan @ part+0x19 (64 = center). Default 64.
+   *  (v3.297: vorher fälschlich als 0x22 = IFX Edit dokumentiert.) */
   pan?: number;
   /** Pitch in semitones. Currently not bit-exact-decoded by reader → written
    *  as a signed byte in part+0x08, but reader returns 0 either way. */

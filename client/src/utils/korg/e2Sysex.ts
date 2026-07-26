@@ -346,8 +346,8 @@ export function stepHasMotion(step: E2Step): boolean {
 }
 export interface E2PartDecoded {
   sampleRef: number; // u16 LE @ +0x08 (Sample/OSC-Nummer)
-  volume: number; // @ +0x15
-  pan: number; // @ +0x22 (64 = center)
+  volume: number; // = Amp Level @ +0x18 (v3.297; vorher falsch 0x15 = EG Decay)
+  pan: number; // = Amp Pan @ +0x19, UI-0..127 (v3.297; vorher falsch 0x22 = IFX Edit)
   /** v3.296: Filter Type @ +0x0C (roher Gerätewert 0..16, TABLE 6). */
   filterType: number;
   /** v3.296: Filter Cutoff @ +0x0D (0..127). */

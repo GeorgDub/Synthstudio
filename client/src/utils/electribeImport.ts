@@ -756,8 +756,8 @@ function parseRealPartBlock(
   // klares default-byte in der 4000-sample-bank gefunden).
   const sampleId = safeU16LE(8);
 
-  // Volume @ +0x15: 0..127. Defensive clamp gegen out-of-range (sollte nie
-  // > 127 sein laut bank-histogram, aber defensiv parsen).
+  // Volume = Amp Level @ +0x18: 0..127 (v3.297; vorher falsch 0x15 = EG Decay).
+  // Defensive clamp gegen out-of-range (sollte nie > 127 sein laut bank-histogram).
   const rawVol = safeU8(ELECTRIBE_REAL_PART_VOLUME_OFFSET);
   let volume: number = rawVol;
   if (volume > 127) {

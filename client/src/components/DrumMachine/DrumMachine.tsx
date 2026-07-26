@@ -81,7 +81,18 @@ import {
 } from "@/utils/electribeImport";
 import { ElectribePickerModal } from "./ElectribePickerModal";
 import { parseE2sBank } from "@/utils/korg/e2sBankReader";
-import { buildE2sSampleMap } from "@/utils/korg/e2sPatternSampleLink";
+import {
+  buildE2sSampleMap,
+  summarizeE2sSampleLink,
+} from "@/utils/korg/e2sPatternSampleLink";
+// v3.297: Pattern ⇄ Gerät (Korg E2/E2S SysEx) direkt im Sequenzer.
+import {
+  useE2sDeviceStore,
+  getE2sDeviceState,
+} from "@/store/useE2sDeviceStore";
+import { synthstudioPatternToBody } from "@/utils/korg/synthstudioToE2Pattern";
+import { e2FilterToImportedFilter } from "@/utils/korg/e2FilterMap";
+import type { E2PatternDecoded } from "@/utils/korg/e2Sysex";
 import { encodeWavStereo } from "@/audio/wavEncoder";
 import {
   requireProFeature,
@@ -1241,12 +1252,19 @@ function PatternRow({
  * WAV-Blob-URL + Namen abbildet. Encoding via shared wavEncoder; Blob-URLs
  * werden pro Nummer gecacht. Match per OSC_0index (value-based, robust).
  */
+/** Resolver + zugrunde liegende Sample-Map (für Link-Diagnose im Import-Toast). */
+interface E2sSampleLink {
+  resolve: (sampleId: number) => { url: string; name: string } | null;
+  /** Geräte-Sample-Nr. → Slot. Für diagnoseE2sLink (nur .has/.keys genutzt). */
+  map: ReadonlyMap<number, unknown>;
+}
+
 function makeE2sSampleResolver(
   bank: ReturnType<typeof parseE2sBank>
-): (sampleId: number) => { url: string; name: string } | null {
+): E2sSampleLink {
   const map = buildE2sSampleMap(bank);
   const cache = new Map<number, { url: string; name: string }>();
-  return (sampleId: number) => {
+  const resolve = (sampleId: number) => {
     const hit = cache.get(sampleId);
     if (hit) return hit;
     const slot = map.get(sampleId);
@@ -1269,6 +1287,7 @@ function makeE2sSampleResolver(
     cache.set(sampleId, res);
     return res;
   };
+  return { resolve, map };
 }
 
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
@@ -1406,8 +1425,9 @@ function DrumMachineInner({
     fileName: string;
     patterns: ParsedPattern[];
     /** v3.272: optionaler Sample-Resolver aus einer mitgeladenen .all-Bank.
-     *  sampleId (Geräte-Nr. 501+) → Blob-URL + Name, sonst null. */
-    resolveSample?: (sampleId: number) => { url: string; name: string } | null;
+     *  sampleId (Geräte-Nr. 501+) → Blob-URL + Name, sonst null. v3.297: bündelt
+     *  zusätzlich die Sample-Map für die Link-Diagnose im Import-Toast. */
+    sampleLink?: E2sSampleLink;
   } | null>(null);
   // TASK-238 (v2.89): Sample-Slice-Editor-State. channelData ist mono (Kanal 0).
   const [sliceEditor, setSliceEditor] = useState<{
@@ -1772,11 +1792,7 @@ function DrumMachineInner({
   //     useAutomationStore braucht App-Level-Wiring (Drum-Part-IDs unbekannt
   //     auf Util-Ebene). Follow-up via App.tsx-Bridge.
   const importElectribePatternIntoActive = useCallback(
-    (
-      parsed: ParsedPattern,
-      fileName: string,
-      resolveSample?: (sampleId: number) => { url: string; name: string } | null
-    ) => {
+    (parsed: ParsedPattern, fileName: string, sampleLink?: E2sSampleLink) => {
       if (!pattern) return;
       const conv: SynthstudioPatternImport =
         convertParsedPatternToSynthstudio(parsed);
@@ -1788,6 +1804,8 @@ function DrumMachineInner({
       // Per-Part Steps + Volume + Pan (so viele Parts wie im aktiven Pattern existieren).
       const partLimit = Math.min(conv.drumParts.length, pattern.parts.length);
       let linked = 0;
+      // v3.297: Sample-Refs aktiver Parts sammeln → aussagekräftige Link-Diagnose.
+      const requestedSampleIds: number[] = [];
       for (let i = 0; i < partLimit; i++) {
         const part = pattern.parts[i];
         const src = conv.drumParts[i];
@@ -1807,11 +1825,14 @@ function DrumMachineInner({
         // v3.272: Sample aus mitgeladener .all-Bank verlinken (Part-Ref +0x08
         // 501+ → OSC_0index). Nur Parts mit aktiven Steps; ohne Treffer bleibt der
         // Part unverändert (kein Mislink, kein Crash) — analog zum ESX-Pfad.
-        if (resolveSample && steps.some(a => a)) {
-          const s = resolveSample(src.sampleId);
-          if (s) {
-            dm.setPartSample(part.id, s.url, s.name);
-            linked++;
+        if (steps.some(a => a) && src.sampleId > 0) {
+          requestedSampleIds.push(src.sampleId);
+          if (sampleLink) {
+            const s = sampleLink.resolve(src.sampleId);
+            if (s) {
+              dm.setPartSample(part.id, s.url, s.name);
+              linked++;
+            }
           }
         }
       }
@@ -1820,11 +1841,19 @@ function DrumMachineInner({
         conv.automationLanes.length > 0
           ? ` + ${conv.automationLanes.length} Motion-Lane(s)`
           : "";
-      const sampleInfo = resolveSample ? `, ${linked} Spur(en) mit Sample` : "";
+      const sampleInfo = summarizeE2sSampleLink(
+        !!sampleLink,
+        requestedSampleIds,
+        linked,
+        sampleLink?.map ?? null
+      );
       toast(
-        `Electribe importiert: ${fileName} → ${conv.name} (${partLimit}/16 Parts${motionInfo}${sampleInfo})`,
+        `Electribe importiert: ${fileName} → ${conv.name} (${partLimit}/16 Parts${motionInfo}${sampleInfo.summary})`,
         { kind: "success" }
       );
+      if (sampleInfo.hint) {
+        toast(sampleInfo.hint, { kind: "warning", duration: 6000 });
+      }
 
       // Motion-Sequencer-Daten als CustomEvent rausreichen — App.tsx bridge
       // entscheidet, ob er sie in useAutomationStore einspeist (braucht Store-Ref).
@@ -1847,13 +1876,11 @@ function DrumMachineInner({
   // Jedes Pattern wird zu PatternData gemappt; ist ein Sample-Resolver da, werden
   // Parts mit aktiven Steps per Geräte-Nummer (501+) mit Samples verlinkt.
   const importElectribeBankAsPatterns = useCallback(
-    (
-      patterns: ParsedPattern[],
-      fileName: string,
-      resolveSample?: (sampleId: number) => { url: string; name: string } | null
-    ) => {
+    (patterns: ParsedPattern[], fileName: string, sampleLink?: E2sSampleLink) => {
       if (patterns.length === 0) return;
       let totalLinked = 0;
+      // v3.297: über ALLE Patterns gesammelte Sample-Refs → Bank-weite Diagnose.
+      const requestedSampleIds: number[] = [];
       const patternDatas: PatternData[] = patterns.map(parsed => {
         const conv = convertParsedPatternToSynthstudio(parsed);
         return {
@@ -1864,8 +1891,11 @@ function DrumMachineInner({
           bpm: conv.bpm,
           parts: conv.drumParts.map(dp => {
             const active = dp.steps.some(a => a);
+            if (active && dp.sampleId > 0) requestedSampleIds.push(dp.sampleId);
             const linked =
-              resolveSample && active ? resolveSample(dp.sampleId) : null;
+              sampleLink && active && dp.sampleId > 0
+                ? sampleLink.resolve(dp.sampleId)
+                : null;
             if (linked) totalLinked++;
             return {
               id: "",
@@ -1889,13 +1919,19 @@ function DrumMachineInner({
         };
       });
       const ids = dm.addPatternsData(patternDatas);
-      const sampleInfo = resolveSample
-        ? `, ${totalLinked} Spur(en) mit Sample`
-        : "";
+      const sampleInfo = summarizeE2sSampleLink(
+        !!sampleLink,
+        requestedSampleIds,
+        totalLinked,
+        sampleLink?.map ?? null
+      );
       toast(
-        `Electribe-Bank importiert: ${fileName} → ${ids.length} Pattern(s)${sampleInfo}`,
+        `Electribe-Bank importiert: ${fileName} → ${ids.length} Pattern(s)${sampleInfo.summary}`,
         { kind: "success", duration: 3500 }
       );
+      if (sampleInfo.hint) {
+        toast(sampleInfo.hint, { kind: "warning", duration: 6000 });
+      }
     },
     [dm]
   );
@@ -1903,10 +1939,7 @@ function DrumMachineInner({
   // Pure-File-Variante (fuer Drag-Drop + File-Picker). v3.272: optionaler
   // Sample-Resolver aus einer mitgeladenen .all-Bank verlinkt Parts mit Samples.
   const handleElectribeFile = useCallback(
-    (
-      file: File,
-      resolveSample?: (sampleId: number) => { url: string; name: string } | null
-    ) => {
+    (file: File, sampleLink?: E2sSampleLink) => {
       if (!pattern) return;
       // TASK-232 (v2.97): Electribe-Import ist ein Pro-Feature.
       if (!requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT)) return;
@@ -1924,14 +1957,14 @@ function DrumMachineInner({
             importElectribePatternIntoActive(
               bank.patterns[0],
               file.name,
-              resolveSample
+              sampleLink
             );
           } else {
             // Bank → Picker-Dialog oeffnen.
             setElectribePicker({
               fileName: file.name,
               patterns: bank.patterns,
-              resolveSample,
+              sampleLink,
             });
           }
         } catch (err) {
@@ -1962,14 +1995,12 @@ function DrumMachineInner({
         files.find(f => /\.(e2sallpat|e2spat|e2pattern)$/i.test(f.name)) ??
         (sampleFile ? undefined : files[0]);
 
-      let resolveSample:
-        | ((sampleId: number) => { url: string; name: string } | null)
-        | undefined;
+      let sampleLink: E2sSampleLink | undefined;
       if (sampleFile) {
         try {
           const buf = await sampleFile.arrayBuffer();
           const bank = parseE2sBank(new Uint8Array(buf), sampleFile.name);
-          resolveSample = makeE2sSampleResolver(bank);
+          sampleLink = makeE2sSampleResolver(bank);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           toast(`Sample-Bank "${sampleFile.name}" nicht lesbar: ${msg}`, {
@@ -1980,7 +2011,7 @@ function DrumMachineInner({
       }
 
       if (patternFile) {
-        handleElectribeFile(patternFile, resolveSample);
+        handleElectribeFile(patternFile, sampleLink);
       } else if (sampleFile) {
         toast(
           "Nur eine .all-Sample-Bank gewählt — wähle/droppe zusätzlich eine .e2sallpat/.e2spat-Pattern-Datei.",
@@ -2125,6 +2156,115 @@ function DrumMachineInner({
     },
     [dm]
   );
+
+  // ── v3.297: Pattern ⇄ Gerät (Korg E2/E2S SysEx) direkt im Sequenzer ─────────
+  // Nutzt die bestehende useE2sDeviceStore-Infrastruktur (E2SysexBridge) — die
+  // gleiche, die der E2sDevicePanel verwendet. „→ Gerät" schreibt das aktive
+  // Pattern in den Edit-Buffer (Current Pattern), „← Gerät" holt es zurück und
+  // legt Steps/Volume/Pan/Filter auf die aktiven Parts.
+  const e2sDevice = useE2sDeviceStore();
+
+  const handlePushPatternToDevice = useCallback(async () => {
+    const active = dm.getActivePattern();
+    if (!active) return;
+    if (e2sDevice.status !== "connected") {
+      toast("Kein Korg E2/E2S verbunden — im E2S-Tab verbinden.", {
+        kind: "warning",
+        duration: 4000,
+      });
+      return;
+    }
+    try {
+      const body = synthstudioPatternToBody(active);
+      const ok = await e2sDevice.pushCurrent(body);
+      toast(
+        ok
+          ? `Pattern „${active.name}" ans Gerät gesendet (Current Pattern).`
+          : `Senden fehlgeschlagen${e2sDevice.error ? ": " + e2sDevice.error : " — läuft der Geräte-Sequencer? (Stop drücken)"}`,
+        { kind: ok ? "success" : "error", duration: 4500 }
+      );
+    } catch (err) {
+      toast(
+        `Senden fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+        { kind: "error", duration: 5000 }
+      );
+    }
+  }, [dm, e2sDevice]);
+
+  const handlePullPatternFromDevice = useCallback(async () => {
+    const active = dm.getActivePattern();
+    if (!active) return;
+    if (e2sDevice.status !== "connected") {
+      toast("Kein Korg E2/E2S verbunden — im E2S-Tab verbinden.", {
+        kind: "warning",
+        duration: 4000,
+      });
+      return;
+    }
+    try {
+      const summary = await e2sDevice.pullCurrent();
+      const decoded = getE2sDeviceState().currentDecoded;
+      if (!summary || !decoded) {
+        toast("Gerät hat kein Pattern geliefert (Timeout?).", {
+          kind: "error",
+          duration: 4500,
+        });
+        return;
+      }
+      applyE2DecodedToActivePattern(decoded);
+      toast(`Pattern „${decoded.name || summary.name}" vom Gerät geladen.`, {
+        kind: "success",
+        duration: 4000,
+      });
+    } catch (err) {
+      toast(
+        `Laden fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+        { kind: "error", duration: 5000 }
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dm, e2sDevice]);
+
+  /** Legt ein per SysEx geholtes E2-Pattern auf die Parts des aktiven Patterns. */
+  const applyE2DecodedToActivePattern = useCallback(
+    (decoded: E2PatternDecoded) => {
+      const active = dm.getActivePattern();
+      if (!active) return;
+      dm.setPatternBpm(active.id, decoded.bpm);
+      const limit = Math.min(decoded.parts.length, active.parts.length);
+      for (let i = 0; i < limit; i++) {
+        const part = active.parts[i];
+        const src = decoded.parts[i];
+        const target = active.stepCount;
+        const steps = new Array<boolean>(target).fill(false);
+        const vels = new Array<number>(target).fill(100);
+        const cap = Math.min(target, src.steps.length);
+        for (let s = 0; s < cap; s++) {
+          steps[s] = src.steps[s].active;
+          vels[s] = src.steps[s].velocity || 100;
+        }
+        dm.setPartSteps(part.id, steps, vels);
+        dm.setPartVolume(part.id, src.volume);
+        dm.setPartPan(part.id, src.pan);
+        // Verifizierten Part-Filter (Type/Cutoff/Res) auf die ChannelFx mappen.
+        const f = e2FilterToImportedFilter(
+          src.filterType,
+          src.cutoff,
+          src.resonance
+        );
+        if (f) {
+          dm.setPartFx(part.id, {
+            filterEnabled: f.enabled,
+            filterType: f.type,
+            filterFreq: f.freq,
+            filterQ: f.q,
+          });
+        }
+      }
+    },
+    [dm]
+  );
+
   // ESX-Song → Song-Arrangement. DrumMachine kennt den Song-Store nicht;
   // wir bridgen via CustomEvent nach App.tsx (analog electribe:motion-lanes),
   // wo useSongStore.createArrangement + Song-Modus verdrahtet sind.
@@ -4429,6 +4569,34 @@ function DrumMachineInner({
               data-testid="electribe-import-input"
             />
 
+            {/* v3.297: Pattern ⇄ Korg E2/E2S per SysEx direkt aus dem Sequenzer */}
+            <button
+              onClick={() => void handlePushPatternToDevice()}
+              disabled={e2sDevice.status !== "connected" || e2sDevice.busy}
+              title={
+                e2sDevice.status === "connected"
+                  ? "Aktives Pattern an das Korg E2/E2S senden (Current Pattern, SysEx)"
+                  : "Kein Korg E2/E2S verbunden — im E2S-Tab verbinden"
+              }
+              className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-40"
+              data-testid="e2s-push-pattern"
+            >
+              ⇧ Gerät
+            </button>
+            <button
+              onClick={() => void handlePullPatternFromDevice()}
+              disabled={e2sDevice.status !== "connected" || e2sDevice.busy}
+              title={
+                e2sDevice.status === "connected"
+                  ? "Aktuelles Pattern vom Korg E2/E2S holen und ins aktive Pattern laden (SysEx)"
+                  : "Kein Korg E2/E2S verbunden — im E2S-Tab verbinden"
+              }
+              className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-40"
+              data-testid="e2s-pull-pattern"
+            >
+              ⇩ Gerät
+            </button>
+
             {/* v3.285: „📦 KORG Bank" entfernt — der eine „📥 Korg Import"-
                 Button (neben One-Shot) übernimmt Bank/Sample/Pattern-Import;
                 der Bank/Sample-Editor ist aus dessen Dialog erreichbar. */}
@@ -5468,7 +5636,7 @@ function DrumMachineInner({
             importElectribePatternIntoActive(
               p,
               electribePicker.fileName,
-              electribePicker.resolveSample
+              electribePicker.sampleLink
             );
             setElectribePicker(null);
           }}
@@ -5476,7 +5644,7 @@ function DrumMachineInner({
             importElectribeBankAsPatterns(
               pats,
               electribePicker.fileName,
-              electribePicker.resolveSample
+              electribePicker.sampleLink
             );
             setElectribePicker(null);
           }}
