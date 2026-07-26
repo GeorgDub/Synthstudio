@@ -29,6 +29,16 @@ import {
   parseHexBytes,
   validateRamRange,
 } from "@/utils/korg/hacktribeRam";
+import {
+  FX_PRESET_SIZE,
+  assignedControls,
+  isIfx2Allowed,
+  labelForChainIndex,
+  labelForSourceControl,
+  parseFxPreset,
+  type E2FxPreset,
+  type FxSourceEncoding,
+} from "@/utils/korg/e2FxPreset";
 
 const SELECT_CLASS =
   "bg-bg-base border border-border-color rounded px-1 py-0.5 text-[10px] text-text-primary";
@@ -49,6 +59,10 @@ export function HacktribeRamPanel({ onClose }: { onClose?: () => void }) {
   const [stoppedOk, setStoppedOk] = useState(false);
   const [understoodOk, setUnderstoodOk] = useState(false);
   const [busy, setBusy] = useState<"read" | "write" | null>(null);
+  // v3.286.0: dekodierter FX-Preset, wenn der gelesene Bereich einer ist.
+  const [preset, setPreset] = useState<E2FxPreset | null>(null);
+  const [presetRaw, setPresetRaw] = useState<Uint8Array | null>(null);
+  const [encoding, setEncoding] = useState<FxSourceEncoding>("ram");
 
   const entry = findRamMapEntry(mapKey);
   const parsedAddr = parseAddress(addrText);
@@ -74,8 +88,18 @@ export function HacktribeRamPanel({ onClose }: { onClose?: () => void }) {
     setBusy("read");
     try {
       const res = await readRam(parsedAddr.addr, parsedLen, remote.globalChannel);
-      if (!res.ok) { toast(res.error, { kind: "error" }); setDump(""); return; }
+      if (!res.ok) { toast(res.error, { kind: "error" }); setDump(""); setPreset(null); setPresetRaw(null); return; }
       setDump(formatHexDump(res.value, parsedAddr.addr));
+      // Wenn der Bereich ein FX-Preset ist, zusätzlich dekodieren. Der Hex-Dump
+      // bleibt daneben stehen — er ist die Grundlage, die Dekodierung nur eine
+      // Deutung, und bei einer falschen Kodierungsannahme sieht man das nur roh.
+      if (isFxPresetSelection) {
+        setPresetRaw(res.value);
+        setPreset(parseFxPreset(res.value, { encoding }));
+      } else {
+        setPresetRaw(null);
+        setPreset(null);
+      }
       // Gelesenes direkt als Schreibvorlage anbieten — der übliche Arbeitsweg
       // ist lesen, ein Byte ändern, zurückschreiben.
       setWriteHex(
@@ -114,6 +138,16 @@ export function HacktribeRamPanel({ onClose }: { onClose?: () => void }) {
 
   const canWrite =
     stoppedOk && understoodOk && busy === null && writeHex.trim().length > 0 && parsedAddr.ok;
+
+  /** Zeigt die Auswahl auf einen FX-Preset-Slot in voller Länge? */
+  const isFxPresetSelection =
+    (mapKey === "ifxPreset" || mapKey === "mfxPreset") && parsedLen === FX_PRESET_SIZE;
+
+  /** Kodierung umschalten und das bereits Gelesene neu deuten — kein Re-Read. */
+  function switchEncoding(next: FxSourceEncoding) {
+    setEncoding(next);
+    if (presetRaw) setPreset(parseFxPreset(presetRaw, { encoding: next }));
+  }
 
   return (
     <div className="p-2 space-y-2 text-text-primary" data-testid="hacktribe-ram-panel">
@@ -207,6 +241,81 @@ export function HacktribeRamPanel({ onClose }: { onClose?: () => void }) {
           </span>
         )}
       </div>
+
+      {/* ── Dekodierter FX-Preset ───────────────────────────────────────── */}
+      {preset && (
+        <div
+          data-testid="fx-preset-view"
+          className="text-[10px] bg-bg-base border border-accent-primary/40 rounded p-2 space-y-1"
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-text-primary font-bold">
+              {preset.name || "(ohne Namen)"}
+            </span>
+            <span className="text-text-dim">·</span>
+            <label className="text-text-dim flex items-center gap-1">
+              Quell-Kodierung
+              <select
+                data-testid="fx-preset-encoding"
+                value={encoding}
+                onChange={(e) => switchEncoding(e.target.value as FxSourceEncoding)}
+                className={SELECT_CLASS}
+                title="Preset-Datei-Format nutzt 0x41–0x4A, RAM-Format 0x01–0x0A für dieselben Bedienelemente. Wir lesen aus RAM — belegt ist das aber nicht. Umschalten deutet dasselbe Gelesene neu."
+              >
+                <option value="ram">RAM (0x01–0x0A)</option>
+                <option value="preset">Preset-Datei (0x41–0x4A)</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 text-text-muted">
+            <span className="text-text-dim">IFX 1</span>
+            <span>{preset.ifx1.deviceName} — pre {preset.ifx1.preLevel} / post {preset.ifx1.postLevel}</span>
+            <span className="text-text-dim">IFX 2</span>
+            <span>
+              {preset.ifx2.deviceName} — pre {preset.ifx2.preLevel} / post {preset.ifx2.postLevel}
+              {!isIfx2Allowed(preset.ifx2.device) && (
+                <span className="text-accent-secondary"> ⚠ nicht in der IFX-2-Whitelist</span>
+              )}
+            </span>
+            <span className="text-text-dim">MFX</span>
+            <span>{preset.mfx.deviceName} — pre {preset.mfx.preLevel} / post {preset.mfx.postLevel}</span>
+          </div>
+
+          {/* Die Zuweisungen — der eigentliche Zweck: hier sieht man, ob eine
+              per Formular gesendete map_fx_param-Zuweisung angekommen ist. */}
+          {assignedControls(preset).length === 0 ? (
+            <p className="text-text-dim">Keine Regler-Zuweisungen belegt.</p>
+          ) : (
+            <table className="w-full text-left" data-testid="fx-preset-controls">
+              <thead className="text-text-dim">
+                <tr>
+                  <th className="font-normal pr-2">Slot</th>
+                  <th className="font-normal pr-2">Regler am Gerät</th>
+                  <th className="font-normal pr-2">Ziel</th>
+                  <th className="font-normal">Bereich</th>
+                </tr>
+              </thead>
+              <tbody className="text-text-muted">
+                {assignedControls(preset).map((c) => (
+                  <tr key={c.index}>
+                    <td className="pr-2 font-mono">{c.index}</td>
+                    <td className="pr-2">{labelForSourceControl(c.sourceControl, preset.encoding)}</td>
+                    <td className="pr-2">{labelForChainIndex(c.chainIndex)} · Param {c.targetParam}</td>
+                    <td className="font-mono">{c.minValue}..{c.maxValue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <p className="text-text-dim leading-snug">
+            Die Parameter-<em>Namen</em> je Effekt fehlen noch — sie stehen nur in
+            Hacktribes <code>ht_fx_preset_format.py</code> (21 IFX-, 25 MFX-Structs).
+            Bis dahin: Param-Index, wie ihn auch das Zuweisungs-Formular erwartet.
+          </p>
+        </div>
+      )}
 
       {/* ── Hex-Dump ────────────────────────────────────────────────────── */}
       {dump && (

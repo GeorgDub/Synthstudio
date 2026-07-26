@@ -174,3 +174,34 @@ test("RAM-Werkzeug übernimmt Adresse und Länge aus der Struktur-Karte", async 
   await expect(page.getByTestId("ram-addr-input")).toHaveValue("0xC0143B00");
   await expect(page.getByTestId("ram-len-input")).toHaveValue("320");
 });
+
+test("RAM-Werkzeug: FX-Preset-Ansicht erscheint erst nach einem Lesevorgang", async ({ page }) => {
+  // Web MIDI hart abschalten, damit der Fehlerpfad deterministisch greift.
+  // Headless Chromium bringt Web MIDI durchaus mit, die Anfrage bleibt dann
+  // aber ohne Nutzergeste hängen — ohne diesen Schalter hinge der Test 10 s
+  // und prüfte am Ende die Laune des Browsers statt unseren Code.
+  // `delete navigator.requestMIDIAccess` genügt NICHT: die Methode liegt auf
+  // Navigator.prototype, nicht auf der Instanz.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "requestMIDIAccess", {
+      value: undefined,
+      configurable: true,
+    });
+  });
+  await page.reload();
+  await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+
+  await page.getByTestId("toggle-ram-tool").click();
+
+  // Default ist der IFX-Preset-Slot mit voller Preset-Länge — die Ansicht ist
+  // trotzdem leer, weil noch nichts gelesen wurde. Ein Dekodier-Bereich ohne
+  // Daten wäre eine Behauptung über ein Gerät, das gar nicht geantwortet hat.
+  await expect(page.getByTestId("ram-len-input")).toHaveValue("524");
+  await expect(page.getByTestId("fx-preset-view")).toHaveCount(0);
+
+  await page.getByTestId("ram-read").click();
+  await expect(page.getByText(/Web MIDI nicht verfügbar/i).first())
+    .toBeVisible({ timeout: 10_000 });
+  // Kein Absturz, keine halb gefüllte Tabelle.
+  await expect(page.getByTestId("fx-preset-view")).toHaveCount(0);
+});
