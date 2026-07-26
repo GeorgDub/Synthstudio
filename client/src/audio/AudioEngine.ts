@@ -621,6 +621,16 @@ class AudioEngineClass {
    * Overload; dann wird die ÄLTESTE Voice schnell ausgefadet (kein Stop-All).
    */
   private readonly MAX_ACTIVE_VOICES = 64;
+  /**
+   * v3.268.0: Attack-Rampe pro Sample-Voice. Ohne sie startet jede Voice
+   * schlagartig bei voller Amplitude — beginnt das Sample nicht exakt im
+   * Nulldurchgang, entsteht ein hörbarer Klick (Sprung von 0 auf die erste
+   * Sample-Amplitude in einem einzigen Frame). 1.5 ms sind kurz genug, um den
+   * Transienten (Kick-/Snare-Attack) hörbar unangetastet zu lassen, aber lang
+   * genug, um die Diskontinuität zu glätten. Gegenstück zum bereits
+   * existierenden Fade-OUT in `stopActiveVoices` / Voice-Steal.
+   */
+  private readonly VOICE_ATTACK_SEC = 0.0015;
   /** v3.263.0: zuletzt im Scheduler gesehene Pattern-ID (Wechsel-Erkennung). */
   private _lastSchedPatternId: string | null = null;
   /** targetPartId → SidechainSettings */
@@ -3792,10 +3802,18 @@ class AudioEngineClass {
     // freies Abschneiden bei Stop/Pattern-Wechsel. _registerVoice räumt beide
     // bei `ended` ab (ersetzt den v3.262-onended-Disconnect, gleiche Hygiene).
     const voiceGain = this.ctx.createGain();
+    // v3.268.0: Fade-IN gegen Start-Klick. Ohne Rampe springt die Amplitude im
+    // ersten Frame von 0 auf den ersten Sample-Wert — bei Samples, die nicht im
+    // Nulldurchgang beginnen (Loops, getrimmte One-Shots), knackt das hörbar.
+    const startAt = Math.max(time, this.ctx.currentTime);
+    if (typeof voiceGain.gain.linearRampToValueAtTime === "function") {
+      voiceGain.gain.setValueAtTime(0, startAt);
+      voiceGain.gain.linearRampToValueAtTime(1, startAt + this.VOICE_ATTACK_SEC);
+    }
     source.connect(voiceGain);
     voiceGain.connect(nodes.input);
     this._registerVoice(source, voiceGain);
-    source.start(Math.max(time, this.ctx.currentTime));
+    source.start(startAt);
   }
 
   /** Wendet Parameter-Lock-Werte an und stellt sie nach duration wieder her. */

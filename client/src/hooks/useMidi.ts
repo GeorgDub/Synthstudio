@@ -60,6 +60,13 @@ import {
 } from "@/utils/midiDeviceDetection";
 import { getMidiFxChain } from "@/store/useMidiFxStore";
 import { applyMidiFx, MidiFxNoteTracker, type NoteOn } from "@/utils/midiFxEngine";
+// v3.269.0: Eingangsfilter (pro Gerät + pro Nachrichtenklasse) und
+// CC-Fernsteuerung der echten Electribe (Controller → Synthstudio → Korg).
+import { getMidiInputFilterState, useMidiInputFilterStore } from "@/store/useMidiInputFilterStore";
+import { shouldPassMidiMessage } from "@/utils/midiInputFilter";
+import { getKorgRemoteState, completeKorgRemoteLearn } from "@/store/useKorgRemoteStore";
+import { relayCcToKorg } from "@/audio/KorgRemoteSender";
+import { describeKorgRemoteTarget } from "@/utils/korg/korgRemote";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -785,6 +792,10 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
   const [isAvailable, setIsAvailable] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
+  // v3.269.0: nur wegen `listenAllInputs` — der Schalter muss die Listener
+  // sofort neu setzen. Der Filter selbst wird im Handler direkt aus dem Store
+  // gelesen (kein Re-Render pro MIDI-Nachricht).
+  const inputFilter = useMidiInputFilterStore();
   const [devices, setDevices] = useState<MidiDevice[]>([]);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
   const [outputDevices, setOutputDevices] = useState<MidiDevice[]>([]);
@@ -936,6 +947,12 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const nativeAccessRef = useRef<NativeMidiAccess | null>(null);
   const electron = useElectron();
   const activeInputRef = useRef<MIDIInput | null>(null);
+  /**
+   * v3.269.0: ALLE Eingänge, an denen gerade ein Listener hängt. Im
+   * Einzelgerät-Modus enthält das genau `activeInputRef`, im Multi-Input-Modus
+   * jeden verfügbaren Port. Getrennt geführt, damit Abräumen vollständig ist.
+   */
+  const attachedInputsRef = useRef<MIDIInput[]>([]);
   const activeOutputRef = useRef<MIDIOutput | null>(null);
   const clockAnalyzer = useRef(new MidiClockAnalyzer());
   // v3.93.0: MIDI-FX Note-Off-Tracking. Mapped Original-Note → [expanded
@@ -978,6 +995,22 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     if (!data || data.length < 1) return;
 
     const status = data[0];
+
+    // v3.269.0: Eingangsfilter — VOR allem anderen, damit eine gefilterte
+    // Nachricht wirklich nirgends ankommt (auch nicht in Clock-In, MIDI-FX
+    // oder Step-Recording). Live-Fall: auf der Korg spielen, ohne dass deren
+    // Noten/Program-Changes nebenbei das Synthstudio-Pattern verstellen —
+    // während der Fader-Controller am selben Bus weiter durchkommt.
+    {
+      const srcName =
+        event.target && typeof event.target === "object"
+          ? (event.target as { name?: string | null }).name ?? null
+          : null;
+      if (!shouldPassMidiMessage(getMidiInputFilterState(), { status, deviceName: srcName })) {
+        return;
+      }
+    }
+
     const type = status & 0xf0;
     const channel = (status & 0x0f) + 1; // 1-16
 
@@ -1061,6 +1094,24 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
     // Raw MIDI message für MPE-Verarbeitung weiterleiten
     window.dispatchEvent(new CustomEvent("midi:rawmessage", { detail: { type, channel, byte1, byte2 } }));
+
+    // ── v3.269.0: Korg-Remote (Controller → Synthstudio → Electribe) ──────
+    // Eingehende CCs werden zusätzlich als Electribe-CC auf dem Part-Kanal
+    // weitergereicht. Bewusst NICHT konsumierend: derselbe Regler darf
+    // gleichzeitig ein internes Mapping bedienen.
+    if (type === 0xb0) {
+      const remote = getKorgRemoteState();
+      if (remote.learnTarget) {
+        // Learn hat Vorrang und schluckt das CC — sonst würde der Regler,
+        // während man ihn zum Lernen bewegt, sofort schon senden.
+        const target = remote.learnTarget;
+        if (completeKorgRemoteLearn(byte1, channel)) {
+          toast(`CC ${byte1} → ${describeKorgRemoteTarget(target)}`, { kind: "success" });
+        }
+        return;
+      }
+      relayCcToKorg(channel, byte1, byte2);
+    }
 
     // ── TASK-231 (v2.84): nanoKONTROL2 Marker → Scene-Cycle ──────────────
     // Vor jeglicher Mapping-Verarbeitung: wenn Scene-Mode aktiv und das
@@ -1488,21 +1539,46 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
   // ─── Gerät verbinden ──────────────────────────────────────────────────────
 
+  const detachAllInputs = useCallback(() => {
+    for (const input of attachedInputsRef.current) {
+      try {
+        input.onmidimessage = null;
+      } catch {
+        // Port wurde zwischenzeitlich abgezogen — nichts mehr abzuräumen.
+      }
+    }
+    attachedInputsRef.current = [];
+    activeInputRef.current = null;
+  }, []);
+
   const connectDevice = useCallback((deviceId: string | null) => {
-    // Altes Input-Listener entfernen
-    if (activeInputRef.current) {
-      activeInputRef.current.onmidimessage = null;
-      activeInputRef.current = null;
+    detachAllInputs();
+    const access = midiAccessRef.current;
+    if (!access) return;
+
+    // v3.269.0: Mehrgeräte-Betrieb. Vorher konnte genau EIN Eingang gehört
+    // werden — Korg und Fader-Controller gleichzeitig war damit unmöglich, und
+    // ein Pro-Gerät-Mute hätte nichts zu muten gehabt. Wer welche Nachrichten
+    // schicken darf, entscheidet danach der Eingangsfilter im Handler.
+    if (getMidiInputFilterState().listenAllInputs) {
+      access.inputs.forEach((input) => {
+        input.onmidimessage = handleMidiMessage;
+        attachedInputsRef.current.push(input);
+        // `activeDeviceId` bleibt trotzdem gesetzt: daran hängen Auto-Reconnect
+        // und die Geräteanzeige in den Einstellungen.
+        if (input.id === deviceId) activeInputRef.current = input;
+      });
+      return;
     }
 
-    if (!deviceId || !midiAccessRef.current) return;
-
-    const input = midiAccessRef.current.inputs.get(deviceId);
+    if (!deviceId) return;
+    const input = access.inputs.get(deviceId);
     if (input) {
       input.onmidimessage = handleMidiMessage;
+      attachedInputsRef.current.push(input);
       activeInputRef.current = input;
     }
-  }, [handleMidiMessage]);
+  }, [detachAllInputs, handleMidiMessage]);
 
   // ─── Geräte-Liste aktualisieren ──────────────────────────────────────────
 
@@ -1706,10 +1782,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // ─── MIDI deaktivieren ───────────────────────────────────────────────────
 
   const disable = useCallback(() => {
-    if (activeInputRef.current) {
-      activeInputRef.current.onmidimessage = null;
-      activeInputRef.current = null;
-    }
+    detachAllInputs();
     // #11: native Handles freigeben (Windows-MIDI-Inputs sind exklusiv —
     // geleakte Handles blockieren den nächsten enable()).
     if (nativeAccessRef.current) {
@@ -1726,7 +1799,7 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
     prevDevicesRef.current.clear();
     prevOutputDevicesRef.current.clear();
     toast("MIDI deaktiviert", { kind: "info" });
-  }, []);
+  }, [detachAllInputs]);
 
   // ─── Verfügbarkeit prüfen ────────────────────────────────────────────────
 
@@ -1842,11 +1915,19 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
   useEffect(() => {
     return () => {
-      if (activeInputRef.current) {
-        activeInputRef.current.onmidimessage = null;
-      }
+      detachAllInputs();
     };
-  }, []);
+  }, [detachAllInputs]);
+
+  /**
+   * v3.269.0: Umschalten zwischen Einzelgerät und „alle Eingänge" muss die
+   * Listener sofort neu setzen — sonst wirkt der Schalter erst beim nächsten
+   * Gerätewechsel und fühlt sich kaputt an.
+   */
+  useEffect(() => {
+    if (!isEnabled) return;
+    connectDevice(activeDeviceId);
+  }, [inputFilter.listenAllInputs, isEnabled, activeDeviceId, connectDevice]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 
