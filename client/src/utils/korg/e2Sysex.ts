@@ -269,6 +269,14 @@ export const PART_STRIDE = 0x330;
 export const PART_OSC_REF_OFFSET = 0x08; // u16 LE innerhalb eines Parts (Sample/OSC-Ref)
 export const PART_VOLUME_OFFSET = 0x15; // u8 0..127
 export const PART_PAN_OFFSET = 0x22; // u8 0..127 (64 = center)
+// v3.296: Per-Part Filter-Block. Offsets dreifach verifiziert (Korgs offizielle
+// "electribe MIDI Implementation Rev 1.00" TABLE 6 + keijiro/e2edit struct Part
+// + maks/elfer PartType): Filter Type @0x0C (0..16), Cutoff @0x0D (0..127),
+// Resonance @0x0E (0..127), EG Int @0x0F (i8 -63..+63).
+export const PART_FILTER_TYPE_OFFSET = 0x0c;
+export const PART_FILTER_CUTOFF_OFFSET = 0x0d;
+export const PART_FILTER_RESONANCE_OFFSET = 0x0e;
+export const PART_FILTER_EGINT_OFFSET = 0x0f;
 export const PART_SEQ_OFFSET = 0x30; // Sequenz-Block: 64 × 12 B = 0x300, füllt den Part
 export const PART_SEQ_STEP_SIZE = 0x0c;
 export const STEPS_PER_PART = 64; // Sequenz-Block hält bis zu 64 Steps
@@ -335,6 +343,14 @@ export interface E2PartDecoded {
   sampleRef: number; // u16 LE @ +0x08 (Sample/OSC-Nummer)
   volume: number; // @ +0x15
   pan: number; // @ +0x22 (64 = center)
+  /** v3.296: Filter Type @ +0x0C (roher Gerätewert 0..16, TABLE 6). */
+  filterType: number;
+  /** v3.296: Filter Cutoff @ +0x0D (0..127). */
+  cutoff: number;
+  /** v3.296: Filter Resonance @ +0x0E (0..127). */
+  resonance: number;
+  /** v3.296: Filter EG Int @ +0x0F (i8, -63..+63). */
+  egInt: number;
   steps: E2Step[]; // stepLength Einträge
   activeCount: number;
 }
@@ -391,10 +407,15 @@ export function decodePatternBody(body: Uint8Array): E2PatternDecoded {
       if (step.active) activeCount++;
       steps.push(step);
     }
+    const egRaw = body[base + PART_FILTER_EGINT_OFFSET] ?? 0;
     parts.push({
       sampleRef: readU16LE(body, base + PART_OSC_REF_OFFSET),
       volume: body[base + PART_VOLUME_OFFSET] ?? 0,
       pan: body[base + PART_PAN_OFFSET] ?? 0,
+      filterType: body[base + PART_FILTER_TYPE_OFFSET] ?? 0,
+      cutoff: Math.min(127, body[base + PART_FILTER_CUTOFF_OFFSET] ?? 127),
+      resonance: Math.min(127, body[base + PART_FILTER_RESONANCE_OFFSET] ?? 0),
+      egInt: egRaw > 127 ? egRaw - 256 : egRaw, // i8
       steps,
       activeCount,
     });
