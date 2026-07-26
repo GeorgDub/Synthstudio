@@ -85,15 +85,12 @@ export function relayCcToKorg(channel: number, cc: number, value: number): numbe
   let sent = 0;
   for (const m of outgoing) {
     try {
-      _cachedOutput.send(m.bytes);
+      // Eine NRPN-Auslösung besteht aus vier CCs, die zusammengehören und in
+      // dieser Reihenfolge ankommen müssen — deshalb erst nach der ganzen
+      // Gruppe zählen und bei einem Fehler mittendrin abbrechen.
+      for (const bytes of m.messages) _cachedOutput.send(bytes);
       sent += 1;
-      _lastActivity = {
-        label:
-          m.param.scope === "global"
-            ? `Global · ${m.param.label}`
-            : `Part ${m.rule.part} · ${m.param.label}`,
-        value: m.value,
-      };
+      _lastActivity = { label: m.label, value: m.value };
     } catch {
       // Port im laufenden Betrieb abgezogen: Cache verwerfen, beim nächsten
       // Wert wird neu aufgelöst. Kein Toast — bei 100 Werten/s wäre das eine

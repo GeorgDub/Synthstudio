@@ -12,8 +12,12 @@
  */
 import { useEffect, useReducer } from "react";
 import {
+  korgTargetsEqual,
   makeKorgRemoteRule,
+  normalizeTarget,
   type KorgRemoteRule,
+  type KorgRemoteRuleInit,
+  type KorgRemoteTarget,
 } from "../utils/korg/korgRemote";
 import { clampChannel0 } from "../utils/korg/e2ControlChange";
 
@@ -29,7 +33,7 @@ export interface KorgRemoteState {
    * Learn-Modus: das nächste eingehende CC wird an dieses Ziel gebunden.
    * `null` = kein Learn aktiv.
    */
-  learnTarget: { part: number; param: string } | null;
+  learnTarget: KorgRemoteTarget | null;
 }
 
 function defaultState(): KorgRemoteState {
@@ -103,7 +107,7 @@ export function setKorgRemoteGlobalChannel(channel: number): void {
   commit({ ..._state, globalChannel: clamped });
 }
 
-export function addKorgRemoteRule(init: Partial<KorgRemoteRule> = {}): KorgRemoteRule {
+export function addKorgRemoteRule(init: Partial<KorgRemoteRuleInit> = {}): KorgRemoteRule {
   const rule = makeKorgRemoteRule({ ...init, id: init.id ?? nextRuleId() });
   commit({ ..._state, rules: [..._state.rules, rule] });
   return rule;
@@ -114,7 +118,7 @@ export function addKorgRemoteRules(rules: readonly KorgRemoteRule[]): void {
   commit({ ..._state, rules: [..._state.rules, ...rules.map((r) => makeKorgRemoteRule(r))] });
 }
 
-export function updateKorgRemoteRule(id: string, patch: Partial<KorgRemoteRule>): void {
+export function updateKorgRemoteRule(id: string, patch: Partial<KorgRemoteRuleInit>): void {
   const rules = _state.rules.map((r) =>
     r.id === id ? makeKorgRemoteRule({ ...r, ...patch, id: r.id }) : r,
   );
@@ -133,13 +137,14 @@ export function clearKorgRemoteRules(): void {
 }
 
 /** Startet Learn für ein Ziel. Erneuter Aufruf mit demselben Ziel bricht ab. */
-export function startKorgRemoteLearn(part: number, param: string): void {
+export function startKorgRemoteLearn(target: KorgRemoteTarget): void {
   const cur = _state.learnTarget;
-  if (cur && cur.part === part && cur.param === param) {
+  const next = normalizeTarget(target);
+  if (cur && korgTargetsEqual(cur, next)) {
     commit({ ..._state, learnTarget: null });
     return;
   }
-  commit({ ..._state, learnTarget: { part, param } });
+  commit({ ..._state, learnTarget: next });
 }
 
 export function cancelKorgRemoteLearn(): void {
@@ -163,12 +168,12 @@ export function completeKorgRemoteLearn(cc: number, channel: number): KorgRemote
     id: nextRuleId(),
     srcCc: cc,
     srcChannel: channel,
-    part: target.part,
-    param: target.param,
+    target,
+    // Panel-Schalter erwarten 0/1; ein durchlaufender Fader würde sonst je nach
+    // Stellung wilde Werte schicken.
+    ...(target.kind === "panel" ? { min: 0, max: 1 } : {}),
   });
-  const rules = _state.rules.filter(
-    (r) => !(r.part === target.part && r.param === target.param),
-  );
+  const rules = _state.rules.filter((r) => !korgTargetsEqual(r.target, target));
   commit({ ..._state, rules: [...rules, rule], learnTarget: null });
   return rule;
 }
@@ -201,12 +206,12 @@ export function __resetKorgRemoteForTests(): void {
 export interface KorgRemoteStoreApi extends KorgRemoteState {
   setEnabled: (v: boolean) => void;
   setGlobalChannel: (v: number) => void;
-  addRule: (init?: Partial<KorgRemoteRule>) => KorgRemoteRule;
+  addRule: (init?: Partial<KorgRemoteRuleInit>) => KorgRemoteRule;
   addRules: (rules: readonly KorgRemoteRule[]) => void;
-  updateRule: (id: string, patch: Partial<KorgRemoteRule>) => void;
+  updateRule: (id: string, patch: Partial<KorgRemoteRuleInit>) => void;
   removeRule: (id: string) => void;
   clearRules: () => void;
-  startLearn: (part: number, param: string) => void;
+  startLearn: (target: KorgRemoteTarget) => void;
   cancelLearn: () => void;
 }
 

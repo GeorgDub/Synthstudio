@@ -75,3 +75,46 @@ test("Korg-Remote-Panel öffnet sich und bietet den MIDImix-Schnellstart", async
   await page.getByTestId("korg-remote-clear").click();
   await expect(page.getByTestId("korg-remote-rule")).toHaveCount(0);
 });
+
+test("NRPN-Ziele sind wählbar und weisen auf die Hacktribe-Voraussetzung hin", async ({ page }) => {
+  await page.getByTestId("toggle-korg-remote").click();
+  await expect(page.getByTestId("korg-remote-panel")).toBeVisible();
+
+  // Ohne NRPN-Regel kein Hinweis — sonst wäre er im CC-Betrieb nur Rauschen.
+  await expect(page.getByTestId("korg-remote-hacktribe-hint")).toHaveCount(0);
+
+  // Der Panel-Schnellstart legt NRPN-Regeln an (Taster → Part-Mute am Gerät).
+  await page.getByTestId("korg-remote-preset-mutes").click();
+  await expect(page.getByTestId("korg-remote-rule")).toHaveCount(8);
+  await expect(page.getByTestId("korg-remote-hacktribe-hint")).toBeVisible();
+
+  // Panel-Regeln kommen mit Wertebereich 0..1 — ein Taster, kein Fader.
+  // Über den Titel adressiert, nicht über die Feldreihenfolge: Panel-Ziele
+  // bringen ein eigenes Pad-Feld mit, das vor dem Bereich steht.
+  const firstRule = page.getByTestId("korg-remote-rule").first();
+  await expect(firstRule.locator('input[title*="ganz unten"]')).toHaveValue("0");
+  await expect(firstRule.locator('input[title*="ganz oben"]')).toHaveValue("1");
+
+  await page.getByTestId("korg-remote-clear").click();
+  await expect(page.getByTestId("korg-remote-hacktribe-hint")).toHaveCount(0);
+});
+
+test("Learn-Zeile wechselt die Ziel-Art und zeigt passende Felder", async ({ page }) => {
+  await page.getByTestId("toggle-korg-remote").click();
+
+  const kind = page.getByTestId("korg-remote-learn-kind");
+  // Default ist das Hacktribe-freie CC-Ziel mit Parameter-Auswahl.
+  await expect(kind).toHaveValue("cc");
+  await expect(page.getByTestId("korg-remote-learn-cc-param")).toBeVisible();
+
+  await kind.selectOption("panel");
+  await expect(page.getByTestId("korg-remote-learn-cc-param")).toHaveCount(0);
+  await expect(page.getByTestId("korg-remote-learn-panel-mode")).toBeVisible();
+
+  // Learn lässt sich starten und per zweitem Klick wieder abbrechen.
+  const learn = page.getByTestId("korg-remote-learn");
+  await learn.click();
+  await expect(learn).toContainText("Regler bewegen");
+  await learn.click();
+  await expect(learn).toHaveText("Learn");
+});

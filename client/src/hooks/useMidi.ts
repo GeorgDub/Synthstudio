@@ -66,7 +66,7 @@ import { getMidiInputFilterState, useMidiInputFilterStore } from "@/store/useMid
 import { shouldPassMidiMessage } from "@/utils/midiInputFilter";
 import { getKorgRemoteState, completeKorgRemoteLearn } from "@/store/useKorgRemoteStore";
 import { relayCcToKorg } from "@/audio/KorgRemoteSender";
-import { describeE2Target, findE2CcParam } from "@/utils/korg/e2ControlChange";
+import { describeKorgRemoteTarget } from "@/utils/korg/korgRemote";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
 
@@ -1105,13 +1105,8 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
         // Learn hat Vorrang und schluckt das CC — sonst würde der Regler,
         // während man ihn zum Lernen bewegt, sofort schon senden.
         const target = remote.learnTarget;
-        const rule = completeKorgRemoteLearn(byte1, channel);
-        if (rule) {
-          const param = findE2CcParam(target.param);
-          toast(
-            `CC ${byte1} → ${param ? describeE2Target(param, target.part) : target.param}`,
-            { kind: "success" },
-          );
+        if (completeKorgRemoteLearn(byte1, channel)) {
+          toast(`CC ${byte1} → ${describeKorgRemoteTarget(target)}`, { kind: "success" });
         }
         return;
       }
