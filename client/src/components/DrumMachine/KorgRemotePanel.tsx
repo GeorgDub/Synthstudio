@@ -19,7 +19,20 @@
 import { useState } from "react";
 import { useKorgRemoteStore } from "@/store/useKorgRemoteStore";
 import { E2_CC_PARAMS, E2_PART_COUNT } from "@/utils/korg/e2ControlChange";
-import { PANEL_MODE, labelForPanelMode, type PanelMode } from "@/utils/korg/hacktribeNrpn";
+import {
+  FX_MAP_SLOT_COUNT,
+  FX_SOURCE_CONTROL,
+  FX_SOURCE_CONTROL_KEYS,
+  MFX_SLOT,
+  PANEL_MODE,
+  buildMapFxParam,
+  fxSlotForPart,
+  labelForFxSourceControl,
+  labelForPanelMode,
+  type FxSourceControl,
+  type PanelMode,
+} from "@/utils/korg/hacktribeNrpn";
+import { sendKorgNrpnOnce } from "@/audio/KorgRemoteSender";
 import {
   KORG_TARGET_KINDS,
   MIDIMIX_FADER_CCS,
@@ -228,6 +241,147 @@ function TargetEditor({
   );
 }
 
+/**
+ * Formular für eine feste FX-Parameter-Zuweisung im Gerät.
+ *
+ * Anders als der Rest des Panels ist das **keine** Regel, die auf eingehende CCs
+ * reagiert, sondern eine einmalige Aktion: sie ändert das FX-Preset auf dem
+ * Gerät, danach fährt dessen X/Y-Regler den Parameter selbst — auch ohne
+ * Synthstudio am Kabel. Deshalb ein Absende-Knopf statt eines Learn-Vorgangs.
+ */
+function MapFxParamForm({ globalChannel }: { globalChannel: number }) {
+  const [part, setPart] = useState(1);
+  const [slot, setSlot] = useState<FxSlotRef>(0);
+  const [mapSlot, setMapSlot] = useState(0);
+  const [source, setSource] = useState<FxSourceControl>("fxEditX");
+  const [targetParam, setTargetParam] = useState(0);
+  const [min, setMin] = useState(0);
+  const [max, setMax] = useState(127);
+  const [busy, setBusy] = useState(false);
+
+  async function send() {
+    setBusy(true);
+    try {
+      const fxSlot = slot === "mfx" ? MFX_SLOT : fxSlotForPart(part, slot);
+      const messages = buildMapFxParam(globalChannel, fxSlot, {
+        mapSlot,
+        sourceControl: FX_SOURCE_CONTROL[source],
+        targetParam,
+        minValue: min,
+        maxValue: max,
+      });
+      const res = await sendKorgNrpnOnce(messages);
+      if (!res.ok) {
+        toast(res.error, { kind: "error" });
+        return;
+      }
+      const where = slot === "mfx" ? "MFX" : `Part ${part} IFX ${slot + 1}`;
+      toast(
+        `${where}: ${labelForFxSourceControl(source)} → Param ${targetParam} (Slot ${mapSlot})`,
+        { kind: "success" },
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      data-testid="korg-map-fx-form"
+      className="flex items-center gap-1 flex-wrap bg-bg-base rounded border border-border-color px-2 py-1"
+    >
+      <span className="text-[10px] text-text-dim">⚡ FX-Zuweisung:</span>
+
+      <select
+        data-testid="korg-map-fx-slot"
+        value={slot === "mfx" ? "mfx" : String(slot)}
+        onChange={(e) => {
+          const v = e.target.value;
+          setSlot(v === "mfx" ? "mfx" : v === "1" ? 1 : 0);
+        }}
+        className={SELECT_CLASS}
+      >
+        <option value="0">IFX 1</option>
+        <option value="1">IFX 2</option>
+        <option value="mfx">MFX</option>
+      </select>
+      {slot !== "mfx" && (
+        <select
+          value={part}
+          onChange={(e) => setPart(Number(e.target.value))}
+          className={SELECT_CLASS}
+        >
+          {partOptions()}
+        </select>
+      )}
+
+      <select
+        data-testid="korg-map-fx-source"
+        value={source}
+        onChange={(e) => setSource(e.target.value as FxSourceControl)}
+        className={SELECT_CLASS}
+        title="Bedienelement am Gerät, das den Parameter danach fährt"
+      >
+        {FX_SOURCE_CONTROL_KEYS.map((k) => (
+          <option key={k} value={k}>{labelForFxSourceControl(k)}</option>
+        ))}
+      </select>
+
+      <span className="text-[10px] text-text-dim">→</span>
+
+      <label className="text-[10px] text-text-dim flex items-center gap-1">
+        Param#
+        <input
+          type="number"
+          min={0}
+          max={127}
+          value={targetParam}
+          onChange={(e) => setTargetParam(Number(e.target.value))}
+          className={NUM_CLASS}
+          title="Index im Parameter-Struct des GERADE GELADENEN FX-Device"
+        />
+      </label>
+      <label className="text-[10px] text-text-dim flex items-center gap-1">
+        Bereich
+        <input
+          type="number" min={0} max={127} value={min}
+          onChange={(e) => setMin(Number(e.target.value))}
+          className={`${SELECT_CLASS} w-12`}
+        />
+        <input
+          type="number" min={0} max={127} value={max}
+          onChange={(e) => setMax(Number(e.target.value))}
+          className={`${SELECT_CLASS} w-12`}
+        />
+      </label>
+      <label className="text-[10px] text-text-dim flex items-center gap-1">
+        Map-Slot
+        <select
+          data-testid="korg-map-fx-mapslot"
+          value={mapSlot}
+          onChange={(e) => setMapSlot(Number(e.target.value))}
+          className={SELECT_CLASS}
+          title="Einer der 10 Zuweisungs-Slots des FX-Presets. Derselbe Slot erneut beschrieben überschreibt die vorherige Zuweisung."
+        >
+          {Array.from({ length: FX_MAP_SLOT_COUNT }, (_, i) => (
+            <option key={i} value={i}>{i}</option>
+          ))}
+        </select>
+      </label>
+
+      <button
+        data-testid="korg-map-fx-send"
+        onClick={() => void send()}
+        disabled={busy}
+        title="Schickt die fünfteilige NRPN-Sequenz an das Gerät (20 CCs, einmalig)"
+        className="px-2 py-1 rounded text-[10px] font-bold bg-accent-secondary/20 text-accent-secondary hover:bg-accent-secondary/30 transition-colors disabled:opacity-50 disabled:cursor-wait"
+      >
+        {busy ? "Sende…" : "Zuweisung senden"}
+      </button>
+    </div>
+  );
+}
+
 export function KorgRemotePanel({ onClose }: { onClose?: () => void }) {
   const remote = useKorgRemoteStore();
   const [learnTargetDraft, setLearnTargetDraft] = useState<KorgRemoteTarget>({
@@ -235,6 +389,7 @@ export function KorgRemotePanel({ onClose }: { onClose?: () => void }) {
     part: 1,
     param: "ampLevel",
   });
+  const [showMapFx, setShowMapFx] = useState(false);
 
   const learning = remote.learnTarget;
   const usesNrpn = remote.rules.some((r) => targetNeedsHacktribe(r.target.kind));
@@ -406,6 +561,35 @@ export function KorgRemotePanel({ onClose }: { onClose?: () => void }) {
             Ziel: {describeKorgRemoteTarget(learning)} — der bewegte Regler ersetzt eine
             vorhandene Regel für dasselbe Ziel.
           </span>
+        )}
+      </div>
+
+      {/* ── Feste FX-Zuweisung im Gerät (map_fx_param) ──────────────────── */}
+      <div className="space-y-1">
+        <button
+          data-testid="toggle-map-fx-form"
+          onClick={() => setShowMapFx((v) => !v)}
+          aria-expanded={showMapFx}
+          title="Ein Bedienelement der Korg dauerhaft mit einem FX-Parameter verdrahten — wirkt danach auch ohne Synthstudio"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors inline-flex items-center gap-1",
+            showMapFx
+              ? "bg-accent-secondary/20 text-accent-secondary"
+              : "bg-bg-elevated text-text-dim hover:text-text-primary",
+          ].join(" ")}
+        >
+          <span className={`inline-block transition-transform ${showMapFx ? "" : "-rotate-90"}`}>▾</span>
+          ⚡ Geräte-Regler fest verdrahten
+        </button>
+        {showMapFx && (
+          <>
+            <p className="text-[10px] text-text-muted leading-snug">
+              Ändert nicht einen Wert, sondern die <strong>Zuweisung</strong> im FX-Preset des
+              Geräts: danach fährt der gewählte Regler den Parameter selbst, auch ohne
+              Synthstudio am Kabel. Einmalige Aktion, kein Regler-Mapping.
+            </p>
+            <MapFxParamForm globalChannel={remote.globalChannel} />
+          </>
         )}
       </div>
 

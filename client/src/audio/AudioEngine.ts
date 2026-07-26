@@ -3794,21 +3794,30 @@ class AudioEngineClass {
     // Kanal-Knoten holen oder erstellen
     const nodes = this._getOrCreateChannelNodes(part.id, part.fx);
 
-    // Volume in den Kanal-Input
-    nodes.input.gain.value = Math.max(0, Math.min(2, volume));
+    // Pan bleibt am Kanal-Panner: `pan` stammt aus `part.pan`, ist also pro Part
+    // konstant. Überlappende Voices desselben Parts haben denselben Pan — hier
+    // gibt es nichts zu individualisieren (anders als beim Volume, s. u.).
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
 
     // v3.263.0: Voice-Gain zwischen Source und Channel-Input → erlaubt click-
     // freies Abschneiden bei Stop/Pattern-Wechsel. _registerVoice räumt beide
     // bei `ended` ab (ersetzt den v3.262-onended-Disconnect, gleiche Hygiene).
     const voiceGain = this.ctx.createGain();
+    const startAt = Math.max(time, this.ctx.currentTime);
+    // v3.284.0: Volume liegt PRO VOICE, nicht mehr am geteilten Channel-Input.
+    // Vorher stand hier `nodes.input.gain.value = volume` — und weil `volume`
+    // die Velocity des Steps enthält, verbog jeder neue Step rückwirkend die
+    // Lautstärke aller noch klingenden Voices desselben Parts: ein leiser
+    // 16tel-Step mitten in einem langen Crash zog den Crash mit runter.
+    const level = Math.max(0, Math.min(2, volume));
     // v3.268.0: Fade-IN gegen Start-Klick. Ohne Rampe springt die Amplitude im
     // ersten Frame von 0 auf den ersten Sample-Wert — bei Samples, die nicht im
     // Nulldurchgang beginnen (Loops, getrimmte One-Shots), knackt das hörbar.
-    const startAt = Math.max(time, this.ctx.currentTime);
     if (typeof voiceGain.gain.linearRampToValueAtTime === "function") {
       voiceGain.gain.setValueAtTime(0, startAt);
-      voiceGain.gain.linearRampToValueAtTime(1, startAt + this.VOICE_ATTACK_SEC);
+      voiceGain.gain.linearRampToValueAtTime(level, startAt + this.VOICE_ATTACK_SEC);
+    } else {
+      voiceGain.gain.value = level;
     }
     source.connect(voiceGain);
     voiceGain.connect(nodes.input);
@@ -3825,8 +3834,12 @@ class AudioEngineClass {
     const restoreTime = now + duration;
 
     if (lock.volume !== undefined) {
+      // Wirkt kanalweit für die Dauer des Locks — so war es immer. Neu ist nur,
+      // dass es hält: vor v3.284.0 überschrieb der nächste Trigger den
+      // Channel-Input mit seinem eigenen Volume und hebelte das Lock aus.
+      const base = nodes.input.gain.value;
       nodes.input.gain.setValueAtTime(lock.volume, now);
-      nodes.input.gain.setValueAtTime(nodes.input.gain.value, restoreTime);
+      nodes.input.gain.setValueAtTime(base, restoreTime);
     }
     if (lock.pan !== undefined) {
       nodes.panner.pan.setValueAtTime(lock.pan, now);
@@ -3852,8 +3865,11 @@ class AudioEngineClass {
    * SynthEngine.triggerNote() schreibt in `nodes.input` (Channel-Input-GainNode)
    * statt direkt zu masterGain — damit propagieren Channel-FX (EQ, Filter,
    * Distortion, Compressor, Sidechain, Delay/Reverb-Sends, Insert-Chain)
-   * korrekt. Volume + Pan werden über `nodes.input.gain` / `nodes.panner.pan`
-   * gesetzt — analog zum Sample-Pfad (`_triggerBufferWithFx`).
+   * korrekt. Volume liegt seit v3.284.0 auf einem Wrapper-Gain **pro Note**,
+   * Pan weiterhin am Kanal-Panner (`nodes.panner.pan`) — analog zum Sample-Pfad
+   * (`_triggerBufferWithFx`) und aus demselben Grund: Volume trägt die Velocity
+   * des Steps und ist damit pro Note verschieden, Pan stammt aus `part.pan` und
+   * ist pro Part konstant.
    *
    * partId wird durchgereicht → Macro-LFO-Cache (TASK-117/128) wird konsultiert.
    *
@@ -3870,7 +3886,7 @@ class AudioEngineClass {
     if (!eng) return false;
 
     const nodes = this._getOrCreateChannelNodes(part.id, part.fx);
-    nodes.input.gain.value = Math.max(0, Math.min(2, volume));
+    // Pan pro Part konstant → bleibt am Kanal-Panner (siehe _triggerBufferWithFx).
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
 
     const now = Math.max(time, this.ctx.currentTime);
@@ -3886,7 +3902,15 @@ class AudioEngineClass {
       synthParams = { ...part.synthParams, glide: Math.max(0.005, stepDur * 0.8) };
       prevFreq = prevState.lastFreq;
     }
-    eng.triggerNote(freq, synthParams, now, prevFreq, part.id, nodes.input);
+    // v3.284.0: Volume pro Note statt am geteilten Channel-Input. `triggerNote`
+    // nimmt eine Ziel-Node — genau dafür ist der Parameter laut seiner JSDoc da.
+    // Der Wrapper-Gain wird absichtlich nicht in JS festgehalten: er hat dieselbe
+    // Lebensdauer wie der ampEnv, den SynthEngine hineinhängt, und wird mit ihm
+    // einsammelbar, sobald der Oszillator gestoppt hat.
+    const noteGain = this.ctx.createGain();
+    noteGain.gain.value = Math.max(0, Math.min(2, volume));
+    noteGain.connect(nodes.input);
+    eng.triggerNote(freq, synthParams, now, prevFreq, part.id, noteGain);
 
     // State für die nächste Note merken
     this._partSlideState.set(part.id, { lastFreq: freq, lastHadSlide: slide });
@@ -3959,10 +3983,12 @@ class AudioEngineClass {
       if (options.sliceEnd != null) source.loopEnd = options.sliceEnd;
     }
     const nodes = this._getOrCreateChannelNodes(part.id, part.fx);
-    nodes.input.gain.value = Math.max(0, Math.min(2, volume));
+    // Pan pro Part konstant → bleibt am Kanal-Panner (siehe _triggerBufferWithFx).
     nodes.panner.pan.value = Math.max(-1, Math.min(1, pan));
     // v3.263.0: Voice-Gain für click-freies Cutoff bei Stop/Pattern-Wechsel.
+    // v3.284.0: trägt jetzt zusätzlich das Volume dieser Voice.
     const voiceGain = this.ctx.createGain();
+    voiceGain.gain.value = Math.max(0, Math.min(2, volume));
     source.connect(voiceGain);
     voiceGain.connect(nodes.input);
     this._registerVoice(source, voiceGain);

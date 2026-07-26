@@ -57,7 +57,9 @@ import {
   type KorgRemoteRule,
 } from "@/utils/korg/korgRemote";
 import {
+  FX_MAP_SLOT_COUNT,
   FX_SOURCE_CONTROL,
+  FX_SOURCE_CONTROL_KEYS,
   MFX_SLOT,
   NRPN_CATEGORY,
   NRPN_CC,
@@ -69,7 +71,9 @@ import {
   buildSequenceParam,
   buildSetFxParam,
   fxSlotForPart,
+  labelForFxSourceControl,
   labelForPanelMode,
+  type FxSourceControl,
   type PanelMode,
 } from "@/utils/korg/hacktribeNrpn";
 import {
@@ -795,5 +799,38 @@ describe("Learn mit NRPN-Zielen", () => {
     completeKorgRemoteLearn(19, 1);
     // Gleiches Quell-CC, verschiedene Ziele → beide bleiben bestehen.
     expect(getKorgRemoteState().rules).toHaveLength(2);
+  });
+});
+
+// ─── FX-Zuweisungs-Metadaten (fuer die map_fx_param-Oberflaeche) ─────────────
+
+describe("FX_SOURCE_CONTROL-Metadaten", () => {
+  it("listet jeden Code genau einmal und deckt die Tabelle vollständig ab", () => {
+    const keys = new Set(FX_SOURCE_CONTROL_KEYS);
+    expect(keys.size).toBe(FX_SOURCE_CONTROL_KEYS.length);
+    // Die Anzeigeliste darf keinen Eintrag der Quelltabelle unterschlagen.
+    expect(keys).toEqual(new Set(Object.keys(FX_SOURCE_CONTROL) as FxSourceControl[]));
+  });
+
+  it("führt die Codes aus dem Preset-Format, nicht die des RAM-Formats", () => {
+    // ht_fx_preset_format.py: 0x41..0x4A. Das RAM-Format benutzt 0x01..0x0A für
+    // dieselben Elemente — wer die verwechselt, verdrahtet stillschweigend
+    // falsche Bedienelemente.
+    expect(FX_SOURCE_CONTROL.none).toBe(0x00);
+    expect(FX_SOURCE_CONTROL.fxOn).toBe(0x41);
+    expect(FX_SOURCE_CONTROL.fxEditX).toBe(0x42);
+    expect(FX_SOURCE_CONTROL.fxEditY).toBe(0x43);
+    expect(FX_SOURCE_CONTROL.pressPlay).toBe(0x4a);
+  });
+
+  it("liefert für jedes Element ein Label", () => {
+    for (const k of FX_SOURCE_CONTROL_KEYS) {
+      expect(labelForFxSourceControl(k).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("kennt die 10 Map-Slots des FX-Presets", () => {
+    // control_map = 10 × fx_control (28 B) laut ht_fx_preset_format.py.
+    expect(FX_MAP_SLOT_COUNT).toBe(10);
   });
 });
