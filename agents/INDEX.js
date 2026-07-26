@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.283.0",
+    version: "3.285.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,26 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-07-26T12:40:00.000Z",
+      done: [
+        "Release v3.285.0 — drei Korg-Wellen nachtraeglich versioniert. package.json + project.version standen noch auf 3.283.0, waehrend die Modul-Koepfe der neuen Dateien bereits v3.284.0/v3.285.0 auswiesen. Kein CHANGELOG (Historie lebt hier).",
+        "Welle 1 (682a547, PR #22): Live-Sysex-Pattern-Transfer im Sequencer (utils/korg/e2NativeSysex.ts + audio/E2NativeSysexTransfer.ts). Senden ausschliesslich in den Edit-Buffer (CMD 0x40), NIE in einen Slot (0x4C) — ein Fehlgriff kann kein gespeichertes Pattern auf der Korg ueberschreiben. Empfangen auf ALLEN Inputs mit isE2SysexFrame-Filter, Senden auf konfiguriertem Out mit Namensheuristik. Dazu MIDI-Eingangsfilter (utils/midiInputFilter.ts + store/useMidiInputFilterStore.ts): pro Geraet (per NAME, nicht Port-ID — Web-MIDI vergibt IDs pro Session neu) und pro Nachrichtenklasse, greift als Erstes im Handler. VERHALTENSAENDERUNG: useMidi hoert jetzt per Default auf ALLEN Eingaengen (vorher genau einer) — ohne das ist Korg + Fader-Controller gleichzeitig unmoeglich und ein Pro-Geraet-Mute haette nichts zu muten. Plus 1.5 ms Voice-Fade-in gegen Start-Klicks (VOICE_ATTACK_SEC).",
+        "Welle 2 (682a547 → 59d22c2, PR #22): Korg-Remote-Regelwerk mit fuenf Ziel-Arten. cc (Stock-CC auf Part-Kanal, 18 Params, ohne Hacktribe) + vier NRPN-Ziele (utils/korg/hacktribeNrpn.ts): panel (10 Pad-Modi — Mute/Solo/Trigger am Geraet), fxParam (flacher Slot (part-1)*2+slot, MFX=0x20), globalParam (14-bit-Split), seqParam (der EINZIGE MIDI-Weg zu Motion-Steps). Altformat-Migration in makeKorgRemoteRule: persistierte {part,param}-Regeln werden auf ein cc-Ziel gehoben, EINES der beiden Felder genuegt — eine halb beschriebene Altregel darf nicht stillschweigend auf Part 1 fallen (von einem Test gefunden, nicht vom Konzept).",
+        "Welle 3 (4550e40, PR #23): Per-Voice-Gain in AudioEngine. volume enthaelt die Step-Velocity und stand auf nodes.input.gain — dem GETEILTEN Kanal-Eingang. Jeder neue Step verbog damit rueckwirkend alle noch klingenden Voices desselben Parts. Jetzt auf dem Voice-Gain (Sample-Pfade) bzw. einem Wrapper-Gain pro Note (Synth-Pfad via triggerNote-destination). KORREKTUR einer frueheren Diagnose: bei PAN gibt es das Problem NICHT — scheduled.pan ist part.pan, pro Part konstant. Pan bleibt am Kanal-Panner; die Unterscheidung ist in Code UND Test festgehalten, damit sie nicht spaeter 'vereinheitlicht' wird. Nebeneffekt: Volume-Parameter-Lock haelt jetzt (vorher vom naechsten Trigger ueberschrieben).",
+        "Welle 3 zusaetzlich: map_fx_param-Formular (verdrahtet Geraete-Regler dauerhaft mit FX-Parametern) + RAM-Werkzeug fuer Hacktribe-Sysex 0x52/0x53/0x54 (utils/korg/hacktribeRam.ts + audio/HacktribeRamTransfer.ts + DrumMachine/HacktribeRamPanel.tsx). Schutz: DDR2-Fenster hart begrenzt (Boot-Loader ab 0x80000000 wird ABGELEHNT, nicht mit Rueckfrage durchgelassen), zwei Bestaetigungen pro Write, Haeppchen a 0x100 B mit ACK, Read-Back nicht optional, Abbruch beim ersten Fehler mit Angabe der bereits geschriebenen Bytes. Flash (0x55/0x56), Execute (0x57), Loader (0x58) BEWUSST nicht angebunden — ein RAM-Fehler ist mit Power-Cycle behoben, ein Flash-Fehler nicht. Ein Test haelt fest, dass diese Kommandos nicht in RAM_CMD auftauchen.",
+        "Gates ueber alle drei Wellen: pnpm check clean, volle Suite 450 files / 10616 passed / 12 skipped (+220 neue Unit-Tests), 8 neue Playwright-Smokes im blockierenden Pfad. CI auf 4550e40: Type-Check + Unit-Tests gruen, Playwright Browser-Tests gruen."
+      ],
+      next: [
+        "Naechster Schritt Synthstudio: FX-Preset-Inspektor (utils/korg/e2FxPreset.ts). Das RAM-Werkzeug liefert heute nur Hex; map_fx_param ist schreibend aber NICHT nachpruefbar. Die 21 IFX- + 26 MFX-Device-IDs und das fx_control-Layout stehen in omnitribe/docs/reverse/hacktribe_ram_and_formats.md §2 — Param-NAMEN braeuchten ht_fx_preset_format.py (bangcorrupt, in dieser Sitzung nicht erreichbar: 403).",
+        "FALLSTRICK fuer den Inspektor: source_control hat ZWEI Kodierungen — Preset-Datei 0x41-0x4A, RAM 0x01-0x0A. Wir lesen aus RAM, also RAM als Default, bewiesen ist es nicht. Am Geraet zu klaeren: fxEditX per Formular setzen, Slot zuruecklesen, schauen ob 0x42 oder 0x02 im Byte steht.",
+        "Am Geraet ungeprueft: der gesamte Korg-Live-Pfad. Gefahrlosester Einstieg — einen IFX-Preset-Slot lesen (reiner Read), dann UNVERAENDERT zurueckschreiben; Read-Back muss 'identisch' melden. Prueft Chunking, ACK und Verifikation am Stueck ohne irgendetwas zu aendern.",
+        "Offen aus der Vorplanung: TASK-274 (SampleBrowser ~5463 LOC) + TASK-275 (DrumMachine ~4333 LOC, Kandidat makeE2sSampleResolver).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: []
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-19T14:40:00.000Z",
