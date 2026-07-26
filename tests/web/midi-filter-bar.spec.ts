@@ -118,3 +118,59 @@ test("Learn-Zeile wechselt die Ziel-Art und zeigt passende Felder", async ({ pag
   await learn.click();
   await expect(learn).toHaveText("Learn");
 });
+
+test("FX-Zuweisungs-Formular ist im Korg-Remote-Panel erreichbar", async ({ page }) => {
+  await page.getByTestId("toggle-korg-remote").click();
+
+  // Eingeklappt by default — es ist eine Sonderaktion, kein Live-Handgriff.
+  await expect(page.getByTestId("korg-map-fx-form")).toHaveCount(0);
+
+  await page.getByTestId("toggle-map-fx-form").click();
+  await expect(page.getByTestId("korg-map-fx-form")).toBeVisible();
+
+  // Default ist der X-Regler auf Map-Slot 0 — der übliche Einstieg.
+  await expect(page.getByTestId("korg-map-fx-source")).toHaveValue("fxEditX");
+  await expect(page.getByTestId("korg-map-fx-mapslot")).toHaveValue("0");
+  await expect(page.getByTestId("korg-map-fx-send")).toBeEnabled();
+});
+
+test("RAM-Werkzeug warnt, sperrt Schreiben und validiert die Adresse", async ({ page }) => {
+  await page.getByTestId("toggle-ram-tool").click();
+
+  const panel = page.getByTestId("hacktribe-ram-panel");
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("ram-panel-warning")).toBeVisible();
+
+  // Schreiben ist gesperrt, solange nicht beide Bestätigungen gesetzt sind.
+  const writeBtn = page.getByTestId("ram-write");
+  await expect(writeBtn).toBeDisabled();
+
+  await page.getByTestId("ram-write-input").fill("00 11 22");
+  await expect(writeBtn).toBeDisabled();
+  await page.getByTestId("ram-confirm-stopped").check();
+  await expect(writeBtn).toBeDisabled();
+  await page.getByTestId("ram-confirm-understood").check();
+  await expect(writeBtn).toBeEnabled();
+
+  // Der Boot-Loader-Bereich wird schon im Formular abgelehnt, nicht erst am Gerät.
+  await page.getByTestId("ram-addr-input").fill("0x80000000");
+  await expect(page.getByTestId("ram-range-error")).toBeVisible();
+  await expect(page.getByTestId("ram-read")).toBeDisabled();
+});
+
+test("RAM-Werkzeug übernimmt Adresse und Länge aus der Struktur-Karte", async ({ page }) => {
+  await page.getByTestId("toggle-ram-tool").click();
+
+  // Default: IFX-Preset, Slot 0.
+  await expect(page.getByTestId("ram-addr-input")).toHaveValue("0xC00A80F0");
+  await expect(page.getByTestId("ram-len-input")).toHaveValue("524");
+
+  // Slot 1 verschiebt um genau eine Struktur (0x20C).
+  await page.getByTestId("ram-slot-input").fill("1");
+  await expect(page.getByTestId("ram-addr-input")).toHaveValue("0xC00A82FC");
+
+  // Struktur-Wechsel setzt Adresse UND Länge neu.
+  await page.getByTestId("ram-map-select").selectOption("groove");
+  await expect(page.getByTestId("ram-addr-input")).toHaveValue("0xC0143B00");
+  await expect(page.getByTestId("ram-len-input")).toHaveValue("320");
+});

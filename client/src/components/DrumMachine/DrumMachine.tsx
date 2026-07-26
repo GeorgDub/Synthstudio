@@ -26,6 +26,7 @@ import { PatternMorphPanel } from "@/components/PatternMorph";
 // v3.269.0: Live-MIDI-Handgriffe direkt im Sequencer.
 import { MidiFilterBar } from "./MidiFilterBar";
 import { KorgRemotePanel } from "./KorgRemotePanel";
+import { HacktribeRamPanel } from "./HacktribeRamPanel";
 import { PatternVariationPanel } from "@/components/PatternVariation";
 import { ChordSuggestionPanel } from "@/components/ChordSuggestion/ChordSuggestionPanel";
 import { applyVariationToPattern } from "@/store/usePatternVariationStore";
@@ -1171,6 +1172,7 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
   const [showLooper, setShowLooper] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
   const [showKorgRemote, setShowKorgRemote] = useState(false);
+  const [showRamTool, setShowRamTool] = useState(false);
   const [showVariation, setShowVariation] = useState(false);
   const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
@@ -3746,6 +3748,21 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
           🎚 Korg-Remote
         </button>
 
+        {/* v3.285.0: RAM-Werkzeug — Hacktribe-Peek/Poke, bewusst eigener Knopf */}
+        <button
+          data-testid="toggle-ram-tool"
+          onClick={() => setShowRamTool(prev => !prev)}
+          title="Hacktribe-RAM lesen/schreiben (FX-Presets, Grooves). Nur mit Hacktribe-Firmware — Schreiben trifft das laufende Gerät."
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showRamTool
+              ? "bg-accent-danger/20 text-accent-danger border border-accent-danger/50"
+              : "bg-bg-elevated text-text-dim hover:text-text-primary",
+          ].join(" ")}
+        >
+          ⚡ RAM
+        </button>
+
         {/* v3.269.0: MIDI-Eingangsfilter — Live-Handgriff, deshalb dauerhaft sichtbar */}
         <MidiFilterBar />
 
@@ -4065,6 +4082,14 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
         <ResizableDrumPanel storageKey="ss-panel-korg-remote" defaultHeight={260} minHeight={160} maxHeight={460}
           onClose={() => setShowKorgRemote(false)}>
           <KorgRemotePanel onClose={() => setShowKorgRemote(false)} />
+        </ResizableDrumPanel>
+      )}
+
+      {/* ── Hacktribe-RAM-Werkzeug (v3.285.0) ────────────────────────────── */}
+      {showRamTool && (
+        <ResizableDrumPanel storageKey="ss-panel-ram-tool" defaultHeight={340} minHeight={200} maxHeight={560}
+          onClose={() => setShowRamTool(false)}>
+          <HacktribeRamPanel onClose={() => setShowRamTool(false)} />
         </ResizableDrumPanel>
       )}
 

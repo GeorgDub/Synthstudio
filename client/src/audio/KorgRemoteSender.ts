@@ -110,6 +110,46 @@ export function invalidateKorgRemoteOutput(): void {
   _cachedOutput = null;
 }
 
+/**
+ * Schickt eine einmalige Nachrichtenfolge ans Gerät und **wartet** darauf.
+ *
+ * Gegenstück zu {@link relayCcToKorg}: dort zählt jede Mikrosekunde und ein
+ * Fehlschlag ist folgenlos (der nächste Reglerwert kommt sowieso). Hier ist es
+ * umgekehrt — eine FX-Zuweisung wird genau einmal ausgelöst, also darf sie nicht
+ * still verloren gehen, und der Aufrufer braucht ein Ergebnis für die Anzeige.
+ *
+ * Nicht für Dauerverkehr benutzen: der Port wird bei Bedarf synchron aufgelöst.
+ */
+export async function sendKorgNrpnOnce(
+  messages: readonly (readonly number[])[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (messages.length === 0) return { ok: true };
+
+  if (!_cachedOutput) {
+    let access: MIDIAccess | null = null;
+    try {
+      access = await getE2MidiAccess();
+    } catch (err) {
+      return { ok: false, error: `Web MIDI nicht verfügbar: ${(err as Error)?.message ?? "unbekannt"}` };
+    }
+    if (!access) return { ok: false, error: "Web MIDI nicht verfügbar" };
+    _cachedOutput = resolveE2Output(access);
+  }
+  if (!_cachedOutput) {
+    return { ok: false, error: "Kein MIDI-Ausgang zur Electribe gefunden" };
+  }
+
+  try {
+    for (const bytes of messages) _cachedOutput.send(bytes as number[]);
+  } catch (err) {
+    // Port im laufenden Betrieb abgezogen — Cache verwerfen, damit der nächste
+    // Versuch neu auflöst statt auf einer toten Referenz zu scheitern.
+    _cachedOutput = null;
+    return { ok: false, error: `Senden fehlgeschlagen: ${(err as Error)?.message ?? "unbekannt"}` };
+  }
+  return { ok: true };
+}
+
 /** Test-only: Cache und Aktivität zurücksetzen, optional Output injizieren. */
 export function __setKorgRemoteOutputForTests(out: MIDIOutput | null): void {
   _cachedOutput = out;

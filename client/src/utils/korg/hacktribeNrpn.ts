@@ -280,3 +280,40 @@ export const FX_SOURCE_CONTROL = {
   keyGlobal: 0x49,
   pressPlay: 0x4a,
 } as const;
+
+export type FxSourceControl = keyof typeof FX_SOURCE_CONTROL;
+
+/** Stabile Anzeigereihenfolge (X/Y zuerst — die fasst man am Gerät an). */
+export const FX_SOURCE_CONTROL_KEYS: readonly FxSourceControl[] = [
+  "none",
+  "fxEditX",
+  "fxEditY",
+  "fxOn",
+  "fxEditXHi",
+  "fxEditXLo",
+  "fxEditYHi",
+  "fxEditYLo",
+  "keyPart",
+  "keyGlobal",
+  "pressPlay",
+] as const;
+
+/** Anzeigename eines Quell-Bedienelements. */
+export function labelForFxSourceControl(key: FxSourceControl): string {
+  switch (key) {
+    case "none": return "— keins —";
+    case "fxOn": return "FX On/Off";
+    case "fxEditX": return "FX Edit X";
+    case "fxEditY": return "FX Edit Y";
+    case "fxEditXHi": return "FX Edit X (hoch)";
+    case "fxEditXLo": return "FX Edit X (tief)";
+    case "fxEditYHi": return "FX Edit Y (hoch)";
+    case "fxEditYLo": return "FX Edit Y (tief)";
+    case "keyPart": return "Key (Part)";
+    case "keyGlobal": return "Key (global)";
+    case "pressPlay": return "Play-Taste";
+  }
+}
+
+/** Anzahl der Map-Slots eines FX-Presets (`control_map`, 10 × 28 B). */
+export const FX_MAP_SLOT_COUNT = 10;
