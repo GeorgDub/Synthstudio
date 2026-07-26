@@ -24,6 +24,7 @@ import { ImportError } from "./types";
 import { parseEsxBank, type EsxBank } from "../korg/esxParser";
 import { convertEsxPatternsToSynthstudio } from "../korg/esxPatternConvert";
 import { decodePatternBody, type E2PatternDecoded } from "../korg/e2Sysex";
+import { e2FilterToImportedFilter } from "../korg/e2FilterMap";
 // ─── Echter E2/E2S-Decode-Pfad (.e2sallpat / .e2spat) ────────────────────────
 // Nutzt den verifizierten `decodePatternBody` (Name/BPM/Steps/Osc). Layout-
 // Konstanten kommen aus der gemeinsamen Quelle e2Layout.ts (nicht mehr lokal
@@ -46,6 +47,9 @@ function e2PartToImported(
     sampleName: part.sampleRef > 0 ? label : undefined,
     volume: part.volume / 127,
     pan: (part.pan - 64) / 64, // Hinweis: pan@0x22 unbestätigt (nur Anzeige-Import)
+    // v3.296: verifizierter Per-Part-Filter (Type@0x0C/Cutoff@0x0D/Res@0x0E) →
+    // sicheres ChannelFx-Mapping (nur LPF/HPF, nie stummschaltend).
+    filter: e2FilterToImportedFilter(part.filterType, part.cutoff, part.resonance),
     steps: part.steps.map(s => ({ active: s.active, velocity: s.velocity })),
   };
 }
