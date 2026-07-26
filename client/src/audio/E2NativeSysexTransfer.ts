@@ -37,6 +37,12 @@ export type E2TransferResult =
 let _midiAccess: MIDIAccess | null = null;
 let _midiAccessPromise: Promise<MIDIAccess> | null = null;
 
+/**
+ * Gemeinsamer MIDIAccess für alle Electribe-Pfade (Sysex-Transfer und
+ * CC-Fernsteuerung). Ein zweiter `requestMIDIAccess({sysex:true})` würde in
+ * manchen Browsern eine zweite Berechtigungsabfrage auslösen — deshalb genau
+ * einer, hier.
+ */
 async function ensureMidiAccess(): Promise<MIDIAccess | null> {
   if (_midiAccess) return _midiAccess;
   if (typeof navigator === "undefined" || !navigator.requestMIDIAccess) return null;
@@ -65,6 +71,11 @@ function looksLikeElectribePort(name: string | null | undefined): boolean {
   return n.includes("electribe") || n.includes("korg") || n.includes("hacktribe");
 }
 
+/** Siehe {@link ensureMidiAccess} — für andere Electribe-Module. */
+export function getE2MidiAccess(): Promise<MIDIAccess | null> {
+  return ensureMidiAccess();
+}
+
 function resolveOutput(access: MIDIAccess): MIDIOutput | null {
   const configured = getE2sPatternSyncState().outputPortId;
   if (configured) {
@@ -75,6 +86,15 @@ function resolveOutput(access: MIDIAccess): MIDIOutput | null {
     if (looksLikeElectribePort(out.name)) return out;
   }
   return null;
+}
+
+/**
+ * Derselbe Electribe-Ausgang, den auch der Pattern-Transfer benutzt —
+ * konfigurierter Port zuerst, sonst Namensheuristik. Wiederverwendet, damit
+ * Pattern-Transfer und CC-Fernsteuerung nie auf verschiedenen Ports landen.
+ */
+export function resolveE2Output(access: MIDIAccess): MIDIOutput | null {
+  return resolveOutput(access);
 }
 
 // ─── Empfang ─────────────────────────────────────────────────────────────────

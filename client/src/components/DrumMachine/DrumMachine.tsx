@@ -23,6 +23,9 @@ import { NoteRepeatPanel } from "@/components/PerformanceMode/NoteRepeatPanel";
 import { LooperPanel } from "@/components/PerformanceMode/LooperPanel";
 import { TransposeControl } from "@/components/PianoRoll/TransposeControl";
 import { PatternMorphPanel } from "@/components/PatternMorph";
+// v3.269.0: Live-MIDI-Handgriffe direkt im Sequencer.
+import { MidiFilterBar } from "./MidiFilterBar";
+import { KorgRemotePanel } from "./KorgRemotePanel";
 import { PatternVariationPanel } from "@/components/PatternVariation";
 import { ChordSuggestionPanel } from "@/components/ChordSuggestion/ChordSuggestionPanel";
 import { applyVariationToPattern } from "@/store/usePatternVariationStore";
@@ -1167,6 +1170,7 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
   }, [stepRec.enabled, stepRec]);
   const [showLooper, setShowLooper] = useState(false);
   const [showMorph, setShowMorph] = useState(false);
+  const [showKorgRemote, setShowKorgRemote] = useState(false);
   const [showVariation, setShowVariation] = useState(false);
   const [showMixAssistant, setShowMixAssistant] = useState(false);
   const [showEnvFollower, setShowEnvFollower] = useState(false);
@@ -3727,6 +3731,24 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
           <ProLockBadge feature={PRO_FEATURE_E2_PATTERN_EXPORT} />
         </button>
 
+        {/* v3.269.0: CC-Fernsteuerung der Korg (Controller → Synthstudio → Gerät) */}
+        <button
+          data-testid="toggle-korg-remote"
+          onClick={() => setShowKorgRemote(prev => !prev)}
+          title="Korg-Remote: Regler eines MIDI-Controllers auf Part-Level, Filter und FX der Electribe legen"
+          className={[
+            "px-2 py-1 rounded text-[10px] font-bold transition-colors",
+            showKorgRemote
+              ? "bg-accent-primary/20 text-accent-primary border border-accent-primary/50"
+              : "bg-bg-elevated text-text-dim hover:text-text-primary",
+          ].join(" ")}
+        >
+          🎚 Korg-Remote
+        </button>
+
+        {/* v3.269.0: MIDI-Eingangsfilter — Live-Handgriff, deshalb dauerhaft sichtbar */}
+        <MidiFilterBar />
+
         {/* Pattern Morph */}
         <button
           onClick={() => setShowMorph(prev => !prev)}
@@ -4035,6 +4057,14 @@ function DrumMachineInner({ dm, samples, isPlaying, bpm, onPlayStop, onBpmChange
         <ResizableDrumPanel storageKey="ss-panel-looper" defaultHeight={180} minHeight={140} maxHeight={320}
           onClose={() => setShowLooper(false)}>
           <LooperPanel onClose={() => setShowLooper(false)} />
+        </ResizableDrumPanel>
+      )}
+
+      {/* ── Korg-Remote Panel (v3.269.0) ─────────────────────────────────── */}
+      {showKorgRemote && (
+        <ResizableDrumPanel storageKey="ss-panel-korg-remote" defaultHeight={260} minHeight={160} maxHeight={460}
+          onClose={() => setShowKorgRemote(false)}>
+          <KorgRemotePanel onClose={() => setShowKorgRemote(false)} />
         </ResizableDrumPanel>
       )}
 
