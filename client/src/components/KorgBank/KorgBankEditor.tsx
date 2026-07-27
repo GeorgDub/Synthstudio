@@ -59,6 +59,7 @@ import {
   deleteSlot,
   displayCategory,
   displayName,
+  filterOpenedSlots,
   hasUnsavedChanges,
   openedSlotsToBuildInputs,
   patchOpenedSlot,
@@ -238,6 +239,9 @@ export function KorgBankEditor({
   const [openedSlots, setOpenedSlots] = useState<OpenedSlot[]>([]);
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  // v3.286 — Slot-Browser-Filter (1002 Slots wollen gefiltert werden).
+  const [openedSearch, setOpenedSearch] = useState<string>("");
+  const [openedHideEmpty, setOpenedHideEmpty] = useState<boolean>(true);
 
   // v3.29.0 — "esx" mode state
   const [esxBankBuffer, setEsxBankBuffer] = useState<ArrayBuffer | null>(null);
@@ -1580,6 +1584,10 @@ export function KorgBankEditor({
     () => openedSlots.find((s) => s.rowId === selectedRowId) ?? null,
     [openedSlots, selectedRowId],
   );
+  const visibleOpenedSlots = useMemo(
+    () => filterOpenedSlots(openedSlots, openedSearch, openedHideEmpty),
+    [openedSlots, openedSearch, openedHideEmpty],
+  );
 
   // v3.29.0 — ESX-Mode computed
   const esxFilledCount = useMemo(
@@ -2039,8 +2047,35 @@ export function KorgBankEditor({
               📂 Andere
             </button>
           </div>
+          {/* v3.286 — Filter. Die Tabelle hat 1002 Slots; eine Hacktribe-Bank
+              belegt davon die ab 501. Ohne Filter wäre das eine Scroll-Wüste. */}
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <input
+              data-testid="korg-bank-editor-slot-search"
+              type="text"
+              placeholder="Suchen (Name oder Index)"
+              value={openedSearch}
+              onChange={(e) => setOpenedSearch(e.target.value)}
+              className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
+            />
+            <label className="text-[10px] text-text-muted flex items-center gap-1">
+              <input
+                data-testid="korg-bank-editor-slot-hide-empty"
+                type="checkbox"
+                checked={openedHideEmpty}
+                onChange={(e) => setOpenedHideEmpty(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              Leere verbergen
+            </label>
+          </div>
           <ul className="space-y-0.5" data-testid="korg-bank-editor-slot-browser">
-            {openedSlots.map((slot) => (
+            {visibleOpenedSlots.length === 0 && (
+              <li className="text-xs text-text-dim italic py-4 text-center">
+                Keine Slots passen zu deinem Filter.
+              </li>
+            )}
+            {visibleOpenedSlots.map((slot) => (
               <li key={slot.rowId}>
                 <button
                   data-testid={`korg-bank-editor-slot-${slot.slotIndex}`}

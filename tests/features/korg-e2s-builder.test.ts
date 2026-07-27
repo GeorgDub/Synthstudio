@@ -9,7 +9,7 @@
  *     peakNormalize, convertToE2sSpec
  *   - e2sBankBuilder:
  *       * Magic-Signature
- *       * Offset-Table @ 0x07E0 mit 250 Einträgen
+ *       * Offset-Table @ 0x0058 mit 1002 Einträgen
  *       * Sample-Area beginnt bei 0x1000
  *       * Pro Slot: RIFF + fmt + data + korg-Chunks
  *       * korg-Chunk ist exakt 1180B
@@ -17,7 +17,7 @@
  *       * ESLI-Name 16B ASCII space-padded
  *       * Category-Enum-Clamp 0..17
  *       * Empty Slots haben Offset=0
- *       * Max 250 Slots enforced
+ *       * Max E2S_MAX_SLOTS Slots enforced
  *       * File-Size respektiert E2S_MAX_TOTAL_PCM_BYTES
  *
  *   - Round-Trip (THE killer test):
@@ -251,7 +251,7 @@ describe("e2sBankBuilder — produced file structure", () => {
     expect(bytesEqual(view.subarray(0, 16), E2S_ALL_SIGNATURE)).toBe(true);
   });
 
-  it("places offset table at 0x07E0 with 250 entries", () => {
+  it("places offset table at 0x0058 and fills it to the sample area", () => {
     const pcm = sineFloat(100);
     const inputs: E2sSlotInput[] = [
       { slotIndex: 0, name: "Kick01", pcmData: pcm, sampleRate: 44100, channels: 1 },
@@ -262,7 +262,7 @@ describe("e2sBankBuilder — produced file structure", () => {
     // First entry must point at >= 0x1000
     const first = dv.getUint32(E2S_ALL_OFFSET_TABLE_START, true);
     expect(first).toBe(E2S_ALL_SAMPLE_AREA_START);
-    // 250th entry exists and is readable (= 0 for empty)
+    // Der letzte Tabellen-Eintrag ist noch lesbar (= 0, weil leer)
     const last = dv.getUint32(E2S_ALL_OFFSET_TABLE_START + (E2S_MAX_SLOTS - 1) * 4, true);
     expect(last).toBe(0);
   });

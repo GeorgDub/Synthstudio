@@ -68,9 +68,8 @@ function float32ToLe16(pcm: Float32Array): Uint8Array {
  *
  * Layout:
  *   - 0x0000: 16B Signature
- *   - 0x0010..0x07DF: zeros (prelude padding)
- *   - 0x07E0..0x0BC7: offset table (250 × u32 LE)
- *   - 0x0BC8..0x0FFF: zeros (padding to 0x1000)
+ *   - 0x0010..0x0057: zeros (header rest, reserved)
+ *   - 0x0058..0x0FFF: offset table (1002 × u32 LE) — endet exakt auf 0x1000
  *   - 0x1000+: RIFF/WAVE chunks (one per slot)
  */
 function buildMinimalE2sBuffer(slots: Array<SyntheticSlot | null>): Uint8Array {

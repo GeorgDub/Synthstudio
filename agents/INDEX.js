@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.285.0",
+    version: "3.286.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-26T15:05:00.000Z",
+      done: [
+        "Release v3.286.0 — Offset-Tabelle des .all-Containers korrigiert. E2S_ALL_OFFSET_TABLE_START 0x07E0 -> 0x0058, E2S_MAX_SLOTS 250 -> 1002 (utils/korg/constants.ts). Der Befund kommt aus PR #21 (Fremd-Session, jetzt geschlossen); die Aufloesung stand aber schon fertig im Python-Editor: Korg_ESX_E2S_Editor TASK-029 hat sie 2026-05-19 gegen die Werks-e2sSample.all von 2014 UND 13 Dumps echter Geraete geklaert. Synthstudios TS-Port war gegenueber seiner eigenen deklarierten SoT (constants.py) veraltet.",
+        "WARUM 0x07E0 plausibel aussah: die Werksdatei belegt die Tabellen-Indizes 482..492, und 0x0058 + 482*4 == 0x07E0 — der erste nicht-null-Eintrag landete genau dort, die 482 Nullen davor gingen als reserved padding durch. Dieselben Bytes, falsch geschnitten. Deshalb blieb der Round-Trip die ganze Zeit bit-exakt und kein Test hat gemeckert: alle E2S-Suiten pruefen die Geometrie SYMBOLISCH (START + i*4), also die Konsistenz von Reader und Builder, nie die Uebereinstimmung mit dem Geraet.",
+        "PRAKTISCHE FOLGE: Hacktribe legt User-Samples ab Index 501 ab. Mit 250 Slots war jede Hacktribe-Bank unlesbar und der Builder hat solche Slots als out-of-range verworfen. Ab jetzt adressierbar bis 1001 (E2S_SLOT_INDEX_MAX = 1000 als UI-Grenze, die 2 letzten Tabellen-Eintraege sind reserviert).",
+        "Neue Exact-Fit-Invariante im Builder: START + BYTES muss == E2S_ALL_SAMPLE_AREA_START sein. Genau diese Rechnung haette den Fehler gezeigt (0x07E0 + 1000 = 0x0BC8 != 0x1000) — sie steht jetzt als Laufzeit-Check im Code und als Test.",
+        "filterOpenedSlots (utils/korg/bankEditorState.ts) + Suche/Leere-verbergen im Slot-Browser. Erst durch die Korrektur noetig: 1002 Zeilen, davon bei einer Hacktribe-Bank die ersten ~500 leer. hideEmpty laesst DIRTY-Slots stehen — ein gerade geleerter Slot darf nicht mitsamt ungespeicherter Aenderung unter dem Cursor verschwinden. Index-Suche matcht exakt, nicht per Substring (sonst trifft '77' auch #777).",
+        "BEWUSST NICHT mitgezogen: E2S_MAX_TOTAL_PCM_BYTES. Die SoT fuehrt seit TASK-029 24 MB (echtes Geraete-Limit), wir behalten 224 MB. Ein Absenken wuerde Banken zurueckweisen, die sich bisher bauen liessen — das ist eine Produktentscheidung, keine Formatkorrektur. Als Abweichung in constants.ts dokumentiert.",
+        "Gates: pnpm check clean, volle Suite 454 files / 10706 passed / 75 skipped (+19 Unit-Tests in tests/features/e2s-offset-table-layout.test.ts, die die Zahlen absichtlich LITERAL nennen — ein symbolischer Test kann einen falschen Wert nicht bemerken). 2 neue Playwright-Smokes (tests/web/korg-bank-slot-filter.spec.ts) laden eine handgebaute .all mit Sample auf Slot 501 durch die ganze Kette Datei -> Parser -> UI."
+      ],
+      next: [
+        "Am Geraet zu pruefen: eine echte Hacktribe-.all oeffnen und gegenlesen, ob die Sample-Nummern im Slot-Browser mit der Geraete-Anzeige uebereinstimmen. Die 0x0058/1002-Geometrie ist gegen 14 Dumps belegt, aber nicht von uns selbst nachgemessen — in diesem Container liegt kein .all-Fixture.",
+        "Offen aus der Vorwelle, unveraendert: source_control-Kodierung (Preset-Datei 0x41-0x4A vs RAM 0x01-0x0A) am Geraet klaeren; C-Handler fuer OTP CMD 0x10 (GATE-001-blockiert); Device->Parametername-Tabelle (braucht ht_fx_preset_format.py, hier 403).",
+        "E2S_MAX_TOTAL_PCM_BYTES: entscheiden, ob 24 MB hart, 24 MB als Warnung oder 224 MB bleibt.",
+        "Offen aus der Vorplanung: TASK-274 (SampleBrowser ~5463 LOC) + TASK-275 (DrumMachine ~4333 LOC).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/korg/constants.ts",
+        "client/src/utils/korg/e2sBankBuilder.ts",
+        "client/src/utils/korg/e2sBankReader.ts",
+        "client/src/utils/korg/bankEditorState.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/e2s-offset-table-layout.test.ts",
+        "tests/web/korg-bank-slot-filter.spec.ts"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-07-26T12:40:00.000Z",
