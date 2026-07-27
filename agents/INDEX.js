@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.300.0",
+    version: "3.301.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,27 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "refactor",
+      timestamp: "2026-07-27T10:05:00.000Z",
+      done: [
+        "v3.301.0 — components/SampleSlicer/ geloescht (SampleSlicer.tsx 605 LOC + index.ts). Die Komponente war exportiert, wurde aber NIRGENDS gerendert: kein Import ausserhalb des eigenen Verzeichnisses, in keiner Datei unter client/, tests/ oder electron/. Der aktive Slicer ist SampleEditor/SampleSliceEditor.tsx, gemountet aus DrumMachine.tsx. Aufgefallen bei der Slicer-Arbeit in v3.300, geloescht auf ausdrueckliche Ansage.",
+        "pnpm check clean nach der Loeschung, volle Suite unveraendert gruen — nichts hing daran."
+      ],
+      next: [
+        "AUS DEM GELOESCHTEN CODE GERETTET — drei Faehigkeiten, die der aktive Editor NICHT hat und die beim Aufraeumen sonst mit verschwunden waeren:",
+        "(a) BPM-Raster ueber der Wellenform (drawBpmGrid: zeichnet Beat-Linien aus einer eingegebenen BPM). Bei Loops die schnellste Orientierung, wo ein Schnitt hingehoert.",
+        "(b) Snap-to-Beat beim Setzen der Marker (warpSnap + framesPerBeat = sampleRate*60/bpm). Ergaenzt den vorhandenen Zero-Crossing-Snap: der macht den Schnitt knackfrei, dieser macht ihn rhythmisch richtig. Beide zusammen waeren das eigentliche Ziel.",
+        "(c) Teilen in N GLEICHE Abschnitte (equalDivisions, Default 16) statt Onset-Erkennung. Bei sauber geschnittenen Loops zuverlaessiger als jede Transientenanalyse — dort ist das Raster bekannt, nicht zu erraten.",
+        "Die Implementierungen stehen in der Git-Historie (letzter Stand: 73aee66^, Datei client/src/components/SampleSlicer/SampleSlicer.tsx, Zeilen 34-79 drawBpmGrid, 288-300 warpSnap, 366-372 equalDivisions).",
+        "Offen aus der Vorwelle: Gegenprobe der Tabellen-Geometrie 0x0010 an einer echten Hacktribe-.all (auf 'offset-table geometry suspect' achten); Slicer-Gegenprobe am Geraet (Benennung/Reihenfolge auf dem Electribe-Display); RAM-Timeout-Test 0xC00A80F0 Laenge 524; GitHub-Release muss der Nutzer selbst anstossen (403 auf beiden Wegen); E2S_MAX_TOTAL_PCM_BYTES 224 vs 24 MB; source_control-Kodierung; C-Handler OTP CMD 0x10; Device->Parametername-Tabelle.",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/components/SampleSlicer/SampleSlicer.tsx (geloescht)",
+        "client/src/components/SampleSlicer/index.ts (geloescht)"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-27T09:30:00.000Z",
