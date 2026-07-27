@@ -94,15 +94,29 @@ describe("OmniTribe-Spiegel: Drift-Gate", () => {
     ).toEqual([]);
   });
 
-  it("die NRPN-Map trägt alle Module der Quelle", () => {
-    // Der konkrete Rückfall, den dieses Gate verhindern soll: die Map war zwei
-    // Monate und ein Modul zurück (generator_catalog fehlte komplett), weil der
-    // Sync nach einer Änderung an der Quelle nie lief.
+  it("die NRPN-Map trägt alle Module unter ihrem Geräte-Namen", () => {
+    // Zwei Rückfälle, die dieses Gate verhindern soll:
+    //  1. die Map war zwei Monate und ein Modul zurück, weil der Sync nach
+    //     einer Änderung an der Quelle nie lief;
+    //  2. fünf Module standen unter ihrem DATEINAMEN statt unter dem Namen,
+    //     den sie per OMNITRIBE_MODULE_DECLARE auf dem Gerät tragen. Das
+    //     ABI-Namensfeld fasst nur 16 Byte, deshalb heißt
+    //     generator_catalog.c auf dem Gerät "gen_catalog".
     const map = readFileSync(resolve(REPO, "client/src/audio/nrpn-map.ts"), "utf8");
-    const modules = [...map.matchAll(/^\s*"([a-z_]+)":\s*\{/gm)].map((x) => x[1]);
+    const modules = [...map.matchAll(/^\s*"([a-z0-9_]+)":\s*\{/gm)].map((x) => x[1]);
 
     expect(modules.length, `nur ${modules.length} Module gefunden`).toBeGreaterThanOrEqual(17);
-    expect(modules).toContain("generator_catalog");
+
+    // Die fünf, bei denen Dateiname und Geräte-Name auseinandergehen.
+    for (const abiName of ["gen_catalog", "audio_input", "cpu_budget",
+                           "polyphony", "spec_morph"]) {
+      expect(modules, `${abiName} fehlt oder steht unter dem Dateinamen`).toContain(abiName);
+    }
+    // Und die Dateinamen dürfen NICHT als Schlüssel auftauchen.
+    for (const fileName of ["generator_catalog", "audio_input_routing",
+                            "cpu_budget_module", "polyphony_pool", "spectral_morph"]) {
+      expect(modules, `${fileName} ist ein Dateiname, kein Geräte-Name`).not.toContain(fileName);
+    }
   });
 
   it("die Bridge exportiert die Symbole, die die Parity-Harness braucht", () => {

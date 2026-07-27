@@ -52,7 +52,7 @@ export const NRPN_MAP: Record<string, NRPNModule> = {
       0x1617: { description: "Velocity-Pattern Steps 0..7", source: "arpeggiator.c" },
     },
   },
-  "audio_input_routing": {
+  "audio_input": {
     source: "audio_input_routing.c",
     msbs: [0x21],
     params: {
@@ -74,7 +74,7 @@ export const NRPN_MAP: Record<string, NRPNModule> = {
       0x1E03: { description: "Enabled (0/1)", source: "chord.c" },
     },
   },
-  "cpu_budget_module": {
+  "cpu_budget": {
     source: "cpu_budget_module.c",
     msbs: [0x1A],
     params: {
@@ -82,7 +82,7 @@ export const NRPN_MAP: Record<string, NRPNModule> = {
       0x1A11: { description: "CPU-Stream aktivieren (0/1)", source: "cpu_budget_module.c" },
     },
   },
-  "generator_catalog": {
+  "gen_catalog": {
     source: "generator_catalog.c",
     msbs: [0x08],
     params: {
@@ -195,7 +195,7 @@ export const NRPN_MAP: Record<string, NRPNModule> = {
       0x1F42: { description: "enable (0/1)", source: "performance.c" },
     },
   },
-  "polyphony_pool": {
+  "polyphony": {
     source: "polyphony_pool.c",
     msbs: [0x1A],
     params: {
@@ -230,7 +230,7 @@ export const NRPN_MAP: Record<string, NRPNModule> = {
       0x1D05: { description: "Enable (0/1)", source: "sidechain.c" },
     },
   },
-  "spectral_morph": {
+  "spec_morph": {
     source: "spectral_morph.c",
     msbs: [0x1E],
     params: {

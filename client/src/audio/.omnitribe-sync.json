@@ -2,7 +2,7 @@
   "_comment": "Auto-generiert von omnitribe/tools/build/sync_to_synthstudio.py. Nicht von Hand bearbeiten. sha256 der SoT-Dateien im OmniTribe-Repo zum Zeitpunkt des letzten Sync. Der Drift-Test in tests/features/omnitribe-bridge-mirror-drift.test.ts prueft die gespiegelten Dateien dagegen.",
   "files": {
     "client/src/audio/OmniTribeBridge.ts": "1f1630abf49c39d4321c07ba4f9bb31289373d51f86689f0f487c0ab637cacdd",
-    "client/src/audio/nrpn-map.ts": "f89c5aaf2649f7f60fb087c988b76b1797a61c634dcc570ef6d5eae7f2bd6b41",
+    "client/src/audio/nrpn-map.ts": "d1df3b233ef539eb9d5774ba2c98b381f57149344a0ce052b823b4a6012f0ed0",
     "docs/omnitribe/NRPN_REFERENCE.md": "ffa825617460b93a74956ad4c90abaf8e61029018d5fdca8e7457ca53655ecf1",
     "SYNTHSTUDIO_INTEGRATION.md": "7abba5093a6b3e6a4f0d6190ee6afefc86c70c4597512fd4fcad01390c6fc0bb"
   }
