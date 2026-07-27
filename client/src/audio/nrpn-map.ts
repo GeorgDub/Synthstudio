@@ -4,7 +4,7 @@
  * DO NOT EDIT MANUALLY. Regenerate via:
  *   python tools/build/generate_ts_bindings.py
  *
- * Generated: 2026-05-18
+ * Generated: 2026-07-27
  *
  * Sprint-53: SynthStudio-Bridge-Auto-Bindings.
  */
@@ -80,6 +80,52 @@ export const NRPN_MAP: Record<string, NRPNModule> = {
     params: {
       0x1A10: { description: "Target-CPU-Last in % (50..95)", source: "cpu_budget_module.c" },
       0x1A11: { description: "CPU-Stream aktivieren (0/1)", source: "cpu_budget_module.c" },
+    },
+  },
+  "generator_catalog": {
+    source: "generator_catalog.c",
+    msbs: [0x08],
+    params: {
+      0x0800: { description: "silence/clear-stub (catalog idx 0; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0801: { description: "wavetable-interp osc [lut] (catalog idx 1; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0802: { description: "wavetable-interp osc [lut] (catalog idx 2; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0803: { description: "polynomial/parabolic shaper (catalog idx 3; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0804: { description: "generator, filter/resonator-shaped (catalog idx 4; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0805: { description: "saw/ramp + soft-clip generator (catalog idx 5; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0806: { description: "generator, filter/resonator-shaped multimode (catalog idx 6; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0807: { description: "generator, filter/resonator-shaped multimode (catalog idx 7; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0808: { description: "generator, filter/resonator-shaped multimode (catalog idx 8; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0809: { description: "wavetable-interp osc [lut] LSETUP (catalog idx 9; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x080A: { description: "wavetable-interp osc [lut] LSETUP (catalog idx 10; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x080B: { description: "polynomial/parabolic shaper (catalog idx 11; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x080C: { description: "polynomial shaper LSETUP (catalog idx 12; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x080D: { description: "additive/harmonic-sum osc (catalog idx 13; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x080E: { description: "additive/harmonic-sum osc (catalog idx 14; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x080F: { description: "additive osc + DC-offset (catalog idx 15; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0810: { description: "saw/wrap shaper (catalog idx 16; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0811: { description: "wavetable-interp osc + parabola pre-shape (catalog idx 17; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0812: { description: "wavetable-interp osc + parabola pre-shape (catalog idx 18; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0813: { description: "saw-wrap + parabola shaper (catalog idx 19; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0814: { description: "saw-wrap + polynomial shaper (catalog idx 20; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0815: { description: "wavetable-interp osc [lut] LSETUP (catalog idx 21; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0816: { description: "wavetable-interp osc [lut] LSETUP (catalog idx 22; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0817: { description: "polynomial shaper state-rewind (catalog idx 23; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0818: { description: "polynomial/parabolic shaper LSETUP (catalog idx 24; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0819: { description: "wavetable-interp osc 2-stage (catalog idx 25; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x081A: { description: "wavetable-interp osc 2-stage (catalog idx 26; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x081B: { description: "generator, filter/resonator-shaped bidirectional (catalog idx 27; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x081C: { description: "generator, filter/resonator-shaped z-state (catalog idx 28; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x081D: { description: "wavetable-interp osc 2-stage (catalog idx 29; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x081E: { description: "wavetable-interp osc 2-stage (catalog idx 30; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x081F: { description: "generator, filter/resonator-shaped bidirectional (catalog idx 31; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0820: { description: "generator, filter/resonator-shaped z-state (catalog idx 32; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0821: { description: "generator, biquad/SVF-shaped (catalog idx 33; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0822: { description: "PCM sample-player PINNED (catalog idx 34; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0823: { description: "generator, filter/resonator-shaped fu-MAC (catalog idx 35; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0824: { description: "slice/wrap-counter osc (catalog idx 36; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0825: { description: "wavetable-interp osc [lut] largest (catalog idx 37; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0826: { description: "bit-masked/quantizer osc (catalog idx 38; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
+      0x0827: { description: "generator, filter/resonator-shaped + parabola TOP (catalog idx 39; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)", source: "generator_catalog.c" },
     },
   },
   "granular": {
@@ -242,4 +288,4 @@ export function modulesForMsb(msb: number): string[] {
 }
 
 /** Gesamtanzahl der dokumentierten Parameter. */
-export const TOTAL_NRPN_PARAMS = 85;
+export const TOTAL_NRPN_PARAMS = 125;

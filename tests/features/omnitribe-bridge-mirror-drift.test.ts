@@ -1,88 +1,123 @@
 /**
- * omnitribe-bridge-mirror-drift.test.ts — Sprint-120b.3 Bridge Mirror Drift Check.
+ * omnitribe-bridge-mirror-drift.test.ts — Drift-Gate für die OmniTribe-Spiegel.
  *
- * Asserts that the SynthStudio mirror of OmniTribeBridge.ts is byte-identical
- * to the SoT in the OmniTribe repo.
+ * Vier Dateien in diesem Repo sind **Kopien**, keine Quellen. Ihre Quelle liegt
+ * im OmniTribe-Repo, und der Weg hierher führt ausschließlich über
+ * `omnitribe/tools/build/sync_to_synthstudio.py --apply`:
  *
- * Background:
- *   - SoT: G:/IdeaProjects/Omnitribe/host/synthstudio/OmniTribeBridge.ts
- *   - Mirror: G:/IdeaProjects/Synthstudio/client/src/audio/OmniTribeBridge.ts
- *   - Sync tool: G:/IdeaProjects/Omnitribe/tools/build/sync_to_synthstudio.py
+ *   client/src/audio/OmniTribeBridge.ts   ← host/synthstudio/OmniTribeBridge.ts
+ *   client/src/audio/nrpn-map.ts          ← host/synthstudio/nrpn-map.ts (generiert)
+ *   docs/omnitribe/NRPN_REFERENCE.md      ← docs/midi/NRPN_REFERENCE.md
+ *   SYNTHSTUDIO_INTEGRATION.md            ← SYNTHSTUDIO_INTEGRATION.md
  *
- * Sprint-112.3 drift test lives in OmniTribe (test_sprint53_ts_bindings.py checks
- * nrpn-map.ts drift via --check mode of generate_ts_bindings.py).
- * No equivalent Bridge-drift test exists in OmniTribe tests — this fills the gap
- * from the SynthStudio side. Symmetry note: ideally this test would live in the
- * OmniTribe repo where the sync tool lives, but the Sprint-120a/120c boundary
- * prevents that modification in Sprint-120b.
+ * Wer eine davon hier direkt bearbeitet, verliert die Änderung beim nächsten
+ * Sync — lautlos.
  *
- * If this test fails it means sync_to_synthstudio.py --apply needs to be run
- * by the OmniTribe maintainer after a bridge change.
+ * ── Warum Hash-Manifest statt Pfad-Vergleich ────────────────────────────────
+ * Die Vorgängerfassung las die Quelle über einen absoluten Pfad
+ * (`G:/IdeaProjects/Omnitribe/...`) und übersprang sich deshalb per
+ * `RUN_BRIDGE_DRIFT_CHECK=1`-Opt-in selbst. CI-Runner haben dieses Laufwerk
+ * nicht, also lief der Test dort nie — er schützte faktisch nichts. Genau in
+ * dieser Zeit fiel die NRPN-Map um eine Generation zurück (16 statt 17 Module,
+ * zwei Monate alt), ohne dass es jemandem auffiel.
+ *
+ * Jetzt schreibt das Sync-Tool bei `--apply` ein Hash-Manifest
+ * (`client/src/audio/.omnitribe-sync.json`) mit dem sha256 jeder Quelldatei.
+ * Der Test vergleicht die Spiegel dagegen — ohne Zugriff aufs andere Repo,
+ * also überall lauffähig.
+ *
+ * Ein Manifest und keine eingecheckten Kopien: eine Kopie könnte selbst
+ * driften, ein Hash nicht.
  */
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import { createHash } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
-// Absolute paths — this test is environment-specific to the dev machine.
-// Opt-in via RUN_BRIDGE_DRIFT_CHECK=1: default skip because:
-//   1. CI runners (Ubuntu/Mac/Windows) haben G:/IdeaProjects/Omnitribe nicht gemountet
-//   2. Sprint-120a STATE_DUMP-Code lebt aktuell nur in der SynthStudio-Mirror und
-//      noch nicht in der OmniTribe-SoT — Drift ist intentional bis Cross-Repo-Sync
-//      manuell durchgefuehrt wird.
-// Zum Drift-Check explizit aktivieren: RUN_BRIDGE_DRIFT_CHECK=1 pnpm test ...
-const SOT_PATH = resolve("G:/IdeaProjects/Omnitribe/host/synthstudio/OmniTribeBridge.ts");
-const MIRROR_PATH = resolve("G:/IdeaProjects/Synthstudio/client/src/audio/OmniTribeBridge.ts");
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const MANIFEST_PATH = resolve(REPO, "client/src/audio/.omnitribe-sync.json");
 
-const skipReason = (() => {
-  if (process.env.RUN_BRIDGE_DRIFT_CHECK !== "1") {
-    return "RUN_BRIDGE_DRIFT_CHECK!=1 — drift-check ist opt-in (Default skip)";
-  }
-  try {
-    readFileSync(SOT_PATH);
-    return null;
-  } catch {
-    return `OmniTribe SoT not accessible at ${SOT_PATH}`;
-  }
-})();
+interface SyncManifest {
+  _comment?: string;
+  files: Record<string, string>;
+}
 
-describe("OmniTribeBridge Mirror Drift Check (Sprint-120b.3)", () => {
-  it("Mirror is byte-identical to OmniTribe SoT", () => {
-    if (skipReason) {
-      console.warn(`[drift-check SKIPPED] ${skipReason}`);
-      return; // soft-skip: don't fail CI when OmniTribe repo unavailable
-    }
+function readManifest(): SyncManifest {
+  return JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as SyncManifest;
+}
 
-    const sotContent = readFileSync(SOT_PATH);
-    const mirrorContent = readFileSync(MIRROR_PATH);
+function sha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
 
-    const sotHash = Buffer.from(sotContent).toString("base64");
-    const mirrorHash = Buffer.from(mirrorContent).toString("base64");
+describe("OmniTribe-Spiegel: Drift-Gate", () => {
+  it("das Sync-Manifest ist vorhanden und wohlgeformt", () => {
+    expect(
+      existsSync(MANIFEST_PATH),
+      "client/src/audio/.omnitribe-sync.json fehlt — im OmniTribe-Repo " +
+        "'python tools/build/sync_to_synthstudio.py --apply' ausführen",
+    ).toBe(true);
 
-    if (sotHash !== mirrorHash) {
-      // Produce a useful diff summary (first differing line)
-      const sotLines = sotContent.toString("utf-8").split("\n");
-      const mirrorLines = mirrorContent.toString("utf-8").split("\n");
-      let firstDiff = -1;
-      const maxLines = Math.max(sotLines.length, mirrorLines.length);
-      for (let i = 0; i < maxLines; i++) {
-        if (sotLines[i] !== mirrorLines[i]) {
-          firstDiff = i + 1;
-          break;
-        }
+    const m = readManifest();
+    expect(m.files, "Manifest hat kein files-Objekt").toBeTypeOf("object");
+    expect(
+      Object.keys(m.files).length,
+      "Manifest ist leer — der Sync hat keine Quelle gefunden",
+    ).toBeGreaterThan(0);
+  });
+
+  it("keine gespiegelte Datei wurde hier direkt bearbeitet", () => {
+    const m = readManifest();
+    const drifted: string[] = [];
+
+    for (const [rel, expectedSha] of Object.entries(m.files)) {
+      const path = resolve(REPO, rel);
+      if (!existsSync(path)) {
+        drifted.push(`${rel}: fehlt`);
+        continue;
       }
-      const diffMsg = firstDiff > 0
-        ? `First differing line: ${firstDiff}\n` +
-          `  SoT:    ${(sotLines[firstDiff - 1] ?? "(missing)").slice(0, 120)}\n` +
-          `  Mirror: ${(mirrorLines[firstDiff - 1] ?? "(missing)").slice(0, 120)}`
-        : `Length differs: SoT=${sotContent.length} Mirror=${mirrorContent.length}`;
-      throw new Error(
-        `OmniTribeBridge.ts mirror has drifted from SoT.\n` +
-        `Run: python G:/IdeaProjects/Omnitribe/tools/build/sync_to_synthstudio.py --apply\n\n` +
-        diffMsg,
-      );
+      const actual = sha256(path);
+      if (actual !== expectedSha) {
+        drifted.push(
+          `${rel}: ${actual.slice(0, 12)}… erwartet ${expectedSha.slice(0, 12)}…`,
+        );
+      }
     }
 
-    expect(sotHash).toBe(mirrorHash);
+    expect(
+      drifted,
+      "Diese Spiegel weichen von ihrer Quelle ab. Änderungen gehören ins " +
+        "OmniTribe-Repo, danach dort 'python tools/build/sync_to_synthstudio.py " +
+        `--apply' ausführen:\n  ${drifted.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("die NRPN-Map trägt alle Module der Quelle", () => {
+    // Der konkrete Rückfall, den dieses Gate verhindern soll: die Map war zwei
+    // Monate und ein Modul zurück (generator_catalog fehlte komplett), weil der
+    // Sync nach einer Änderung an der Quelle nie lief.
+    const map = readFileSync(resolve(REPO, "client/src/audio/nrpn-map.ts"), "utf8");
+    const modules = [...map.matchAll(/^\s*"([a-z_]+)":\s*\{/gm)].map((x) => x[1]);
+
+    expect(modules.length, `nur ${modules.length} Module gefunden`).toBeGreaterThanOrEqual(17);
+    expect(modules).toContain("generator_catalog");
+  });
+
+  it("die Bridge exportiert die Symbole, die die Parity-Harness braucht", () => {
+    // unpack32_7bit war in der Quelle exportiert und im Spiegel nicht — genau
+    // die Art stiller Einweg-Drift, die vorher niemand bemerkt hat.
+    const bridge = readFileSync(
+      resolve(REPO, "client/src/audio/OmniTribeBridge.ts"),
+      "utf8",
+    );
+    for (const sym of ["encode7Bit", "decode7Bit", "buildFrame", "unpack32_7bit"]) {
+      expect(
+        bridge,
+        `${sym} ist im Spiegel nicht exportiert — die TS↔Py-Parity-Harness ` +
+          "in OmniTribe importiert es",
+      ).toMatch(new RegExp(`export\\s+(?:async\\s+)?function\\s+${sym}\\b`));
+    }
   });
 });
