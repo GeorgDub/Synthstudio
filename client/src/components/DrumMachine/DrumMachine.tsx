@@ -87,6 +87,7 @@ import {
 import { ElectribePickerModal } from "./ElectribePickerModal";
 import { parseE2sBank } from "@/utils/korg/e2sBankReader";
 import {
+  bankSamplesToLibraryEntries,
   buildE2sSampleMap,
   summarizeE2sSampleLink,
 } from "@/utils/korg/e2sPatternSampleLink";
@@ -217,6 +218,19 @@ interface Props {
   bpm: number;
   onPlayStop: () => void;
   onBpmChange: (bpm: number) => void;
+  /**
+   * v3.299 — Samples aus einem Electribe-Import in die Sample-Library
+   * durchreichen (in App.tsx `project.addSamples`).
+   *
+   * Ohne diesen Callback konnte der Electribe-Import den Sample-Browser gar
+   * nicht erreichen: `samples` ist hier eine reine Lese-Liste, und die
+   * importierten Bank-Samples landeten ausschliesslich als `sampleUrl` an den
+   * Pattern-Parts im DrumMachine-Store. Die Patterns klangen deshalb richtig,
+   * waehrend der Browser leer blieb.
+   */
+  onSamplesImported?: (
+    samples: Array<{ id: string; name: string; path: string; category: string }>,
+  ) => void;
   className?: string;
   /**
    * v3.38.0 — External MIDI-Clock-IN active flag. When true AND
@@ -1310,6 +1324,7 @@ function DrumMachineInner({
   bpm,
   onPlayStop,
   onBpmChange,
+  onSamplesImported,
   className = "",
   externalSyncEnabled,
   externalSyncStatus,
@@ -1999,6 +2014,44 @@ function DrumMachineInner({
 
   // v3.272: verarbeitet MEHRERE Dateien — eine Pattern-Bank (.e2sallpat/.e2spat)
   // und optional die zugehörige .all-Sample-Bank. Ist die .all dabei, werden die
+  /**
+   * v3.299 — Traegt die Samples einer importierten `.all` in die
+   * Sample-Library ein und liefert die Anzahl der neu hinzugefuegten.
+   *
+   * Wichtig: die Blob-URL kommt aus DEMSELBEN Resolver, den auch die
+   * Pattern-Parts benutzen. Ein zweites Encoding wuerde dieselben PCM-Daten
+   * ein zweites Mal im Speicher halten und Library-Eintrag und Part auf
+   * verschiedene Blobs zeigen lassen.
+   *
+   * Iteriert wird die Resolver-Map, nicht `bank.slots`: sie enthaelt genau die
+   * Slots mit gueltiger Geraete-Sample-Nummer (> 0), also das, was die
+   * Wiedergabe aufloesen kann. Was der Browser zeigt, ist damit deckungsgleich
+   * mit dem, was ein Pattern-Part treffen kann.
+   *
+   * Die `id` ist bewusst stabil (Bankname + Geraete-Nummer): `addSamples`
+   * dedupliziert ueber `path`, und Blob-URLs sind bei jedem Import neu — ohne
+   * diesen Schluessel wuerde ein zweiter Import derselben Bank alles doppelt
+   * anlegen.
+   */
+  const publishBankSamples = useCallback(
+    (
+      bank: ReturnType<typeof parseE2sBank>,
+      link: E2sSampleLink,
+      bankFileName: string,
+    ): number => {
+      if (!onSamplesImported) return 0;
+      const fresh = bankSamplesToLibraryEntries(
+        bank,
+        bankFileName,
+        link.resolve,
+        new Set(samples.map(s => s.id)),
+      );
+      if (fresh.length > 0) onSamplesImported(fresh);
+      return fresh.length;
+    },
+    [onSamplesImported, samples],
+  );
+
   // Pattern-Parts über die Geräte-Sample-Nummer (501+) mit den Samples verlinkt
   // → in der Software abspielbar (analog zum ESX-Import). Geteilt von File-Picker
   // (handleElectribeImport) und Drag-Drop (electribe:filesImport).
@@ -2012,11 +2065,24 @@ function DrumMachineInner({
         (sampleFile ? undefined : files[0]);
 
       let sampleLink: E2sSampleLink | undefined;
+      let publishedCount = 0;
       if (sampleFile) {
         try {
           const buf = await sampleFile.arrayBuffer();
           const bank = parseE2sBank(new Uint8Array(buf), sampleFile.name);
           sampleLink = makeE2sSampleResolver(bank);
+          publishedCount = publishBankSamples(bank, sampleLink, sampleFile.name);
+
+          // Die Geometrie-Selbstpruefung des Readers gehoert genau hier
+          // gemeldet: das ist die erste Stelle, an der eine ECHTE Geraetedatei
+          // durch den Parser laeuft. Ein konstanter Versatz zwischen
+          // Tabellen-Index und esli.OSC_0index heisst, dass die Sample-Nummern
+          // nicht zu denen im Geraete-Display passen — still weiterzumachen
+          // waere hier das Schlimmste.
+          const geometry = bank.warnings.find(w => w.includes("geometry suspect"));
+          if (geometry) {
+            toast(`Sample-Bank: ${geometry}`, { kind: "warning", duration: 12000 });
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           toast(`Sample-Bank "${sampleFile.name}" nicht lesbar: ${msg}`, {
@@ -2029,13 +2095,17 @@ function DrumMachineInner({
       if (patternFile) {
         handleElectribeFile(patternFile, sampleLink);
       } else if (sampleFile) {
+        // Eine .all allein ist seit v3.299 kein Fehlgriff mehr — die Samples
+        // landen in der Library. Nur Patterns gibt es dann eben keine.
         toast(
-          "Nur eine .all-Sample-Bank gewählt — wähle/droppe zusätzlich eine .e2sallpat/.e2spat-Pattern-Datei.",
-          { kind: "warning", duration: 5000 }
+          publishedCount > 0
+            ? `${publishedCount} Samples in die Library übernommen. Für Patterns zusätzlich eine .e2sallpat/.e2spat wählen.`
+            : "Nur eine .all-Sample-Bank gewählt — wähle/droppe zusätzlich eine .e2sallpat/.e2spat-Pattern-Datei.",
+          { kind: publishedCount > 0 ? "success" : "warning", duration: 5000 }
         );
       }
     },
-    [handleElectribeFile]
+    [handleElectribeFile, publishBankSamples]
   );
 
   const handleElectribeImport = useCallback(

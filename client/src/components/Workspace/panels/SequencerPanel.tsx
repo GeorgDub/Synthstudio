@@ -16,6 +16,7 @@ export function SequencerPanel(_props: IDockviewPanelProps) {
       bpm={project.bpm}
       onPlayStop={onPlayStop ?? project.togglePlayStop}
       onBpmChange={onBpmChange ?? project.setBpm}
+      onSamplesImported={project.addSamples}
       className="h-full"
     />
   );

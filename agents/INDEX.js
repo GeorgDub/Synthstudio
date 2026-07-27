@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.298.0",
+    version: "3.299.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,37 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-27T08:20:00.000Z",
+      done: [
+        "v3.299.0 — Electribe-Import traegt seine Samples jetzt in die Sample-Library ein. Nutzer-Befund: .all + .e2pat importieren, Patterns spielen MIT den richtigen Samples, aber im Sample-Browser taucht nichts auf.",
+        "URSACHE (die Beobachtung war diagnostisch praezise): die PCM-Daten waren geladen, nur am falschen Ort. processElectribeFiles (DrumMachine.tsx) baut per makeE2sSampleResolver Blob-URLs und haengt sie ueber dm.setPartSample bzw. PatternData.sampleUrl an die Pattern-Parts — also in den DrumMachine-Store. Der Sample-Browser rendert dagegen useProjectStore.samples. Zwischen beiden gab es keine Verbindung.",
+        "STRUKTURELL konnte die Komponente das gar nicht: DrumMachine bekam `samples` nur als Lese-Liste, ohne Adder-Callback — anders als SampleBrowser (onSamplesImported={project.addSamples}) oder KorgBankModal (onAddSample -> handleKorgBankAddSample). Der einzige existierende Weg in die Library fuehrte ueber KorgBankModal, und die wird beim kombinierten Drop nie erreicht, weil ElectronDropZone die .all aus `remaining` herausfiltert und nur electribe:filesImport feuert.",
+        "FIX: neue optionale Prop onSamplesImported an DrumMachine, verdrahtet an allen drei Render-Stellen (App.tsx, Workspace/panels/SequencerPanel.tsx, CollabSplitView.tsx — dort NUR die lokale Instanz; die Remote-Seite spiegelt eine fremde Sitzung und gehoert nicht in unsere Library).",
+        "Die Zuordnung liegt als REINE Funktion bei buildE2sSampleMap: bankSamplesToLibraryEntries(bank, bankFileName, resolve, knownIds) in utils/korg/e2sPatternSampleLink.ts. Zwei Entscheidungen darin sind wichtig: (a) die Blob-URL kommt aus DEMSELBEN Resolver wie die Pattern-Parts — ein zweites Encoding haette dieselben PCM-Daten doppelt im Speicher gehalten und Library-Eintrag und Part auf verschiedene Blobs zeigen lassen; (b) iteriert wird nach derselben Bedingung wie buildE2sSampleMap (sampleNumber > 0), damit der Browser exakt das zeigt, was ein Pattern-Part auch treffen kann.",
+        "DEDUPE: addSamples dedupliziert ueber `path`, und Blob-URLs sind bei jedem Import neu — ein zweiter Import derselben Bank haette alles doppelt angelegt. Deshalb stabile id `e2s:<bankname>:<geraetenummer>` (e2sLibraryEntryId), gegen die vorhandenen Sample-IDs gefiltert.",
+        "NEBENBEI: eine .all ohne Pattern-Datei ist kein Fehlgriff mehr. Vorher kam eine Warnung 'waehle zusaetzlich eine .e2sallpat'; jetzt landen die Samples in der Library und die Meldung sagt, wie viele.",
+        "AUSSERDEM: die Geometrie-Selbstpruefung aus v3.298 wird in diesem Pfad als Toast sichtbar gemacht (12 s). Das ist die erste Stelle, an der eine ECHTE Geraetedatei durch den Parser laeuft — meldet der Reader einen konstanten Versatz zwischen Tabellen-Index und esli.OSC_0index, passen die Sample-Nummern nicht zum Geraete-Display, und das still zu verschlucken waere das Schlimmste.",
+        "Gates: pnpm check clean, volle Suite 500 Dateien / 11127 passed / 97 skipped (+10 Tests fuer bankSamplesToLibraryEntries in tests/features/e2s-pattern-sample-link.test.ts, u.a. Deckungsgleichheit mit buildE2sSampleMap und die Dedupe-Faelle)."
+      ],
+      next: [
+        "Am Geraet gegenpruefen: .all importieren und schauen, ob (a) die Samples jetzt im Browser stehen, (b) die Namen/Nummern zum Geraete-Display passen, (c) die Geometrie-Warnung schweigt. Punkt (c) ist die noch offene Frage zur Tabellen-Adresse 0x0010.",
+        "Offen: RAM-Timeout im IFX/Groove-Panel — trennender Test 0xC00A80F0 Laenge 524 (rein lesend). Antwortet der, ist nur IFX_COUNT_ADDR (geraten) falsch; schweigt er auch, spricht die Firmware kein 0x52.",
+        "GitHub-Release aus der Session nicht ausloesbar (workflow_dispatch 403, Tag-Push 403). Nutzer: Actions -> Electron Release -> Run workflow -> main.",
+        "E2S_MAX_TOTAL_PCM_BYTES: 224 MB vs 24 MB (SoT). Offene Produktentscheidung.",
+        "Offen aus der Vorwelle: source_control-Kodierung (0x42 vs 0x02), C-Handler fuer OTP CMD 0x10 (GATE-001), Device->Parametername-Tabelle (403).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/korg/e2sPatternSampleLink.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/App.tsx",
+        "client/src/components/Workspace/panels/SequencerPanel.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/e2s-pattern-sample-link.test.ts"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-07-27T05:40:00.000Z",

@@ -149,3 +149,71 @@ export function summarizeE2sSampleLink(
     `(Passt die .all zur Pattern-Bank? Factory-Samples liegen nicht in der User-.all.)`;
   return { summary, hint };
 }
+
+// ─── Sample-Library-Eintraege (v3.299) ────────────────────────────────────────
+
+/**
+ * Ein Eintrag, wie ihn `useProjectStore.addSamples` erwartet — bewusst
+ * strukturell getippt statt `Sample` zu importieren, damit dieses Modul
+ * store-frei bleibt (es ist sonst reine Format-Logik).
+ */
+export interface E2sLibraryEntry {
+  id: string;
+  name: string;
+  path: string;
+  category: string;
+}
+
+/**
+ * Uebersetzt die Slots einer `.all` in Library-Eintraege für den
+ * Sample-Browser.
+ *
+ * Hintergrund: bis v3.298 landeten importierte Bank-Samples ausschliesslich
+ * als `sampleUrl` an den Pattern-Parts. Die Patterns klangen damit richtig,
+ * aber der Sample-Browser blieb leer — er liest `useProjectStore.samples`,
+ * und dorthin schrieb der Electribe-Import nie.
+ *
+ * Iteriert werden nur Slots mit Geraete-Sample-Nummer > 0, dieselbe Bedingung
+ * wie in `buildE2sSampleMap`. Was im Browser auftaucht, ist damit
+ * deckungsgleich mit dem, was ein Pattern-Part ueberhaupt treffen kann.
+ *
+ * Die `id` ist stabil aus Bankname + Geraete-Nummer gebildet: `addSamples`
+ * dedupliziert ueber `path`, und Blob-URLs sind bei jedem Import neu — ohne
+ * stabilen Schluessel legt ein zweiter Import derselben Bank alles doppelt an.
+ *
+ * @param resolve Liefert Blob-URL + Namen zu einer Geraete-Sample-Nummer.
+ *   Wird durchgereicht statt selbst zu encodieren, damit Library-Eintrag und
+ *   Pattern-Part auf DENSELBEN Blob zeigen (sonst lägen dieselben PCM-Daten
+ *   zweimal im Speicher). `null` ueberspringt den Slot.
+ * @param knownIds Bereits vorhandene Sample-IDs; diese Slots werden ausgelassen.
+ */
+export function bankSamplesToLibraryEntries(
+  bank: E2sBank,
+  bankFileName: string,
+  resolve: (sampleNumber: number) => { url: string; name: string } | null,
+  knownIds: ReadonlySet<string> = new Set(),
+): E2sLibraryEntry[] {
+  const out: E2sLibraryEntry[] = [];
+  const seen = new Set(knownIds);
+  for (const slot of bank.slots) {
+    if (!slot) continue;
+    if (slot.sampleNumber <= 0) continue;
+    const id = e2sLibraryEntryId(bankFileName, slot.sampleNumber);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const resolved = resolve(slot.sampleNumber);
+    if (!resolved) continue;
+    out.push({
+      id,
+      name: resolved.name,
+      path: resolved.url,
+      category: `E2S · ${slot.categoryName}`,
+    });
+  }
+  return out;
+}
+
+/** Stabiler Library-Schluessel eines Bank-Samples. */
+export function e2sLibraryEntryId(bankFileName: string, sampleNumber: number): string {
+  return `e2s:${bankFileName}:${sampleNumber}`;
+}

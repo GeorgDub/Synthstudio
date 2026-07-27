@@ -5757,6 +5757,7 @@ export default function App() {
                     bpm={project.bpm}
                     onPlayStop={collabPlayStop}
                     onBpmChange={collabBpmChange}
+                    onSamplesImported={project.addSamples}
                     externalSyncEnabled={midi.clockInEnabled}
                     externalSyncStatus={midi.clockInStatus}
                     className="h-full"
