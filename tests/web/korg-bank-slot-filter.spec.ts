@@ -1,5 +1,5 @@
 /**
- * korg-bank-slot-filter.spec.ts — v3.286.0
+ * korg-bank-slot-filter.spec.ts — v3.298.0
  *
  * Smoke für den Slot-Browser des KORG-Bank-Editors nach der Korrektur der
  * Offset-Tabelle (250 → 1002 Slots).
@@ -19,9 +19,9 @@ import { seedActivation } from "./_seedApp";
 // ─── Minimale, gültige .all-Datei ────────────────────────────────────────────
 
 const SIGNATURE = Buffer.from("e2s sample all\x1a\x00", "latin1");
-const OFFSET_TABLE_START = 0x0058;
+const OFFSET_TABLE_START = 0x0010;
 const SAMPLE_AREA_START = 0x1000;
-const MAX_SLOTS = 1002;
+const MAX_SLOTS = 1020;
 const KORG_BODY_SIZE = 1180;
 const ESLI_NAME_OFFSET = 0x0a;
 
@@ -121,10 +121,10 @@ test("Leere-verbergen aus zeigt die volle Tabelle, Suche filtert sie wieder", as
   const rows = page.getByTestId("korg-bank-editor-slot-browser").locator("li");
   await expect(rows).toHaveCount(2, { timeout: 15_000 });
 
-  // Ohne Filter ist die ganze Tabelle da — 1002 Zeilen, nicht 250.
+  // Ohne Filter ist die ganze Tabelle da — 1020 Zeilen (Oe2sSLE-Geometrie).
   await page.getByTestId("korg-bank-editor-slot-hide-empty").uncheck();
-  await expect(rows).toHaveCount(1002);
-  await expect(page.getByTestId("korg-bank-editor-slot-1001")).toBeAttached();
+  await expect(rows).toHaveCount(1020);
+  await expect(page.getByTestId("korg-bank-editor-slot-1019")).toBeAttached();
 
   // Suche nach dem Index greift auch auf der vollen Liste.
   await page.getByTestId("korg-bank-editor-slot-search").fill("501");

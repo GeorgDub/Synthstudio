@@ -15,8 +15,12 @@ if (typeof globalThis.localStorage === "undefined") {
   const store = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
-    setItem: (k: string, v: string) => { store.set(k, String(v)); },
-    removeItem: (k: string) => { store.delete(k); },
+    setItem: (k: string, v: string) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      store.delete(k);
+    },
     clear: () => store.clear(),
   });
 }
@@ -25,6 +29,7 @@ import {
   getMidiBackend,
   isNativeMidiBackend,
   setMidiBackend,
+  resolveBackend,
   __resetMidiBackendForTests,
 } from "../../client/src/store/useMidiBackendStore";
 import {
@@ -76,9 +81,12 @@ function makeFakeBridge(opts: FakeBridgeOptions = {}) {
       closed.push(handle);
       return { success: true };
     },
-    onMidiMessage: (cb) => {
+    onMidiMessage: cb => {
       listeners.push(cb);
-      return () => { unsubCount++; listeners = listeners.filter((l) => l !== cb); };
+      return () => {
+        unsubCount++;
+        listeners = listeners.filter(l => l !== cb);
+      };
     },
   };
 
@@ -86,13 +94,32 @@ function makeFakeBridge(opts: FakeBridgeOptions = {}) {
     bridge,
     sent,
     closed,
-    emit: (msg: NativeMidiMessage) => listeners.forEach((l) => l(msg)),
-    get listenerCount() { return listeners.length; },
-    get unsubCount() { return unsubCount; },
+    emit: (msg: NativeMidiMessage) => listeners.forEach(l => l(msg)),
+    get listenerCount() {
+      return listeners.length;
+    },
+    get unsubCount() {
+      return unsubCount;
+    },
   };
 }
 
 // ─── useMidiBackendStore ───────────────────────────────────────────────────────
+
+describe("resolveBackend (default: native in Electron, web in browser)", () => {
+  it("honours an explicit stored choice", () => {
+    expect(resolveBackend("web", true)).toBe("web");
+    expect(resolveBackend("native", false)).toBe("native");
+  });
+  it("defaults to native in Electron, web in browser when unset", () => {
+    expect(resolveBackend(null, true)).toBe("native");
+    expect(resolveBackend(null, false)).toBe("web");
+  });
+  it("ignores an invalid stored value → platform default", () => {
+    expect(resolveBackend("garbage", true)).toBe("native");
+    expect(resolveBackend("", false)).toBe("web");
+  });
+});
 
 describe("useMidiBackendStore", () => {
   beforeEach(() => __resetMidiBackendForTests());
@@ -130,8 +157,8 @@ describe("NativeMidiManager", () => {
     const mgr = new NativeMidiManager(fake.bridge);
     const a: number[][] = [];
     const b: number[][] = [];
-    const ha = await mgr.openInput(0, (bytes) => a.push(bytes));
-    const hb = await mgr.openInput(1, (bytes) => b.push(bytes));
+    const ha = await mgr.openInput(0, bytes => a.push(bytes));
+    const hb = await mgr.openInput(1, bytes => b.push(bytes));
     expect(ha).toBe("in:0");
     expect(hb).toBe("in:1");
 
@@ -169,6 +196,17 @@ describe("NativeMidiManager", () => {
     expect(fake.sent).toEqual([{ handle: "out:0", bytes: [0xf0, 0x7e, 0xf7] }]);
   });
 
+  it("send reicht ein plain number[] ohne Kopie durch (keine Allokation)", async () => {
+    const fake = makeFakeBridge({ outputs: ["O"] });
+    const mgr = new NativeMidiManager(fake.bridge);
+    const h = await mgr.openOutput(0);
+    const payload = [0xb0, 7, 100];
+    mgr.send(h!, payload);
+    await Promise.resolve();
+    // Dieselbe Referenz → kein redundantes Array.from-Kopieren im Hot-Path.
+    expect(fake.sent[0].bytes).toBe(payload);
+  });
+
   it("closeAll schließt alle Handles + entkoppelt den Listener", async () => {
     const fake = makeFakeBridge({ inputs: ["A"], outputs: ["O"] });
     const mgr = new NativeMidiManager(fake.bridge);
@@ -191,7 +229,10 @@ describe("NativeMidiManager", () => {
 
 describe("createNativeMidiAccess", () => {
   it("baut echte Maps von In/Out-Ports mit Handle als id", async () => {
-    const fake = makeFakeBridge({ inputs: ["Keystep"], outputs: ["Keystep", "GS Synth"] });
+    const fake = makeFakeBridge({
+      inputs: ["Keystep"],
+      outputs: ["Keystep", "GS Synth"],
+    });
     const access = await createNativeMidiAccess(fake.bridge);
     expect(access).not.toBeNull();
     expect(access!.inputs.size).toBe(1);
@@ -211,7 +252,7 @@ describe("createNativeMidiAccess", () => {
     const fake = makeFakeBridge({ inputs: ["Pad"] });
     const access = await createNativeMidiAccess(fake.bridge);
     const events: Uint8Array[] = [];
-    access!.inputs.get("in:0")!.onmidimessage = (e) => events.push(e.data);
+    access!.inputs.get("in:0")!.onmidimessage = e => events.push(e.data);
     fake.emit({ handle: "in:0", bytes: [0x90, 64, 127], deltaTime: 0 });
     expect(events.length).toBe(1);
     expect(events[0]).toBeInstanceOf(Uint8Array);
@@ -258,27 +299,38 @@ describe("connectOmniTribeNative", () => {
   });
 
   it("liefert null wenn kein Gerät matcht", async () => {
-    const fake = makeFakeBridge({ inputs: ["Generic Pad"], outputs: ["GS Synth"] });
+    const fake = makeFakeBridge({
+      inputs: ["Generic Pad"],
+      outputs: ["GS Synth"],
+    });
     expect(await connectOmniTribeNative(fake.bridge)).toBeNull();
   });
 
   it("transport.send geht an den Out-Handle, eingehende Bytes an onmessage", async () => {
-    const fake = makeFakeBridge({ inputs: ["omnitribe"], outputs: ["omnitribe"] });
+    const fake = makeFakeBridge({
+      inputs: ["omnitribe"],
+      outputs: ["omnitribe"],
+    });
     const conn = await connectOmniTribeNative(fake.bridge);
     const received: number[][] = [];
-    conn!.transport.onmessage = (data) => received.push(Array.from(data));
+    conn!.transport.onmessage = data => received.push(Array.from(data));
 
     conn!.transport.send(Uint8Array.from([0xf0, 0x42, 0xf7]));
     await Promise.resolve();
     expect(fake.sent).toEqual([{ handle: "out:0", bytes: [0xf0, 0x42, 0xf7] }]);
 
-    fake.emit({ handle: "in:0", bytes: [0xf0, 0x42, 0x01, 0xf7], deltaTime: 0 });
+    fake.emit({
+      handle: "in:0",
+      bytes: [0xf0, 0x42, 0x01, 0xf7],
+      deltaTime: 0,
+    });
     expect(received).toEqual([[0xf0, 0x42, 0x01, 0xf7]]);
   });
 
   it("schließt den Output wieder wenn der Input-Open fehlschlägt (kein Leak)", async () => {
     const fake = makeFakeBridge({
-      inputs: ["omnitribe"], outputs: ["omnitribe"],
+      inputs: ["omnitribe"],
+      outputs: ["omnitribe"],
       openInputFailsFor: [0],
     });
     const conn = await connectOmniTribeNative(fake.bridge);
@@ -287,7 +339,10 @@ describe("connectOmniTribeNative", () => {
   });
 
   it("transport.close ruft closeAll (Teardown beider Handles)", async () => {
-    const fake = makeFakeBridge({ inputs: ["omnitribe"], outputs: ["omnitribe"] });
+    const fake = makeFakeBridge({
+      inputs: ["omnitribe"],
+      outputs: ["omnitribe"],
+    });
     const conn = await connectOmniTribeNative(fake.bridge);
     conn!.transport.close();
     await Promise.resolve();
@@ -313,8 +368,16 @@ describe("describeNativeMidiStatus", () => {
 
   it("verfügbar mit In+Out → ok", () => {
     const s = describeNativeMidiStatus(
-      { available: true, openInputs: 1, openOutputs: 1, virtualPortsSupported: false },
-      { inputs: [{ index: 0, name: "Keystep" }], outputs: [{ index: 0, name: "Synth" }] },
+      {
+        available: true,
+        openInputs: 1,
+        openOutputs: 1,
+        virtualPortsSupported: false,
+      },
+      {
+        inputs: [{ index: 0, name: "Keystep" }],
+        outputs: [{ index: 0, name: "Synth" }],
+      }
     );
     expect(s.level).toBe("ok");
     expect(s.inputCount).toBe(1);
@@ -326,8 +389,13 @@ describe("describeNativeMidiStatus", () => {
 
   it("verfügbar aber 0 Eingänge → warn + Stille-Hinweis (Advisor-Falle)", () => {
     const s = describeNativeMidiStatus(
-      { available: true, openInputs: 0, openOutputs: 1, virtualPortsSupported: false },
-      { inputs: [], outputs: [{ index: 0, name: "GS Synth" }] },
+      {
+        available: true,
+        openInputs: 0,
+        openOutputs: 1,
+        virtualPortsSupported: false,
+      },
+      { inputs: [], outputs: [{ index: 0, name: "GS Synth" }] }
     );
     expect(s.level).toBe("warn");
     expect(s.notes.some(n => /Eingänge/.test(n))).toBe(true);
@@ -335,8 +403,19 @@ describe("describeNativeMidiStatus", () => {
 
   it("zählt offene Handles durch", () => {
     const s = describeNativeMidiStatus(
-      { available: true, openInputs: 2, openOutputs: 3, virtualPortsSupported: true },
-      { inputs: [{ index: 0, name: "a" }, { index: 1, name: "b" }], outputs: [{ index: 0, name: "c" }] },
+      {
+        available: true,
+        openInputs: 2,
+        openOutputs: 3,
+        virtualPortsSupported: true,
+      },
+      {
+        inputs: [
+          { index: 0, name: "a" },
+          { index: 1, name: "b" },
+        ],
+        outputs: [{ index: 0, name: "c" }],
+      }
     );
     expect(s.openInputs).toBe(2);
     expect(s.openOutputs).toBe(3);

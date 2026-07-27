@@ -1,0 +1,165 @@
+/**
+ * e2PatternEdit.ts — Nicht-destruktive Feld-Editoren auf einem gepullten
+ * Pattern-Body (0x4000, post-Header). Erlaubt gezieltes Ändern der bereits
+ * VERIFIZIERTEN Felder und Zurückschreiben über die Bridge (0x40/0x4C).
+ *
+ * Wie beim IFX/Groove-Editor: jeder Setter kopiert und rührt NUR die adressierten
+ * Bytes an. Alle unbekannten/opaken Bytes (inkl. der Motion-Region +0x05..+0x0B)
+ * bleiben exakt erhalten → round-trip-safe. Es werden ausschließlich Offsets
+ * benutzt, die in e2Sysex.ts gegen echte Daten verifiziert sind — keine
+ * geratenen Part-Struct-Felder (Filter/EG etc. sind bewusst NICHT dabei).
+ */
+import {
+  PART_COUNT,
+  PART_TABLE_OFFSET,
+  PART_STRIDE,
+  PART_OSC_REF_OFFSET,
+  PART_VOLUME_OFFSET,
+  PART_PAN_OFFSET,
+  PART_SEQ_OFFSET,
+  PART_SEQ_STEP_SIZE,
+  STEPS_PER_PART,
+  STEP_TRIGGER_OFFSET,
+  STEP_NOTE_OFFSET,
+  STEP_VELOCITY_OFFSET,
+  STEP_GATE_OFFSET,
+  STEP_GATELEN_OFFSET,
+  PATTERN_NAME_OFFSET,
+  PATTERN_NAME_LEN,
+  PATTERN_BPM_OFFSET,
+} from "./e2Sysex";
+import { e2PanUiToDevice } from "./e2Layout";
+
+const clamp7 = (n: number) => Math.max(0, Math.min(127, Math.floor(n) || 0));
+const clampU8 = (n: number) => Math.max(0, Math.min(255, Math.floor(n) || 0));
+
+function partBase(part: number): number {
+  return PART_TABLE_OFFSET + part * PART_STRIDE;
+}
+function stepBase(part: number, step: number): number {
+  return partBase(part) + PART_SEQ_OFFSET + step * PART_SEQ_STEP_SIZE;
+}
+
+export type StepField = "active" | "note" | "velocity" | "gate" | "gateLen";
+
+/**
+ * Setzt ein Step-Feld (nicht-destruktive Kopie). `active`/`gate` sind Flags
+ * (0/nicht-0). Note/Velocity 0..127, gateLen 0..255. Motion-Bytes bleiben.
+ */
+export function setStepField(
+  body: Uint8Array,
+  part: number,
+  step: number,
+  field: StepField,
+  value: number
+): Uint8Array {
+  const out = body.slice();
+  if (part < 0 || part >= PART_COUNT || step < 0 || step >= STEPS_PER_PART) {
+    return out;
+  }
+  const base = stepBase(part, step);
+  switch (field) {
+    case "active":
+      out[base + STEP_TRIGGER_OFFSET] = value ? 1 : 0;
+      break;
+    case "note":
+      out[base + STEP_NOTE_OFFSET] = clamp7(value);
+      break;
+    case "velocity":
+      out[base + STEP_VELOCITY_OFFSET] = clamp7(value);
+      break;
+    case "gate":
+      out[base + STEP_GATE_OFFSET] = value ? 1 : 0;
+      break;
+    case "gateLen":
+      out[base + STEP_GATELEN_OFFSET] = clampU8(value);
+      break;
+  }
+  return out;
+}
+
+export type PartField = "volume" | "pan" | "sampleRef";
+
+/**
+ * Setzt ein Part-Feld (nicht-destruktive Kopie).
+ *
+ * v3.297: Volume = Amp Level @+0x18 (u8), Pan = Amp Pan @+0x19 (i8, 0=Center;
+ * `value` kommt in UI-Konvention 0..127 und wird konvertiert). Die frühere
+ * Unsicherheit („pan@0x22 unverifiziert, Factory-Init dort 0x14") ist damit
+ * aufgelöst: 0x22 IST kein Pan, sondern IFX Edit (TABLE 6) — deshalb der
+ * merkwürdige Wert. Gerätebefund bestätigt die Korrektur.
+ */
+export function setPartField(
+  body: Uint8Array,
+  part: number,
+  field: PartField,
+  value: number
+): Uint8Array {
+  const out = body.slice();
+  if (part < 0 || part >= PART_COUNT) return out;
+  const base = partBase(part);
+  if (field === "volume") {
+    out[base + PART_VOLUME_OFFSET] = clamp7(value);
+  } else if (field === "pan") {
+    out[base + PART_PAN_OFFSET] = e2PanUiToDevice(clamp7(value));
+  } else {
+    const v = Math.max(0, Math.min(0xffff, Math.floor(value) || 0));
+    out[base + PART_OSC_REF_OFFSET] = v & 0xff;
+    out[base + PART_OSC_REF_OFFSET + 1] = (v >> 8) & 0xff;
+  }
+  return out;
+}
+
+/**
+ * Rotiert die Step-Sequenz eines Parts um `rot` Schritte (links-positiv),
+ * innerhalb des aktiven Step-Fensters `stepCount` (16/32/64). Ganze 12-Byte-
+ * Step-Records werden umsortiert → Note/Velocity/Gate UND Motion wandern mit.
+ * Nicht-destruktive Kopie. Verifiziert gegen bangcorrupts e2seqrot.py (rotate =
+ * l[n:]+l[:n]), hier generalisiert auf die tatsächliche Pattern-Länge.
+ */
+export function rotatePartSequence(
+  body: Uint8Array,
+  part: number,
+  rot: number,
+  stepCount: number
+): Uint8Array {
+  const out = body.slice();
+  if (part < 0 || part >= PART_COUNT) return out;
+  const count = Math.max(
+    1,
+    Math.min(STEPS_PER_PART, Math.floor(stepCount) || 0)
+  );
+  const base = partBase(part) + PART_SEQ_OFFSET;
+  if (base + count * PART_SEQ_STEP_SIZE > out.length) return out;
+  const n = (((Math.floor(rot) || 0) % count) + count) % count;
+  if (n === 0) return out;
+  // Kopie der count Step-Records, dann links-rotiert zurückschreiben.
+  const recs: Uint8Array[] = [];
+  for (let i = 0; i < count; i++) {
+    const o = base + i * PART_SEQ_STEP_SIZE;
+    recs.push(out.slice(o, o + PART_SEQ_STEP_SIZE));
+  }
+  for (let i = 0; i < count; i++) {
+    out.set(recs[(i + n) % count], base + i * PART_SEQ_STEP_SIZE);
+  }
+  return out;
+}
+
+/** Setzt das BPM×10-Feld (u16 LE). z.B. 128.0 BPM → 1280. */
+export function setPatternBpm(body: Uint8Array, bpm: number): Uint8Array {
+  const out = body.slice();
+  const v = Math.max(200, Math.min(3000, Math.round((bpm || 0) * 10)));
+  out[PATTERN_BPM_OFFSET] = v & 0xff;
+  out[PATTERN_BPM_OFFSET + 1] = (v >> 8) & 0xff;
+  return out;
+}
+
+/** Setzt den Pattern-Namen (ASCII, 16 Zeichen, space-/NUL-pad). */
+export function setPatternName(body: Uint8Array, name: string): Uint8Array {
+  const out = body.slice();
+  for (let i = 0; i < PATTERN_NAME_LEN; i++) {
+    const ch = i < name.length ? name.charCodeAt(i) : 0x20;
+    out[PATTERN_NAME_OFFSET + i] = ch >= 0x20 && ch <= 0x7e ? ch : 0x20;
+  }
+  return out;
+}

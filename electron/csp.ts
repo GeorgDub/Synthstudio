@@ -49,6 +49,14 @@ export const CSP_DIRECTIVES_PROD: readonly CspDirective[] = [
     "connect-src",
     [
       "'self'",
+      // blob:/data: (v3.289 / BUG-…): der AudioEngine lädt In-Memory-Samples
+      // (KORG-.esx-Import, Sample-Slicer, Chops) per XMLHttpRequest von einer
+      // `blob:file:///…`- bzw. `data:`-URL. XHR/fetch unterliegen `connect-src`;
+      // ohne diese Einträge blockt die strikte CSP den Ladevorgang im gepackten
+      // Build → User-Symptom: 'Audio: Fehler beim Laden … XHR-Ladefehler', die
+      // Sample-Namen erscheinen zwar am Part, aber es kommt kein Ton.
+      "blob:",
+      "data:",
       "ws:",
       "wss:",
       // AI-Provider-Endpoints (BUG-024 / v1.67.0): vor v1.67 hat die strikte
@@ -91,6 +99,9 @@ export const CSP_DIRECTIVES_DEV: readonly CspDirective[] = [
     "connect-src",
     [
       "'self'",
+      // Wie Prod: In-Memory-Samples (KORG-Import/Slicer) via XHR aus blob:/data:.
+      "blob:",
+      "data:",
       "ws:",
       "wss:",
       "http://localhost:*",

@@ -169,6 +169,17 @@
  *   - Values[16]      16 × 1 Byte  (Parameter-Werte 0..127)
  */
 
+// AllPat-Container-Konstanten aus der gemeinsamen Quelle e2Layout.ts (nicht
+// mehr lokal dupliziert). Die bestehenden ELECTRIBE_ALLPAT_*-Namen bleiben als
+// Re-Export erhalten (Backward-Compat für Consumer + Tests).
+import {
+  E2_ALLPAT_PATTERN_OFFSET,
+  E2_ALLPAT_PATTERN_STRIDE,
+  E2_ALLPAT_SLOT_COUNT,
+  E2_ALLPAT_FILE_SIZE,
+  e2PanDeviceToUi,
+} from "./korg/e2Layout";
+
 // ─── Konstanten ───────────────────────────────────────────────────────────────
 
 export const ELECTRIBE_MAGIC = "KORG";
@@ -240,8 +251,11 @@ export const ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE = 127;
  *   - Pitch: kein Byte zeigt signed-distribution in der Bank.
  *   - FxSend: kein klares default-pattern identifiziert.
  */
-export const ELECTRIBE_REAL_PART_VOLUME_OFFSET = 0x15;
-export const ELECTRIBE_REAL_PART_PAN_OFFSET    = 0x22;
+// v3.297-KORREKTUR (Gerätebefund + Korg TABLE 6): Volume = Amp Level @0x18
+// (vorher fälschlich 0x15 = EG Decay/Release), Pan = Amp Pan @0x19 als i8 mit
+// 0 = Center (vorher fälschlich u8@0x22 = IFX Edit). Siehe korg/e2Layout.ts.
+export const ELECTRIBE_REAL_PART_VOLUME_OFFSET = 0x18;
+export const ELECTRIBE_REAL_PART_PAN_OFFSET = 0x19;
 
 /** Hardware-Default fuer Part-Volume (beobachtet in 63.4% aller part-samples). */
 export const ELECTRIBE_REAL_PART_VOLUME_DEFAULT = 127;
@@ -279,12 +293,12 @@ export const ELECTRIBE_REAL_STEP_LENGTH_CODES: Record<number, 16 | 32 | 64> = {
  *   PTST+0x120..0x130 unused (16B Reserved, alle bytes 0x00 verifiziert)
  *   PTST+0x130  512B Slot-Data       (8 Slots × 64 Bytes Werte, 0..128)
  */
-export const ELECTRIBE_MOTION_PARAM_TABLE_OFFSET  = 0x100; // PTST-relativ
+export const ELECTRIBE_MOTION_PARAM_TABLE_OFFSET = 0x100; // PTST-relativ
 export const ELECTRIBE_MOTION_TARGET_TABLE_OFFSET = 0x118; // PTST-relativ
-export const ELECTRIBE_MOTION_DATA_TABLE_OFFSET   = 0x130; // PTST-relativ
-export const ELECTRIBE_MOTION_SLOTS_PER_PATTERN   = 8;
-export const ELECTRIBE_MOTION_VALUES_PER_SLOT     = 64;
-export const ELECTRIBE_MOTION_SLOT_STRIDE         = 64; // = ELECTRIBE_MOTION_VALUES_PER_SLOT
+export const ELECTRIBE_MOTION_DATA_TABLE_OFFSET = 0x130; // PTST-relativ
+export const ELECTRIBE_MOTION_SLOTS_PER_PATTERN = 8;
+export const ELECTRIBE_MOTION_VALUES_PER_SLOT = 64;
+export const ELECTRIBE_MOTION_SLOT_STRIDE = 64; // = ELECTRIBE_MOTION_VALUES_PER_SLOT
 
 /**
  * Mapping Motion-ParamID → Heuristisches Label. Hardware-Spec NICHT public,
@@ -298,15 +312,15 @@ export const ELECTRIBE_MOTION_SLOT_STRIDE         = 64; // = ELECTRIBE_MOTION_VA
  * "Param 0x11 (Param-Slot)" angezeigt werden, nicht als verifiziert.
  */
 export const ELECTRIBE_PATTERN_MOTION_PARAM_NAMES: Record<number, string> = {
-  1:  "Param 01",
-  2:  "Param 02",
-  3:  "Param 03",
-  4:  "Param 04",
-  5:  "Param 05",
-  6:  "Param 06",
-  7:  "Param 07",
-  8:  "Param 08",
-  9:  "Param 09",
+  1: "Param 01",
+  2: "Param 02",
+  3: "Param 03",
+  4: "Param 04",
+  5: "Param 05",
+  6: "Param 06",
+  7: "Param 07",
+  8: "Param 08",
+  9: "Param 09",
   10: "Param 10",
   11: "Param 11",
   12: "Param 12",
@@ -337,11 +351,13 @@ export const ELECTRIBE_MIN_BPM = 20;
 export const ELECTRIBE_MAX_BPM = 300;
 
 /** Sample-Size der Sub-Strukturen (Best-Effort-Spec). */
-export const PATTERN_HEADER_SIZE   = 16; // Name(8) + BPM(2) + StepLength(1) + Swing(1) + Reserved(4)
-export const PART_HEADER_SIZE      = 8;  // SampleId(2) + Volume(1) + Pan(1) + Pitch(1) + FxSend(1) + Reserved(2)
-export const MOTION_SLOT_SIZE      = 4 + MOTION_STEPS_PER_SLOT; // ParamId(1)+Enabled(1)+Reserved(2)+16 Values
-export const PART_BLOCK_SIZE       = PART_HEADER_SIZE + STEPS_PER_PART + (MOTION_SLOTS_PER_PART * MOTION_SLOT_SIZE);
-export const PATTERN_BLOCK_SIZE    = PATTERN_HEADER_SIZE + (PARTS_PER_PATTERN * PART_BLOCK_SIZE);
+export const PATTERN_HEADER_SIZE = 16; // Name(8) + BPM(2) + StepLength(1) + Swing(1) + Reserved(4)
+export const PART_HEADER_SIZE = 8; // SampleId(2) + Volume(1) + Pan(1) + Pitch(1) + FxSend(1) + Reserved(2)
+export const MOTION_SLOT_SIZE = 4 + MOTION_STEPS_PER_SLOT; // ParamId(1)+Enabled(1)+Reserved(2)+16 Values
+export const PART_BLOCK_SIZE =
+  PART_HEADER_SIZE + STEPS_PER_PART + MOTION_SLOTS_PER_PART * MOTION_SLOT_SIZE;
+export const PATTERN_BLOCK_SIZE =
+  PATTERN_HEADER_SIZE + PARTS_PER_PATTERN * PART_BLOCK_SIZE;
 
 /** Bank-Header: Magic(4) + Version(2) + PatternCount(2) = 8 Bytes. */
 export const BANK_HEADER_SIZE = 8;
@@ -376,17 +392,16 @@ export const MAX_ELECTRIBE_FILE_BYTES = 8 * 1024 * 1024; // 8 MB (v3.11: erhoeht
 //             ⇒ Hard-Cap fuer .e2sallpat: ~5 MB headroom.
 
 /** .e2sallpat: Offset des ersten PTST-Pattern-Records. */
-export const ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET = 0x10100;
+export const ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET = E2_ALLPAT_PATTERN_OFFSET;
 
 /** .e2sallpat: Stride zwischen Pattern-Records (= Pattern-Body-Size). */
-export const ELECTRIBE_ALLPAT_PATTERN_STRIDE = 0x4000; // 16384 Bytes
+export const ELECTRIBE_ALLPAT_PATTERN_STRIDE = E2_ALLPAT_PATTERN_STRIDE; // 16384 Bytes
 
 /** .e2sallpat: Erwartete Slot-Anzahl (KORG hardware-fixed). */
-export const ELECTRIBE_ALLPAT_SLOT_COUNT = 250;
+export const ELECTRIBE_ALLPAT_SLOT_COUNT = E2_ALLPAT_SLOT_COUNT;
 
 /** .e2sallpat: Erwartete File-Size = Prefix + 250 × Stride. */
-export const ELECTRIBE_ALLPAT_EXPECTED_SIZE =
-  ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_SLOT_COUNT * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+export const ELECTRIBE_ALLPAT_EXPECTED_SIZE = E2_ALLPAT_FILE_SIZE;
 
 /** .e2sallpat: Bank-Header-Marker (Global Slot Table). */
 export const ELECTRIBE_ALLPAT_GLST_MARKER = "GLST";
@@ -402,16 +417,16 @@ export const ELECTRIBE_ALLPAT_GLED_MARKER = "GLED";
  * "Param NN" benannt.
  */
 export const MOTION_PARAM_NAMES: Record<number, string> = {
-  0:  "Filter Cutoff",
-  1:  "Filter Resonance",
-  2:  "Filter Drive",
-  3:  "Amp EG Attack",
-  4:  "Amp EG Decay",
-  5:  "Pitch",
-  6:  "Pan",
-  7:  "Volume",
-  8:  "FX Send",
-  9:  "Master FX Depth",
+  0: "Filter Cutoff",
+  1: "Filter Resonance",
+  2: "Filter Drive",
+  3: "Amp EG Attack",
+  4: "Amp EG Decay",
+  5: "Pitch",
+  6: "Pan",
+  7: "Volume",
+  8: "FX Send",
+  9: "Master FX Depth",
   10: "Modulation Depth",
   11: "Modulation Speed",
   12: "Sample Start",
@@ -513,7 +528,7 @@ class SafeReader {
   readonly length: number;
 
   constructor(view: DataView) {
-    this.view  = view;
+    this.view = view;
     this.length = view.byteLength;
   }
 
@@ -524,7 +539,7 @@ class SafeReader {
   ensure(n: number, context: string): void {
     if (this.pos < 0 || this.pos + n > this.length) {
       throw new Error(
-        `Electribe-Parser: out-of-bounds read (${context}) — need ${n} byte(s) at ${this.pos}, have ${this.length - this.pos}`,
+        `Electribe-Parser: out-of-bounds read (${context}) — need ${n} byte(s) at ${this.pos}, have ${this.length - this.pos}`
       );
     }
   }
@@ -579,7 +594,9 @@ function toDataView(input: ArrayBuffer | Uint8Array | DataView): DataView {
   if (input instanceof ArrayBuffer) {
     return new DataView(input);
   }
-  throw new Error("Electribe-Parser: Eingabe muss ArrayBuffer, Uint8Array oder DataView sein.");
+  throw new Error(
+    "Electribe-Parser: Eingabe muss ArrayBuffer, Uint8Array oder DataView sein."
+  );
 }
 
 // ─── Format-Detection: Real-File vs Legacy/Synthetic ─────────────────────────
@@ -609,7 +626,9 @@ function readAsciiAt(view: DataView, offset: number, len: number): string {
  * Test-File wird das ausloesen (die Tests bauen direkt nach 4-Byte-Magic
  * den Bank-Header ohne 256-Byte-Header-Padding).
  */
-export function isRealElectribeFile(input: ArrayBuffer | Uint8Array | DataView): boolean {
+export function isRealElectribeFile(
+  input: ArrayBuffer | Uint8Array | DataView
+): boolean {
   try {
     const view = toDataView(input);
     if (view.byteLength < 0x200) return false;
@@ -634,10 +653,13 @@ export function isRealElectribeFile(input: ArrayBuffer | Uint8Array | DataView):
  *   - Offset 0x100: "GLST" (statt PTST — distinktes Bank-Magic)
  *   - File-Size >= 1 MB (Single-Pattern .e2spat ist nur 16640 Bytes)
  */
-export function isElectribeAllPatBank(input: ArrayBuffer | Uint8Array | DataView): boolean {
+export function isElectribeAllPatBank(
+  input: ArrayBuffer | Uint8Array | DataView
+): boolean {
   try {
     const view = toDataView(input);
-    if (view.byteLength < 0x10100 + ELECTRIBE_ALLPAT_PATTERN_STRIDE) return false;
+    if (view.byteLength < 0x10100 + ELECTRIBE_ALLPAT_PATTERN_STRIDE)
+      return false;
     const magic = readAsciiAt(view, 0x00, 4);
     if (magic !== ELECTRIBE_MAGIC) return false;
     const id = readAsciiAt(view, 0x10, 16);
@@ -661,7 +683,7 @@ export function isElectribeAllPatBank(input: ArrayBuffer | Uint8Array | DataView
  * granulare Variante unterscheidet die echten 3 Datei-Layouts.
  */
 export function detectElectribeFormatKind(
-  input: ArrayBuffer | Uint8Array | DataView,
+  input: ArrayBuffer | Uint8Array | DataView
 ): "e2spat" | "e2sallpat" | "legacy" | "unknown" {
   try {
     const view = toDataView(input);
@@ -707,13 +729,23 @@ export function detectElectribeFormatKind(
  * @param partOffset File-absoluter Offset des Part-Block-Starts
  * @param partIndex  0..15
  */
-function parseRealPartBlock(view: DataView, partOffset: number, partIndex: number): ParsedPart {
+function parseRealPartBlock(
+  view: DataView,
+  partOffset: number,
+  partIndex: number
+): ParsedPart {
   // Defensiv: pruefe ob 816 Bytes ab partOffset noch in der Datei liegen.
-  const haveBytes = Math.max(0, Math.min(ELECTRIBE_REAL_PART_STRIDE, view.byteLength - partOffset));
+  const haveBytes = Math.max(
+    0,
+    Math.min(ELECTRIBE_REAL_PART_STRIDE, view.byteLength - partOffset)
+  );
 
-  const safeU8 = (off: number) => (off >= 0 && off < haveBytes ? view.getUint8(partOffset + off) : 0);
+  const safeU8 = (off: number) =>
+    off >= 0 && off < haveBytes ? view.getUint8(partOffset + off) : 0;
   const safeU16LE = (off: number) =>
-    off >= 0 && off + 1 < haveBytes ? view.getUint16(partOffset + off, true) : 0;
+    off >= 0 && off + 1 < haveBytes
+      ? view.getUint16(partOffset + off, true)
+      : 0;
 
   // Part-Header: v3.13.0 — Volume + Pan jetzt decodiert via histogram-RE.
   // SampleId @ +0x08 (u16 LE): v3.271 verifiziert gegen alle 16×250 Parts der
@@ -724,28 +756,24 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
   // klares default-byte in der 4000-sample-bank gefunden).
   const sampleId = safeU16LE(8);
 
-  // Volume @ +0x15: 0..127. Defensive clamp gegen out-of-range (sollte nie
-  // > 127 sein laut bank-histogram, aber defensiv parsen).
+  // Volume = Amp Level @ +0x18: 0..127 (v3.297; vorher falsch 0x15 = EG Decay).
+  // Defensive clamp gegen out-of-range (sollte nie > 127 sein laut bank-histogram).
   const rawVol = safeU8(ELECTRIBE_REAL_PART_VOLUME_OFFSET);
   let volume: number = rawVol;
   if (volume > 127) {
     // eslint-disable-next-line no-console
-    console.warn(`Electribe-Parser: Part ${partIndex} volume ${rawVol} > 127 — clamp auf 127`);
+    console.warn(
+      `Electribe-Parser: Part ${partIndex} volume ${rawVol} > 127 — clamp auf 127`
+    );
     volume = 127;
   }
 
-  // Pan @ +0x22: 0..127 (64 = center). Defensive clamp.
-  const rawPan = safeU8(ELECTRIBE_REAL_PART_PAN_OFFSET);
-  let pan: number = rawPan;
-  if (pan > 127) {
-    // eslint-disable-next-line no-console
-    console.warn(`Electribe-Parser: Part ${partIndex} pan ${rawPan} > 127 — clamp auf 127`);
-    pan = 127;
-  }
+  // Pan = Amp Pan @ +0x19: i8 mit 0 = Center (v3.297) → UI-0..127 (64=Center).
+  const pan = e2PanDeviceToUi(safeU8(ELECTRIBE_REAL_PART_PAN_OFFSET));
 
   // Pitch + FxSend: nicht decodiert → Hardware-Defaults.
-  const pitch    = 0;
-  const fxSend   = 0;
+  const pitch = 0;
+  const fxSend = 0;
 
   // Steps: v3.12.0 — verifiziertes 12-byte-Record-Encoding.
   // Stop-Bedingung: wenn der Step-Bereich nicht vollstaendig in den verfuegbaren
@@ -754,11 +782,16 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
   const steps: ParsedPartStep[] = new Array(STEPS_PER_PART);
   for (let s = 0; s < STEPS_PER_PART; s++) {
     if (s < ELECTRIBE_REAL_STEPS_PER_PART) {
-      const recOffsetWithinPart = stepAreaStart + s * ELECTRIBE_REAL_STEP_RECORD_BYTES;
+      const recOffsetWithinPart =
+        stepAreaStart + s * ELECTRIBE_REAL_STEP_RECORD_BYTES;
       // 12-byte record passt nur dann komplett, wenn recOffsetWithinPart+11 < haveBytes.
       if (recOffsetWithinPart + ELECTRIBE_REAL_STEP_RECORD_BYTES <= haveBytes) {
-        const trigByte = safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET);
-        const velByte  = safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET);
+        const trigByte = safeU8(
+          recOffsetWithinPart + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET
+        );
+        const velByte = safeU8(
+          recOffsetWithinPart + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET
+        );
         const active = trigByte === 0x01;
         // Velocity-Sentinel: 0xFF = use-default 127. Sonst direkt 0..127.
         let velocity: number;
@@ -825,11 +858,11 @@ function parseRealPartBlock(view: DataView, partOffset: number, partIndex: numbe
 function parseRealPatternAt(
   view: DataView,
   ptstOffset: number,
-  slotIndex: number,
+  slotIndex: number
 ): ParsedPattern {
   // PTST-relative Felder.
-  const nameOffset  = ptstOffset + 0x10;
-  const bpmOffset   = ptstOffset + 0x22;
+  const nameOffset = ptstOffset + 0x10;
+  const bpmOffset = ptstOffset + 0x22;
   const partsOffset = ptstOffset + 0x800; // PTST-relativ (statt 0x900 file-absolut bei .e2spat).
 
   // Name
@@ -841,7 +874,8 @@ function parseRealPatternAt(
   if (bpmOffset + 1 < view.byteLength) {
     const bpmRaw = view.getUint16(bpmOffset, true);
     bpm = bpmRaw / 10;
-    if (!Number.isFinite(bpm) || bpm < ELECTRIBE_MIN_BPM) bpm = ELECTRIBE_MIN_BPM;
+    if (!Number.isFinite(bpm) || bpm < ELECTRIBE_MIN_BPM)
+      bpm = ELECTRIBE_MIN_BPM;
     if (bpm > ELECTRIBE_MAX_BPM) bpm = ELECTRIBE_MAX_BPM;
   }
 
@@ -857,7 +891,7 @@ function parseRealPatternAt(
     } else {
       // eslint-disable-next-line no-console
       console.warn(
-        `Electribe-Parser: unbekannter Step-Length-Code ${code} bei PTST+0x25 — Fallback auf 16`,
+        `Electribe-Parser: unbekannter Step-Length-Code ${code} bei PTST+0x25 — Fallback auf 16`
       );
     }
   }
@@ -898,14 +932,17 @@ function parseRealPatternAt(
  */
 export function parsePatternMotionTable(
   view: DataView,
-  ptstOffset: number,
+  ptstOffset: number
 ): ParsedPatternMotionSlot[] {
-  const slots: ParsedPatternMotionSlot[] = new Array(ELECTRIBE_MOTION_SLOTS_PER_PATTERN);
+  const slots: ParsedPatternMotionSlot[] = new Array(
+    ELECTRIBE_MOTION_SLOTS_PER_PATTERN
+  );
 
   // Defensive: pruefe ob das ganze Motion-Region in der Datei liegt.
-  const motionEnd = ptstOffset
-    + ELECTRIBE_MOTION_DATA_TABLE_OFFSET
-    + ELECTRIBE_MOTION_SLOTS_PER_PATTERN * ELECTRIBE_MOTION_SLOT_STRIDE;
+  const motionEnd =
+    ptstOffset +
+    ELECTRIBE_MOTION_DATA_TABLE_OFFSET +
+    ELECTRIBE_MOTION_SLOTS_PER_PATTERN * ELECTRIBE_MOTION_SLOT_STRIDE;
   if (motionEnd > view.byteLength) {
     // Zu wenig Daten → alle Slots disabled.
     for (let i = 0; i < ELECTRIBE_MOTION_SLOTS_PER_PATTERN; i++) {
@@ -922,14 +959,19 @@ export function parsePatternMotionTable(
   }
 
   for (let i = 0; i < ELECTRIBE_MOTION_SLOTS_PER_PATTERN; i++) {
-    const paramId   = view.getUint8(ptstOffset + ELECTRIBE_MOTION_PARAM_TABLE_OFFSET + i);
-    const rawTarget = view.getUint8(ptstOffset + ELECTRIBE_MOTION_TARGET_TABLE_OFFSET + i);
+    const paramId = view.getUint8(
+      ptstOffset + ELECTRIBE_MOTION_PARAM_TABLE_OFFSET + i
+    );
+    const rawTarget = view.getUint8(
+      ptstOffset + ELECTRIBE_MOTION_TARGET_TABLE_OFFSET + i
+    );
     // rawTarget=1..16 → partIndex 0..15; rawTarget=17..19 → global / future-use → -1.
-    const targetPart = (rawTarget >= 1 && rawTarget <= 16) ? rawTarget - 1 : -1;
+    const targetPart = rawTarget >= 1 && rawTarget <= 16 ? rawTarget - 1 : -1;
 
-    const dataStart = ptstOffset
-      + ELECTRIBE_MOTION_DATA_TABLE_OFFSET
-      + i * ELECTRIBE_MOTION_SLOT_STRIDE;
+    const dataStart =
+      ptstOffset +
+      ELECTRIBE_MOTION_DATA_TABLE_OFFSET +
+      i * ELECTRIBE_MOTION_SLOT_STRIDE;
     const values: number[] = new Array(ELECTRIBE_MOTION_VALUES_PER_SLOT);
     let hasNonZero = false;
     for (let v = 0; v < ELECTRIBE_MOTION_VALUES_PER_SLOT; v++) {
@@ -940,9 +982,11 @@ export function parsePatternMotionTable(
     }
 
     const enabled = paramId > 0 || hasNonZero;
-    const paramName = paramId === 0
-      ? "disabled"
-      : (ELECTRIBE_PATTERN_MOTION_PARAM_NAMES[paramId] ?? `Param 0x${paramId.toString(16).padStart(2, "0")}`);
+    const paramName =
+      paramId === 0
+        ? "disabled"
+        : (ELECTRIBE_PATTERN_MOTION_PARAM_NAMES[paramId] ??
+          `Param 0x${paramId.toString(16).padStart(2, "0")}`);
 
     slots[i] = { paramId, paramName, targetPart, rawTarget, enabled, values };
   }
@@ -975,35 +1019,41 @@ function parseRealPattern(view: DataView): ParsedPattern {
  * @returns ParsedElectribeBank mit 250 Patterns (Index 0..249 == Slot 1..250).
  */
 export function parseElectribeAllPatBank(
-  input: ArrayBuffer | Uint8Array | DataView,
+  input: ArrayBuffer | Uint8Array | DataView
 ): ParsedElectribeBank {
   const view = toDataView(input);
 
-  if (view.byteLength < ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_PATTERN_STRIDE) {
+  if (
+    view.byteLength <
+    ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_PATTERN_STRIDE
+  ) {
     throw new Error(
       `Electribe-Parser: .e2sallpat Datei zu klein (${view.byteLength} Bytes, erwartet >= ${
         ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + ELECTRIBE_ALLPAT_PATTERN_STRIDE
-      })`,
+      })`
     );
   }
   if (view.byteLength > MAX_ELECTRIBE_FILE_BYTES) {
-    throw new Error(`Electribe-Parser: Datei zu gross (${view.byteLength} > ${MAX_ELECTRIBE_FILE_BYTES}).`);
+    throw new Error(
+      `Electribe-Parser: Datei zu gross (${view.byteLength} > ${MAX_ELECTRIBE_FILE_BYTES}).`
+    );
   }
 
-  const version =
-    view.byteLength >= 0x24 ? view.getUint32(0x20, true) : 1;
+  const version = view.byteLength >= 0x24 ? view.getUint32(0x20, true) : 1;
 
   // Wie viele Slots passen tatsaechlich in das File? (Defensive gegen
   // truncated Banks; Stock-Bank hat exakt 250.)
   const maxSlotsByFileSize = Math.floor(
-    (view.byteLength - ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET) / ELECTRIBE_ALLPAT_PATTERN_STRIDE,
+    (view.byteLength - ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET) /
+      ELECTRIBE_ALLPAT_PATTERN_STRIDE
   );
   const slotCount = Math.min(ELECTRIBE_ALLPAT_SLOT_COUNT, maxSlotsByFileSize);
 
   const patterns: ParsedPattern[] = new Array(slotCount);
   for (let i = 0; i < slotCount; i++) {
     const ptstOffset =
-      ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET + i * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
+      ELECTRIBE_ALLPAT_FIRST_PATTERN_OFFSET +
+      i * ELECTRIBE_ALLPAT_PATTERN_STRIDE;
 
     // PTST-Marker-Check (defensive — malformed records duerfen nicht crashen).
     const marker = readAsciiAt(view, ptstOffset, 4);
@@ -1023,7 +1073,10 @@ export function parseElectribeAllPatBank(
           pan: ELECTRIBE_REAL_PART_PAN_DEFAULT,
           pitch: 0,
           fxSend: 0,
-          steps: Array.from({ length: STEPS_PER_PART }, () => ({ active: false, velocity: 0 })),
+          steps: Array.from({ length: STEPS_PER_PART }, () => ({
+            active: false,
+            velocity: 0,
+          })),
           motion: Array.from({ length: MOTION_SLOTS_PER_PART }, () => ({
             paramId: 0,
             paramName: MOTION_PARAM_NAMES[0] ?? "Param 0",
@@ -1032,14 +1085,17 @@ export function parseElectribeAllPatBank(
           })),
         })),
         // v3.15.0: leerer Default-Pattern hat 8 disabled Motion-Slots.
-        patternMotion: Array.from({ length: ELECTRIBE_MOTION_SLOTS_PER_PATTERN }, () => ({
-          paramId: 0,
-          paramName: "disabled",
-          targetPart: -1,
-          rawTarget: 0,
-          enabled: false,
-          values: new Array(ELECTRIBE_MOTION_VALUES_PER_SLOT).fill(0),
-        })),
+        patternMotion: Array.from(
+          { length: ELECTRIBE_MOTION_SLOTS_PER_PATTERN },
+          () => ({
+            paramId: 0,
+            paramName: "disabled",
+            targetPart: -1,
+            rawTarget: 0,
+            enabled: false,
+            values: new Array(ELECTRIBE_MOTION_VALUES_PER_SLOT).fill(0),
+          })
+        ),
       };
       continue;
     }
@@ -1069,7 +1125,9 @@ export function parseElectribeAllPatBank(
  * v3.11.0: Filtert Slots, deren Name auf "Init Pattern" zeigt (Werks-Init).
  * Convenience-Helper fuer UI-Code, der nur User-Custom-Patterns anzeigen will.
  */
-export function filterNonInitPatterns(patterns: ParsedPattern[]): ParsedPattern[] {
+export function filterNonInitPatterns(
+  patterns: ParsedPattern[]
+): ParsedPattern[] {
   return patterns.filter(p => {
     const name = (p.name ?? "").trim();
     if (!name) return false;
@@ -1084,17 +1142,17 @@ export function filterNonInitPatterns(patterns: ParsedPattern[]): ParsedPattern[
 function parsePartBlock(reader: SafeReader, index: number): ParsedPart {
   // Part-Header
   const sampleId = reader.u16LE(`part[${index}].sampleId`);
-  const volume   = reader.u8(`part[${index}].volume`);
-  const pan      = reader.u8(`part[${index}].pan`);
-  const pitch    = reader.i8(`part[${index}].pitch`);
-  const fxSend   = reader.u8(`part[${index}].fxSend`);
+  const volume = reader.u8(`part[${index}].volume`);
+  const pan = reader.u8(`part[${index}].pan`);
+  const pitch = reader.i8(`part[${index}].pitch`);
+  const fxSend = reader.u8(`part[${index}].fxSend`);
   reader.skip(2, `part[${index}].reserved`);
 
   // Steps (1 Byte / Step)
   const steps: ParsedPartStep[] = new Array(STEPS_PER_PART);
   for (let s = 0; s < STEPS_PER_PART; s++) {
     const b = reader.u8(`part[${index}].step[${s}]`);
-    const active   = (b & 0x80) !== 0;
+    const active = (b & 0x80) !== 0;
     const velocity = b & 0x7f;
     steps[s] = { active, velocity };
   }
@@ -1129,11 +1187,14 @@ function parsePartBlock(reader: SafeReader, index: number): ParsedPart {
   };
 }
 
-function parsePatternBlock(reader: SafeReader, indexHint: number): ParsedPattern {
-  const name       = reader.ascii(8, `pattern[${indexHint}].name`);
-  const bpmRaw     = reader.u16LE(`pattern[${indexHint}].bpm`);
+function parsePatternBlock(
+  reader: SafeReader,
+  indexHint: number
+): ParsedPattern {
+  const name = reader.ascii(8, `pattern[${indexHint}].name`);
+  const bpmRaw = reader.u16LE(`pattern[${indexHint}].bpm`);
   const stepLength = reader.u8(`pattern[${indexHint}].stepLength`);
-  const swing      = reader.u8(`pattern[${indexHint}].swing`);
+  const swing = reader.u8(`pattern[${indexHint}].swing`);
   reader.skip(4, `pattern[${indexHint}].reserved`);
 
   // BPM-Decode: fixed-point /10. Auf den valid Range klemmen, falls Garbage drin steht.
@@ -1143,7 +1204,11 @@ function parsePatternBlock(reader: SafeReader, indexHint: number): ParsedPattern
 
   // StepLength-Klamp: 16/32/64 sind die einzigen Hardware-validen Werte.
   let validStepLength: number = stepLength;
-  if (validStepLength !== 16 && validStepLength !== 32 && validStepLength !== 64) {
+  if (
+    validStepLength !== 16 &&
+    validStepLength !== 32 &&
+    validStepLength !== 64
+  ) {
     validStepLength = 16;
   }
 
@@ -1169,7 +1234,9 @@ function parsePatternBlock(reader: SafeReader, indexHint: number): ParsedPattern
  * @returns "pattern" fuer single .e2pattern/.e2spat, "bank" fuer .e2sallpat.
  *          Wirft Error wenn Magic fehlt.
  */
-export function detectElectribeFormat(input: ArrayBuffer | Uint8Array | DataView): "pattern" | "bank" {
+export function detectElectribeFormat(
+  input: ArrayBuffer | Uint8Array | DataView
+): "pattern" | "bank" {
   const view = toDataView(input);
   if (view.byteLength < BANK_HEADER_SIZE) {
     throw new Error("Electribe-Parser: Datei zu klein (< 8 Bytes Header).");
@@ -1187,9 +1254,11 @@ export function detectElectribeFormat(input: ArrayBuffer | Uint8Array | DataView
 
   // Legacy/Synthetic: Magic + count
   const reader = new SafeReader(view);
-  const magic  = reader.ascii(4, "magic");
+  const magic = reader.ascii(4, "magic");
   if (magic !== ELECTRIBE_MAGIC) {
-    throw new Error(`Electribe-Parser: ungueltiges Magic "${magic}", erwartet "${ELECTRIBE_MAGIC}".`);
+    throw new Error(
+      `Electribe-Parser: ungueltiges Magic "${magic}", erwartet "${ELECTRIBE_MAGIC}".`
+    );
   }
   reader.u16LE("version");
   const count = reader.u16LE("patternCount");
@@ -1203,10 +1272,14 @@ export function detectElectribeFormat(input: ArrayBuffer | Uint8Array | DataView
  *
  * @throws Error bei invalid Magic, out-of-bounds, oder Pattern-Count > 250.
  */
-export function parseElectribeBank(input: ArrayBuffer | Uint8Array | DataView): ParsedElectribeBank {
+export function parseElectribeBank(
+  input: ArrayBuffer | Uint8Array | DataView
+): ParsedElectribeBank {
   const view = toDataView(input);
   if (view.byteLength > MAX_ELECTRIBE_FILE_BYTES) {
-    throw new Error(`Electribe-Parser: Datei zu gross (${view.byteLength} > ${MAX_ELECTRIBE_FILE_BYTES}).`);
+    throw new Error(
+      `Electribe-Parser: Datei zu gross (${view.byteLength} > ${MAX_ELECTRIBE_FILE_BYTES}).`
+    );
   }
   if (view.byteLength < BANK_HEADER_SIZE) {
     throw new Error("Electribe-Parser: Datei zu klein (< 8 Bytes Header).");
@@ -1231,15 +1304,19 @@ export function parseElectribeBank(input: ArrayBuffer | Uint8Array | DataView): 
 
   // ── Legacy/Synthetic-Layout (Tests + altes Format) ─────────────────────
   const reader = new SafeReader(view);
-  const magic  = reader.ascii(4, "magic");
+  const magic = reader.ascii(4, "magic");
   if (magic !== ELECTRIBE_MAGIC) {
-    throw new Error(`Electribe-Parser: ungueltiges Magic "${magic}", erwartet "${ELECTRIBE_MAGIC}".`);
+    throw new Error(
+      `Electribe-Parser: ungueltiges Magic "${magic}", erwartet "${ELECTRIBE_MAGIC}".`
+    );
   }
-  const version       = reader.u16LE("version");
-  const patternCount  = reader.u16LE("patternCount");
+  const version = reader.u16LE("version");
+  const patternCount = reader.u16LE("patternCount");
 
   if (patternCount < 0 || patternCount > MAX_PATTERNS_PER_BANK) {
-    throw new Error(`Electribe-Parser: ungueltige Pattern-Anzahl ${patternCount} (max ${MAX_PATTERNS_PER_BANK}).`);
+    throw new Error(
+      `Electribe-Parser: ungueltige Pattern-Anzahl ${patternCount} (max ${MAX_PATTERNS_PER_BANK}).`
+    );
   }
 
   // Pflicht-Plausibilitaet: bleibt mindestens patternCount * PATTERN_BLOCK_SIZE Bytes uebrig?
@@ -1247,7 +1324,7 @@ export function parseElectribeBank(input: ArrayBuffer | Uint8Array | DataView): 
   if (reader.remaining() < expectedBytes) {
     throw new Error(
       `Electribe-Parser: Datei zu kurz fuer ${patternCount} Patterns — ` +
-      `brauche ${expectedBytes} Bytes, habe ${reader.remaining()} Bytes uebrig.`,
+        `brauche ${expectedBytes} Bytes, habe ${reader.remaining()} Bytes uebrig.`
     );
   }
 
@@ -1264,7 +1341,9 @@ export function parseElectribeBank(input: ArrayBuffer | Uint8Array | DataView): 
  *
  * @throws Error bei invalid Magic oder leerer Bank.
  */
-export function parseElectribePattern(input: ArrayBuffer | Uint8Array | DataView): ParsedPattern {
+export function parseElectribePattern(
+  input: ArrayBuffer | Uint8Array | DataView
+): ParsedPattern {
   const bank = parseElectribeBank(input);
   if (bank.patternCount < 1 || bank.patterns.length === 0) {
     throw new Error("Electribe-Parser: Datei enthaelt keine Patterns.");
@@ -1337,38 +1416,42 @@ export interface SynthstudioPatternImport {
  *   - Pitch -64..+63 bleibt unveraendert.
  *   - StepCount 64 wird auf 32 geclampt (Synthstudio max ist 32).
  */
-export function convertParsedPatternToSynthstudio(parsed: ParsedPattern): SynthstudioPatternImport {
+export function convertParsedPatternToSynthstudio(
+  parsed: ParsedPattern
+): SynthstudioPatternImport {
   // v3.39: StepCount-Mapping: Hardware 16 → 16, 32 → 32, 64 → 64 (vorher capped 64→32).
   // Synthstudio unterstützt seit v3.39.0 native 64-Step-Patterns (KORG-Parität).
   const stepCount: 16 | 32 | 64 =
     parsed.stepLength >= 64 ? 64 : parsed.stepLength >= 32 ? 32 : 16;
   const cap = Math.min(stepCount, parsed.stepLength);
 
-  const drumParts: SynthstudioPatternImport["drumParts"] = parsed.parts.map(p => {
-    // Velocity-Bit aus Step-Byte trennen → eigene velocity-Arrays.
-    const stepsArr     = new Array<boolean>(stepCount).fill(false);
-    const velocitiesArr = new Array<number>(stepCount).fill(100);
-    for (let s = 0; s < cap; s++) {
-      stepsArr[s]      = p.steps[s].active;
-      velocitiesArr[s] = p.steps[s].velocity > 0 ? p.steps[s].velocity : 100;
-    }
-    // Sample-Hint Label: "Part 1" / "Synth 9" etc. Index 0..7 = Drum, 8..13 = Synth, 14..15 = Stretch.
-    let sampleHint: string;
-    if (p.index < 8) sampleHint = `Drum ${p.index + 1}`;
-    else if (p.index < 14) sampleHint = `Synth ${p.index - 7}`;
-    else sampleHint = `Stretch ${p.index - 13}`;
+  const drumParts: SynthstudioPatternImport["drumParts"] = parsed.parts.map(
+    p => {
+      // Velocity-Bit aus Step-Byte trennen → eigene velocity-Arrays.
+      const stepsArr = new Array<boolean>(stepCount).fill(false);
+      const velocitiesArr = new Array<number>(stepCount).fill(100);
+      for (let s = 0; s < cap; s++) {
+        stepsArr[s] = p.steps[s].active;
+        velocitiesArr[s] = p.steps[s].velocity > 0 ? p.steps[s].velocity : 100;
+      }
+      // Sample-Hint Label: "Part 1" / "Synth 9" etc. Index 0..7 = Drum, 8..13 = Synth, 14..15 = Stretch.
+      let sampleHint: string;
+      if (p.index < 8) sampleHint = `Drum ${p.index + 1}`;
+      else if (p.index < 14) sampleHint = `Synth ${p.index - 7}`;
+      else sampleHint = `Stretch ${p.index - 13}`;
 
-    return {
-      partIndex: p.index,
-      sampleId: p.sampleId,
-      sampleHint,
-      volume: clamp01(p.volume / 127),
-      pan: clampPan((p.pan - 64) / 63),
-      pitchSemitones: p.pitch,
-      steps: stepsArr,
-      velocities: velocitiesArr,
-    };
-  });
+      return {
+        partIndex: p.index,
+        sampleId: p.sampleId,
+        sampleHint,
+        volume: clamp01(p.volume / 127),
+        pan: clampPan((p.pan - 64) / 63),
+        pitchSemitones: p.pitch,
+        steps: stepsArr,
+        velocities: velocitiesArr,
+      };
+    }
+  );
 
   // Automation-Lanes aus aktivierten Motion-Slots.
   // v2.88 — Legacy: Per-Part-Motion (synthetisches Layout).
@@ -1415,14 +1498,16 @@ export function convertParsedPatternToSynthstudio(parsed: ParsedPattern): Synths
       }
       // Target-String: "<paramName>:slot<i>:part<targetPart>" damit der
       // Aufrufer paramId + Ziel-Part-Index auseinanderlesen kann.
-      const targetSuffix = slot.targetPart >= 0
-        ? `part${slot.targetPart}`
-        : `global${slot.rawTarget}`;
+      const targetSuffix =
+        slot.targetPart >= 0
+          ? `part${slot.targetPart}`
+          : `global${slot.rawTarget}`;
       automationLanes.push({
         target: `${slot.paramName}:slot${i}:${targetSuffix}`,
-        label: slot.targetPart >= 0
-          ? `${slot.paramName} (Slot ${i + 1} → Part ${slot.targetPart + 1})`
-          : `${slot.paramName} (Slot ${i + 1} → global)`,
+        label:
+          slot.targetPart >= 0
+            ? `${slot.paramName} (Slot ${i + 1} → Part ${slot.targetPart + 1})`
+            : `${slot.paramName} (Slot ${i + 1} → global)`,
         points,
         min: 0,
         max: 1,
@@ -1460,12 +1545,14 @@ export function clampPan(value: number): number {
  * Validation-Helper fuer den IPC-Layer (Electron) / File-Drop (Browser).
  * Prueft nur die ersten 4 Bytes — keine vollstaendige Parser-Validierung.
  */
-export function looksLikeElectribeFile(buffer: ArrayBuffer | Uint8Array): boolean {
+export function looksLikeElectribeFile(
+  buffer: ArrayBuffer | Uint8Array
+): boolean {
   try {
     const view = toDataView(buffer);
     if (view.byteLength < BANK_HEADER_SIZE) return false;
     const reader = new SafeReader(view);
-    const magic  = reader.ascii(4, "magic");
+    const magic = reader.ascii(4, "magic");
     return magic === ELECTRIBE_MAGIC;
   } catch {
     return false;

@@ -6,7 +6,6 @@ import { ChannelStrip, type ChannelStripProps } from "./ChannelStrip";
 import {
   stepGroupBorder,
   getPageCount,
-  getPageStepRange,
   getPageForStep,
   getPageRangeLabel,
 } from "./drumMachineHelpers";
@@ -17,21 +16,19 @@ import {
 
 /** ChannelStrip-Wrapper, der currentStep selbst abonniert. */
 export const PlayheadChannelStrip = memo(function PlayheadChannelStrip(
-  props: Omit<ChannelStripProps, "currentStep">,
+  props: Omit<ChannelStripProps, "currentStep">
 ) {
   const currentStep = usePlayheadStep();
   return <ChannelStrip {...props} currentStep={currentStep} />;
 });
 
 /** PolyrhythmVisualizer-Wrapper, der currentStep selbst abonniert. */
-export const PlayheadPolyrhythmVisualizer = memo(function PlayheadPolyrhythmVisualizer({
-  pattern,
-}: {
-  pattern: PatternData;
-}) {
-  const currentStep = usePlayheadStep();
-  return <PolyrhythmVisualizer pattern={pattern} currentStep={currentStep} />;
-});
+export const PlayheadPolyrhythmVisualizer = memo(
+  function PlayheadPolyrhythmVisualizer({ pattern }: { pattern: PatternData }) {
+    const currentStep = usePlayheadStep();
+    return <PolyrhythmVisualizer pattern={pattern} currentStep={currentStep} />;
+  }
+);
 
 /** Page-Switcher mit Live-Page-Indikator (abonniert Playhead). */
 export const PlayheadPageSwitcher = memo(function PlayheadPageSwitcher({
@@ -109,16 +106,22 @@ export const PlayheadPageSwitcher = memo(function PlayheadPageSwitcher({
   );
 });
 
-/** Step-Nummern-Header-Zeile mit Playhead-Highlight (abonniert Playhead). */
+/**
+ * Step-Nummern-Header-Zeile mit Playhead-Highlight (abonniert Playhead).
+ *
+ * v3.285: Single-Page — rendert IMMER alle Steps (0..stepCount) auf einer Zeile.
+ * `currentPatternPage` bleibt optional erhalten (Rückwärtskompatibilität), wird
+ * aber ignoriert. Die horizontale Ausrichtung/Scroll übernimmt der Container.
+ */
 export const PlayheadStepNumberRow = memo(function PlayheadStepNumberRow({
   stepCount,
-  currentPatternPage,
 }: {
   stepCount: number;
-  currentPatternPage: number;
+  currentPatternPage?: number;
 }) {
   const currentStep = usePlayheadStep();
-  const { start, end } = getPageStepRange(stepCount, currentPatternPage);
+  const start = 0;
+  const end = stepCount;
   return (
     <>
       {Array.from({ length: end - start }).map((_, idx) => {
@@ -132,7 +135,10 @@ export const PlayheadStepNumberRow = memo(function PlayheadStepNumberRow({
               i === currentStep ? "font-bold" : "text-text-dim",
               i % 4 === 0 ? "text-text-dim" : "",
             ].join(" ")}
-            style={{ color: i === currentStep ? "var(--ss-accent-secondary)" : undefined }}
+            style={{
+              color:
+                i === currentStep ? "var(--ss-accent-secondary)" : undefined,
+            }}
           >
             {i % 4 === 0 ? i + 1 : "·"}
             {i === currentStep && (

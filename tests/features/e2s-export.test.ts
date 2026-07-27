@@ -154,13 +154,55 @@ describe("e2sExport — template-overlay fidelity", () => {
     expect([...body.slice(stepOff, stepOff + 5)]).toEqual([0x00, 0x48, 0x60, 0x00, 0x00]);
   });
 
-  it("part volume/pan overlay only the two header bytes", () => {
+  it("part volume/pan overlay: Amp Level @0x18 (u8), Amp Pan @0x19 (i8, 0=Center)", () => {
+    // v3.297 (Gerätebefund + TABLE 6): Volume=Amp Level@0x18, Pan=Amp Pan@0x19
+    // als i8 mit 0 = Center. UI-Pan 0 (hart links) → Gerät -63 (Byte 0xC1);
+    // UI-Pan 64 (Mitte) → Gerät 0. 0x15 (EG Decay) und 0x22 (IFX Edit) bleiben
+    // unangetastet auf Template-Werten.
     const parts = emptyParts();
     parts[3] = { volume: 100, pan: 0, steps: [] };
     const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
     const partStart = 0x800 + 3 * 816;
-    expect(body[partStart + 0x15]).toBe(100);
-    expect(body[partStart + 0x22]).toBe(0);
+    expect(body[partStart + 0x18]).toBe(100);
+    expect(body[partStart + 0x19]).toBe(0xc1); // -63 als i8-Byte
+    // Die falschen alten Ziele bleiben Template (EG Decay 127, IFX Edit 64).
+    expect(body[partStart + 0x15]).toBe(TEMPLATE_BODY[partStart + 0x15]);
+    expect(body[partStart + 0x22]).toBe(TEMPLATE_BODY[partStart + 0x22]);
+
+    // Center-Pan → Geräte-Byte 0.
+    const parts2 = emptyParts();
+    parts2[0] = { volume: 127, pan: 64, steps: [] };
+    const body2 = buildE2PatternBody({ ...NEUTRAL_INPUT, parts: parts2 });
+    expect(body2[0x800 + 0x19]).toBe(0);
+  });
+
+  it("part mute overlay writes part+0x01 (1 = muted, 0 = plays)", () => {
+    // Verified offset: Korg official "electribe MIDI Implementation Rev 1.00",
+    // TABLE 6 Part Parameter → offset 1 = Mute (0/1 = OFF/ON); cross-checked with
+    // keijiro/e2edit struct Part {lastStep; mute; …} and maks/elfer PartType.
+    const parts = emptyParts();
+    parts[2] = { muted: true, steps: [] };
+    parts[5] = { muted: false, steps: [] };
+    const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
+    expect(body[0x800 + 2 * 816 + 0x01]).toBe(1); // part 2 muted
+    expect(body[0x800 + 5 * 816 + 0x01]).toBe(0); // part 5 plays
+  });
+
+  it("muting only diffs the single mute byte vs the template", () => {
+    const parts = emptyParts();
+    parts[0] = { muted: true, steps: [] };
+    const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
+    const diffs = diffOffsets(body, TEMPLATE_BODY);
+    expect(diffs).toEqual([0x800 + 0x01]);
+  });
+
+  it("omitting `muted` leaves the template mute byte untouched (part still plays)", () => {
+    const parts = emptyParts();
+    parts[0] = { steps: [{ active: true }] }; // no `muted` field
+    const body = buildE2PatternBody({ ...NEUTRAL_INPUT, parts });
+    // Template default at part+0x01 is 0 (plays); overlay must not force it.
+    expect(body[0x800 + 0x01]).toBe(TEMPLATE_BODY[0x800 + 0x01]);
+    expect(body[0x800 + 0x01]).toBe(0);
   });
 
   it("clamps out-of-range BPM, note, velocity", () => {

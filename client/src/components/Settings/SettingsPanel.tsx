@@ -54,13 +54,16 @@ import {
   type ChordType,
 } from "@/store/useChordMemoryStore";
 import {
-  useThemeStore, applyCustomTheme, deleteCustomTheme,
+  useThemeStore,
+  applyCustomTheme,
+  deleteCustomTheme,
   applyTheme as applyBaseThemeFromStore,
 } from "@/store/useThemeStore";
+import { THEMES, loadSavedTheme, type ThemeId } from "@/utils/themeApply";
 import {
-  THEMES, loadSavedTheme, type ThemeId,
-} from "@/utils/themeApply";
-import { parseMidiLayoutJson, checkPartIdsExist } from "@/utils/midiLayoutImport";
+  parseMidiLayoutJson,
+  checkPartIdsExist,
+} from "@/utils/midiLayoutImport";
 import {
   usePatchStore,
   deletePatch,
@@ -83,7 +86,10 @@ import {
   AUTOSAVE_MIN_INTERVAL_MIN,
   AUTOSAVE_MAX_INTERVAL_MIN,
 } from "@/store/useAutoSaveStore";
-import { listAutoSaveVersions, deleteAutoSaveVersion } from "@/utils/autoSaveEngine";
+import {
+  listAutoSaveVersions,
+  deleteAutoSaveVersion,
+} from "@/utils/autoSaveEngine";
 import { projectNameToId } from "@/utils/autoSaveController";
 import { useUpdater } from "@/hooks/useUpdater";
 // TASK-232-FOLLOWUP-2 / v2.98: License-Section + ActivationModal-Re-Mount aus Settings.
@@ -94,7 +100,10 @@ import {
   isPro,
 } from "@/store/useLicenseStore";
 import { ActivationModal } from "@/components/License/ActivationModal";
-import { GUMROAD_PRODUCT_URL, TRIAL_DURATION_DAYS } from "@/utils/licenseConfig";
+import {
+  GUMROAD_PRODUCT_URL,
+  TRIAL_DURATION_DAYS,
+} from "@/utils/licenseConfig";
 // v3.22.0: Welcome-Wizard manueller Reopen aus der About-Section.
 import { resetWelcomeWizard } from "@/store/useWelcomeStore";
 // v3.0.0 (TASK-236-ALT): Audio-Engine-Low-Latency-Config.
@@ -106,6 +115,7 @@ import {
   type SampleRateOption,
 } from "@/store/useAudioEngineConfigStore";
 import { AudioEngine } from "@/audio/AudioEngine";
+import { useAudioOutputStore } from "@/store/useAudioOutputStore";
 // v3.68.0: Quick-Action Macros
 import {
   useQuickActionStore,
@@ -149,29 +159,39 @@ type Section =
   | "license"
   | "about";
 
-const SECTIONS: Array<{ id: Section; icon: string; label: string; group?: string }> = [
-  { id: "design",       icon: "🎨", label: "Design",             group: "Erscheinungsbild" },
-  { id: "workspace",    icon: "🧱", label: "Workspace",          group: "Erscheinungsbild" },
-  { id: "ki",           icon: "✨", label: "KI & API",            group: "Erscheinungsbild" },
-  { id: "keyboard",     icon: "⌨️", label: "Tastatur",            group: "Steuerung" },
-  { id: "metronome",    icon: "🥁", label: "Metronom",            group: "Audio" },
-  { id: "audio-engine", icon: "⚡", label: "Audio Engine",         group: "Audio" },
-  { id: "performance",  icon: "📊", label: "Performance",         group: "Audio" },
-  { id: "tempo-map",    icon: "🎚", label: "Tempo-Map",           group: "Audio" },
-  { id: "midi-devices", icon: "🎹", label: "MIDI Geräte",         group: "MIDI" },
-  { id: "midi-cc",      icon: "🎛",  label: "CC-Zuweisungen",      group: "MIDI" },
-  { id: "midi-notes",   icon: "🎵", label: "Note-Zuweisungen",    group: "MIDI" },
-  { id: "midi-chord",   icon: "🎼", label: "Chord Memory",        group: "MIDI" },
-  { id: "midi-mpe",     icon: "🖐", label: "MPE",                 group: "MIDI" },
-  { id: "midi-fx",      icon: "✨", label: "MIDI FX",              group: "MIDI" },
-  { id: "omnitribe",    icon: "🔌", label: "OmniTribe Device",     group: "Hardware" },
-  { id: "saving",       icon: "💾", label: "Speichern",           group: "App" },
-  { id: "patches",      icon: "🎚", label: "Patch-Library",       group: "App" },
-  { id: "macros",       icon: "⚡", label: "Quick-Action Macros",  group: "App" },
-  { id: "osc",          icon: "📡", label: "OSC",                 group: "App" },
-  { id: "plugins",      icon: "🧩", label: "Plugins",             group: "App" },
-  { id: "license",      icon: "🔑", label: "Lizenz",              group: "App" },
-  { id: "about",        icon: "ℹ",  label: "Über",                group: "App" },
+const SECTIONS: Array<{
+  id: Section;
+  icon: string;
+  label: string;
+  group?: string;
+}> = [
+  { id: "design", icon: "🎨", label: "Design", group: "Erscheinungsbild" },
+  {
+    id: "workspace",
+    icon: "🧱",
+    label: "Workspace",
+    group: "Erscheinungsbild",
+  },
+  { id: "ki", icon: "✨", label: "KI & API", group: "Erscheinungsbild" },
+  { id: "keyboard", icon: "⌨️", label: "Tastatur", group: "Steuerung" },
+  { id: "metronome", icon: "🥁", label: "Metronom", group: "Audio" },
+  { id: "audio-engine", icon: "⚡", label: "Audio Engine", group: "Audio" },
+  { id: "performance", icon: "📊", label: "Performance", group: "Audio" },
+  { id: "tempo-map", icon: "🎚", label: "Tempo-Map", group: "Audio" },
+  { id: "midi-devices", icon: "🎹", label: "MIDI Geräte", group: "MIDI" },
+  { id: "midi-cc", icon: "🎛", label: "CC-Zuweisungen", group: "MIDI" },
+  { id: "midi-notes", icon: "🎵", label: "Note-Zuweisungen", group: "MIDI" },
+  { id: "midi-chord", icon: "🎼", label: "Chord Memory", group: "MIDI" },
+  { id: "midi-mpe", icon: "🖐", label: "MPE", group: "MIDI" },
+  { id: "midi-fx", icon: "✨", label: "MIDI FX", group: "MIDI" },
+  { id: "omnitribe", icon: "🔌", label: "OmniTribe Device", group: "Hardware" },
+  { id: "saving", icon: "💾", label: "Speichern", group: "App" },
+  { id: "patches", icon: "🎚", label: "Patch-Library", group: "App" },
+  { id: "macros", icon: "⚡", label: "Quick-Action Macros", group: "App" },
+  { id: "osc", icon: "📡", label: "OSC", group: "App" },
+  { id: "plugins", icon: "🧩", label: "Plugins", group: "App" },
+  { id: "license", icon: "🔑", label: "Lizenz", group: "App" },
+  { id: "about", icon: "ℹ", label: "Über", group: "App" },
 ];
 
 // ─── MIDI CC Target Definitionen ─────────────────────────────────────────────
@@ -185,34 +205,102 @@ interface CcTargetDef {
 function buildCcTargets(parts: PartData[]): CcTargetDef[] {
   const defs: CcTargetDef[] = [
     // Transport
-    { target: { type: "playStop" },        label: "Play / Stop",        category: "Transport" },
-    { target: { type: "record" },          label: "Record",             category: "Transport" },
-    { target: { type: "tapTempo" },        label: "Tap Tempo",          category: "Transport" },
-    { target: { type: "bpm" },             label: "BPM (absolut)",      category: "Transport" },
-    { target: { type: "bpmUp" },           label: "BPM +1",             category: "Transport" },
-    { target: { type: "bpmDown" },         label: "BPM -1",             category: "Transport" },
-    { target: { type: "masterVolume" },    label: "Master Volume",      category: "Transport" },
+    {
+      target: { type: "playStop" },
+      label: "Play / Stop",
+      category: "Transport",
+    },
+    { target: { type: "record" }, label: "Record", category: "Transport" },
+    { target: { type: "tapTempo" }, label: "Tap Tempo", category: "Transport" },
+    { target: { type: "bpm" }, label: "BPM (absolut)", category: "Transport" },
+    { target: { type: "bpmUp" }, label: "BPM +1", category: "Transport" },
+    { target: { type: "bpmDown" }, label: "BPM -1", category: "Transport" },
+    {
+      target: { type: "masterVolume" },
+      label: "Master Volume",
+      category: "Transport",
+    },
     // Pattern
-    { target: { type: "patternNext" },     label: "Pattern →",          category: "Pattern" },
-    { target: { type: "patternPrev" },     label: "Pattern ←",          category: "Pattern" },
-    { target: { type: "patternClear" },    label: "Pattern leeren",     category: "Pattern" },
-    { target: { type: "patternFill" },     label: "Pattern füllen",     category: "Pattern" },
-    { target: { type: "patternRandomize" },label: "Pattern zufällig",   category: "Pattern" },
-    { target: { type: "patternDuplicate" },label: "Pattern duplizieren",category: "Pattern" },
+    {
+      target: { type: "patternNext" },
+      label: "Pattern →",
+      category: "Pattern",
+    },
+    {
+      target: { type: "patternPrev" },
+      label: "Pattern ←",
+      category: "Pattern",
+    },
+    {
+      target: { type: "patternClear" },
+      label: "Pattern leeren",
+      category: "Pattern",
+    },
+    {
+      target: { type: "patternFill" },
+      label: "Pattern füllen",
+      category: "Pattern",
+    },
+    {
+      target: { type: "patternRandomize" },
+      label: "Pattern zufällig",
+      category: "Pattern",
+    },
+    {
+      target: { type: "patternDuplicate" },
+      label: "Pattern duplizieren",
+      category: "Pattern",
+    },
     // Parts
-    { target: { type: "partUp" },          label: "Part ↑",             category: "Parts" },
-    { target: { type: "partDown" },        label: "Part ↓",             category: "Parts" },
+    { target: { type: "partUp" }, label: "Part ↑", category: "Parts" },
+    { target: { type: "partDown" }, label: "Part ↓", category: "Parts" },
     // Navigation
-    { target: { type: "tab", tabId: "sequencer" },   label: "Tab: Sequencer",    category: "Navigation" },
-    { target: { type: "tab", tabId: "mixer" },        label: "Tab: Mixer",        category: "Navigation" },
-    { target: { type: "tab", tabId: "song" },         label: "Tab: Song",         category: "Navigation" },
-    { target: { type: "tab", tabId: "humanizer" },    label: "Tab: Humanizer",    category: "Navigation" },
-    { target: { type: "tab", tabId: "tools" },        label: "Tab: Tools",        category: "Navigation" },
-    { target: { type: "tab", tabId: "kollaboration" },label: "Tab: Kollaboration",category: "Navigation" },
+    {
+      target: { type: "tab", tabId: "sequencer" },
+      label: "Tab: Sequencer",
+      category: "Navigation",
+    },
+    {
+      target: { type: "tab", tabId: "mixer" },
+      label: "Tab: Mixer",
+      category: "Navigation",
+    },
+    {
+      target: { type: "tab", tabId: "song" },
+      label: "Tab: Song",
+      category: "Navigation",
+    },
+    {
+      target: { type: "tab", tabId: "humanizer" },
+      label: "Tab: Humanizer",
+      category: "Navigation",
+    },
+    {
+      target: { type: "tab", tabId: "tools" },
+      label: "Tab: Tools",
+      category: "Navigation",
+    },
+    {
+      target: { type: "tab", tabId: "kollaboration" },
+      label: "Tab: Kollaboration",
+      category: "Navigation",
+    },
     // Performance
-    { target: { type: "toggleNoteRepeat" },label: "Note Repeat",        category: "Performance" },
-    { target: { type: "toggleMorph" },     label: "Pattern Morph",      category: "Performance" },
-    { target: { type: "commitLiveEdit" },  label: "Live Edit Commit",   category: "Performance" },
+    {
+      target: { type: "toggleNoteRepeat" },
+      label: "Note Repeat",
+      category: "Performance",
+    },
+    {
+      target: { type: "toggleMorph" },
+      label: "Pattern Morph",
+      category: "Performance",
+    },
+    {
+      target: { type: "commitLiveEdit" },
+      label: "Live Edit Commit",
+      category: "Performance",
+    },
     // Scenes 1-8
     ...Array.from({ length: 8 }, (_, i) => ({
       target: { type: "scenelaunch" as const, sceneIndex: i },
@@ -220,13 +308,33 @@ function buildCcTargets(parts: PartData[]): CcTargetDef[] {
       category: "Scenes",
     })),
     // System
-    { target: { type: "openSettings" },    label: "Einstellungen öffnen", category: "System" },
+    {
+      target: { type: "openSettings" },
+      label: "Einstellungen öffnen",
+      category: "System",
+    },
     // Pro Kanal: Volume, Pan, Mute, Solo
     ...parts.flatMap(p => [
-      { target: { type: "volume" as const, partId: p.id, partName: p.name }, label: `${p.name} – Volume`, category: "Kanäle" },
-      { target: { type: "pan"    as const, partId: p.id, partName: p.name }, label: `${p.name} – Pan`,    category: "Kanäle" },
-      { target: { type: "mute"   as const, partId: p.id, partName: p.name }, label: `${p.name} – Mute`,   category: "Kanäle" },
-      { target: { type: "solo"   as const, partId: p.id, partName: p.name }, label: `${p.name} – Solo`,   category: "Kanäle" },
+      {
+        target: { type: "volume" as const, partId: p.id, partName: p.name },
+        label: `${p.name} – Volume`,
+        category: "Kanäle",
+      },
+      {
+        target: { type: "pan" as const, partId: p.id, partName: p.name },
+        label: `${p.name} – Pan`,
+        category: "Kanäle",
+      },
+      {
+        target: { type: "mute" as const, partId: p.id, partName: p.name },
+        label: `${p.name} – Mute`,
+        category: "Kanäle",
+      },
+      {
+        target: { type: "solo" as const, partId: p.id, partName: p.name },
+        label: `${p.name} – Solo`,
+        category: "Kanäle",
+      },
     ]),
   ];
   return defs;
@@ -252,16 +360,37 @@ function DesignSection() {
         {THEMES.map(theme => {
           const isSelected = current === theme.id && !activeCustomTheme;
           return (
-            <button key={theme.id} onClick={() => selectBase(theme.id as ThemeId)}
-              className={`flex items-center gap-2 p-2.5 rounded border text-left transition-all ${isSelected ? "border-accent-secondary bg-accent-secondary/10" : "border-border-color hover:border-border-subtle bg-bg-elevated"}`}>
+            <button
+              key={theme.id}
+              onClick={() => selectBase(theme.id as ThemeId)}
+              className={`flex items-center gap-2 p-2.5 rounded border text-left transition-all ${isSelected ? "border-accent-secondary bg-accent-secondary/10" : "border-border-color hover:border-border-subtle bg-bg-elevated"}`}
+            >
               <div className="flex gap-0.5 flex-shrink-0">
-                {theme.preview.map((c, i) => <div key={i} className="rounded-sm" style={{ background: c, width: i === 0 ? 18 : 9, height: 24 }} />)}
+                {theme.preview.map((c, i) => (
+                  <div
+                    key={i}
+                    className="rounded-sm"
+                    style={{
+                      background: c,
+                      width: i === 0 ? 18 : 9,
+                      height: 24,
+                    }}
+                  />
+                ))}
               </div>
               <div className="min-w-0">
-                <div className={`text-xs font-medium ${isSelected ? "text-accent-secondary" : "text-text-primary"}`}>{theme.name}</div>
-                <div className="text-[10px] text-text-dim truncate">{theme.description}</div>
+                <div
+                  className={`text-xs font-medium ${isSelected ? "text-accent-secondary" : "text-text-primary"}`}
+                >
+                  {theme.name}
+                </div>
+                <div className="text-[10px] text-text-dim truncate">
+                  {theme.description}
+                </div>
               </div>
-              {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-accent-secondary flex-shrink-0" />}
+              {isSelected && (
+                <div className="ml-auto w-2 h-2 rounded-full bg-accent-secondary flex-shrink-0" />
+              )}
             </button>
           );
         })}
@@ -269,18 +398,52 @@ function DesignSection() {
 
       {customThemes.length > 0 && (
         <div className="mb-4">
-          <h4 className="text-xs font-semibold text-text-dim mb-2">Eigene Designs</h4>
+          <h4 className="text-xs font-semibold text-text-dim mb-2">
+            Eigene Designs
+          </h4>
           <div className="grid grid-cols-2 gap-2">
             {customThemes.map(theme => {
               const isSelected = activeCustomTheme === theme.id;
               return (
-                <div key={theme.id} className={`flex items-center gap-2 p-2.5 rounded border ${isSelected ? "border-accent-success bg-accent-success/10" : "border-border-color"}`}>
-                  <button onClick={() => { applyCustomTheme(theme.id); setCurrent("dark"); }} className="flex-1 flex items-center gap-2 min-w-0">
-                    <div className="rounded-sm flex-shrink-0" style={{ background: theme.colors["--ss-bg-base"], width: 18, height: 24 }} />
-                    <div className="rounded-sm flex-shrink-0" style={{ background: theme.colors["--ss-accent-primary"], width: 9, height: 24 }} />
-                    <span className={`text-xs font-medium truncate ${isSelected ? "text-accent-success" : "text-text-primary"}`}>{theme.name}</span>
+                <div
+                  key={theme.id}
+                  className={`flex items-center gap-2 p-2.5 rounded border ${isSelected ? "border-accent-success bg-accent-success/10" : "border-border-color"}`}
+                >
+                  <button
+                    onClick={() => {
+                      applyCustomTheme(theme.id);
+                      setCurrent("dark");
+                    }}
+                    className="flex-1 flex items-center gap-2 min-w-0"
+                  >
+                    <div
+                      className="rounded-sm flex-shrink-0"
+                      style={{
+                        background: theme.colors["--ss-bg-base"],
+                        width: 18,
+                        height: 24,
+                      }}
+                    />
+                    <div
+                      className="rounded-sm flex-shrink-0"
+                      style={{
+                        background: theme.colors["--ss-accent-primary"],
+                        width: 9,
+                        height: 24,
+                      }}
+                    />
+                    <span
+                      className={`text-xs font-medium truncate ${isSelected ? "text-accent-success" : "text-text-primary"}`}
+                    >
+                      {theme.name}
+                    </span>
                   </button>
-                  <button onClick={() => deleteCustomTheme(theme.id)} className="text-text-dim hover:text-accent-danger text-xs flex-shrink-0">✕</button>
+                  <button
+                    onClick={() => deleteCustomTheme(theme.id)}
+                    className="text-text-dim hover:text-accent-danger text-xs flex-shrink-0"
+                  >
+                    ✕
+                  </button>
                 </div>
               );
             })}
@@ -288,18 +451,25 @@ function DesignSection() {
         </div>
       )}
 
-      {showCreator
-        ? <CustomThemeCreator onClose={() => setShowCreator(false)} />
-        : <button onClick={() => setShowCreator(true)} className="w-full text-center text-xs text-text-dim hover:text-text-primary py-2 rounded border border-dashed border-border-color">
-            + Eigenes Design erstellen
-          </button>
-      }
+      {showCreator ? (
+        <CustomThemeCreator onClose={() => setShowCreator(false)} />
+      ) : (
+        <button
+          onClick={() => setShowCreator(true)}
+          className="w-full text-center text-xs text-text-dim hover:text-text-primary py-2 rounded border border-dashed border-border-color"
+        >
+          + Eigenes Design erstellen
+        </button>
+      )}
     </div>
   );
 }
 
 /** Sichtbarer Label + Provider-spezifischer Hinweis. */
-const PROVIDER_META: Record<AiProvider, { label: string; placeholder: string; helpUrl: string; helpLabel: string }> = {
+const PROVIDER_META: Record<
+  AiProvider,
+  { label: string; placeholder: string; helpUrl: string; helpLabel: string }
+> = {
   anthropic: {
     label: "Anthropic (Claude)",
     placeholder: "sk-ant-…",
@@ -350,16 +520,19 @@ function KiSection() {
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-sm font-bold text-text-primary mb-1">AI Beat Co-Pilot</h3>
+        <h3 className="text-sm font-bold text-text-primary mb-1">
+          AI Beat Co-Pilot
+        </h3>
         <p className="text-xs text-text-dim mb-3">
-          Wähle deinen AI-Provider, füge deinen API-Key hinzu und wähle ein Modell.
-          Keys werden lokal gespeichert — nicht synchronisiert, nicht geloggt.
+          Wähle deinen AI-Provider, füge deinen API-Key hinzu und wähle ein
+          Modell. Keys werden lokal gespeichert — nicht synchronisiert, nicht
+          geloggt.
         </p>
 
         {/* Provider-Picker */}
         <label className="text-xs text-text-muted block mb-1">Provider</label>
         <div className="flex gap-2 mb-3" data-testid="ki-provider-picker">
-          {AI_PROVIDERS.map((p) => (
+          {AI_PROVIDERS.map(p => (
             <button
               key={p}
               type="button"
@@ -378,7 +551,9 @@ function KiSection() {
         </div>
 
         {/* API-Key Eingabe */}
-        <label className="text-xs text-text-muted block mb-1">{meta.label} API Key</label>
+        <label className="text-xs text-text-muted block mb-1">
+          {meta.label} API Key
+        </label>
         <div className="flex gap-2">
           <input
             type="password"
@@ -416,13 +591,17 @@ function KiSection() {
           </p>
         )}
         {!testResult && providerCfg.apiKey && (
-          <p className="text-[10px] text-accent-success mt-1.5">✓ API Key gespeichert – mit „Test" Gültigkeit prüfen</p>
+          <p className="text-[10px] text-accent-success mt-1.5">
+            ✓ API Key gespeichert – mit „Test" Gültigkeit prüfen
+          </p>
         )}
       </div>
 
       {/* Modell-Picker für den aktiven Provider */}
       <div>
-        <label className="text-xs text-text-muted block mb-1">Modell ({meta.label})</label>
+        <label className="text-xs text-text-muted block mb-1">
+          Modell ({meta.label})
+        </label>
         <select
           value={providerCfg.model}
           onChange={e => setProviderModel(provider, e.target.value)}
@@ -430,7 +609,9 @@ function KiSection() {
           className="w-full bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color"
         >
           {AVAILABLE_MODELS[provider].map(m => (
-            <option key={m.id} value={m.id}>{m.label}</option>
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
           ))}
         </select>
         <p className="text-[10px] text-text-dim mt-1">
@@ -440,11 +621,13 @@ function KiSection() {
 
       <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
         <div>
-          API Key holen: <span className="text-accent-secondary">{meta.helpLabel}</span>
+          API Key holen:{" "}
+          <span className="text-accent-secondary">{meta.helpLabel}</span>
         </div>
         <div>
-          Ohne Key wird prozedurale Generierung verwendet. Free-Tier-Plan via Synthstudio-Proxy
-          ist auf der Roadmap (Phase B), aktuell nicht verfügbar.
+          Ohne Key wird prozedurale Generierung verwendet. Free-Tier-Plan via
+          Synthstudio-Proxy ist auf der Roadmap (Phase B), aktuell nicht
+          verfügbar.
         </div>
       </div>
     </div>
@@ -466,17 +649,21 @@ function WorkspaceSection() {
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-sm font-bold text-text-primary mb-1">Workspace-Modus (Beta)</h3>
+        <h3 className="text-sm font-bold text-text-primary mb-1">
+          Workspace-Modus (Beta)
+        </h3>
         <p className="text-xs text-text-dim mb-3">
-          Aktiviert den neuen Dockview-basierten Workspace mit drag-bar Tabs, Splits und Floating-Panels.
-          Während der Beta-Phase läuft Workspace parallel zur alten Tab-Bar — du kannst jederzeit zurück.
-          Migrierte Tabs aktuell: <span className="font-mono">Mixer</span>, <span className="font-mono">Channel Inspector</span>.
+          Aktiviert den neuen Dockview-basierten Workspace mit drag-bar Tabs,
+          Splits und Floating-Panels. Während der Beta-Phase läuft Workspace
+          parallel zur alten Tab-Bar — du kannst jederzeit zurück. Migrierte
+          Tabs aktuell: <span className="font-mono">Mixer</span>,{" "}
+          <span className="font-mono">Channel Inspector</span>.
         </p>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={enabled}
-            onChange={(e) => setWorkspaceMode(e.target.checked)}
+            onChange={e => setWorkspaceMode(e.target.checked)}
             data-testid="workspace-mode-toggle"
             className="cursor-pointer accent-accent-primary"
           />
@@ -486,7 +673,10 @@ function WorkspaceSection() {
         </label>
       </div>
       <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
-        <div>Im nächsten Welle der Migration: alle restlichen Tabs + echtes Multi-Window-Drag-Out (Browser-Tab-Stil).</div>
+        <div>
+          Im nächsten Welle der Migration: alle restlichen Tabs + echtes
+          Multi-Window-Drag-Out (Browser-Tab-Stil).
+        </div>
       </div>
     </div>
   );
@@ -495,7 +685,7 @@ function WorkspaceSection() {
 function MetronomeSection() {
   const state = useMetronomeStore();
   const clickRef = React.useRef<HTMLInputElement>(null);
-  const beatRef  = React.useRef<HTMLInputElement>(null);
+  const beatRef = React.useRef<HTMLInputElement>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   const handleFile = async (type: "downbeat" | "beat", file: File) => {
@@ -510,7 +700,10 @@ function MetronomeSection() {
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">Metronom</h3>
-      <p className="text-xs text-text-dim">Passe den Metronom-Klang an. Eigene WAV-Dateien als Click-Sound laden – persistent gespeichert.</p>
+      <p className="text-xs text-text-dim">
+        Passe den Metronom-Klang an. Eigene WAV-Dateien als Click-Sound laden –
+        persistent gespeichert.
+      </p>
 
       {error && (
         <div className="text-[10px] text-accent-danger bg-accent-danger/10 rounded px-2 py-1">
@@ -520,41 +713,99 @@ function MetronomeSection() {
 
       <div className="space-y-3">
         <div>
-          <label className="text-xs text-text-muted block mb-1">Lautstärke</label>
-          <input type="range" min={0} max={1} step={0.01} value={state.volume}
+          <label className="text-xs text-text-muted block mb-1">
+            Lautstärke
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={state.volume}
             onChange={e => updateMetronome({ volume: Number(e.target.value) })}
-            className="w-full accent-accent-primary" />
+            className="w-full accent-accent-primary"
+          />
         </div>
 
         <div>
-          <label className="text-xs text-text-muted block mb-1">Downbeat-Sound (Erster Schlag)</label>
+          <label className="text-xs text-text-muted block mb-1">
+            Downbeat-Sound (Erster Schlag)
+          </label>
           <div className="flex gap-2 items-center">
-            <button onClick={() => clickRef.current?.click()}
-              className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary">
+            <button
+              onClick={() => clickRef.current?.click()}
+              className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary"
+            >
               WAV laden…
             </button>
-            {state.customDownbeatName && <span className="text-[10px] text-accent-secondary truncate">{state.customDownbeatName}</span>}
-            {state.customDownbeatUrl && <button onClick={() => clearCustomMetronomeSound("downbeat")} className="text-text-dim hover:text-accent-danger text-xs">✕</button>}
+            {state.customDownbeatName && (
+              <span className="text-[10px] text-accent-secondary truncate">
+                {state.customDownbeatName}
+              </span>
+            )}
+            {state.customDownbeatUrl && (
+              <button
+                onClick={() => clearCustomMetronomeSound("downbeat")}
+                className="text-text-dim hover:text-accent-danger text-xs"
+              >
+                ✕
+              </button>
+            )}
           </div>
-          <input ref={clickRef} type="file" accept=".wav,.mp3,.ogg" className="hidden"
-            onChange={e => { if (e.target.files?.[0]) void handleFile("downbeat", e.target.files[0]); e.target.value = ""; }} />
+          <input
+            ref={clickRef}
+            type="file"
+            accept=".wav,.mp3,.ogg"
+            className="hidden"
+            onChange={e => {
+              if (e.target.files?.[0])
+                void handleFile("downbeat", e.target.files[0]);
+              e.target.value = "";
+            }}
+          />
         </div>
 
         <div>
-          <label className="text-xs text-text-muted block mb-1">Beat-Sound (alle anderen Schläge)</label>
+          <label className="text-xs text-text-muted block mb-1">
+            Beat-Sound (alle anderen Schläge)
+          </label>
           <div className="flex gap-2 items-center">
-            <button onClick={() => beatRef.current?.click()}
-              className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary">
+            <button
+              onClick={() => beatRef.current?.click()}
+              className="px-3 py-1.5 text-xs rounded bg-bg-elevated border border-border-color text-text-muted hover:text-text-primary"
+            >
               WAV laden…
             </button>
-            {state.customBeatName && <span className="text-[10px] text-accent-secondary truncate">{state.customBeatName}</span>}
-            {state.customBeatUrl && <button onClick={() => clearCustomMetronomeSound("beat")} className="text-text-dim hover:text-accent-danger text-xs">✕</button>}
+            {state.customBeatName && (
+              <span className="text-[10px] text-accent-secondary truncate">
+                {state.customBeatName}
+              </span>
+            )}
+            {state.customBeatUrl && (
+              <button
+                onClick={() => clearCustomMetronomeSound("beat")}
+                className="text-text-dim hover:text-accent-danger text-xs"
+              >
+                ✕
+              </button>
+            )}
           </div>
-          <input ref={beatRef} type="file" accept=".wav,.mp3,.ogg" className="hidden"
-            onChange={e => { if (e.target.files?.[0]) void handleFile("beat", e.target.files[0]); e.target.value = ""; }} />
+          <input
+            ref={beatRef}
+            type="file"
+            accept=".wav,.mp3,.ogg"
+            className="hidden"
+            onChange={e => {
+              if (e.target.files?.[0])
+                void handleFile("beat", e.target.files[0]);
+              e.target.value = "";
+            }}
+          />
         </div>
 
-        <p className="text-[10px] text-text-dim">Ohne Custom Sound: synthetischer Klick. Max. 2 MB pro Datei.</p>
+        <p className="text-[10px] text-text-dim">
+          Ohne Custom Sound: synthetischer Klick. Max. 2 MB pro Datei.
+        </p>
       </div>
     </div>
   );
@@ -567,7 +818,11 @@ function MetronomeSection() {
  * der Live-Activity-Indicator zuhause — die SettingsPanel-Sections decken
  * historisch nur einen Subset ab.
  */
-function AdvancedMidiBanner({ onOpenAdvancedMidi }: { onOpenAdvancedMidi?: () => void }) {
+function AdvancedMidiBanner({
+  onOpenAdvancedMidi,
+}: {
+  onOpenAdvancedMidi?: () => void;
+}) {
   if (!onOpenAdvancedMidi) return null;
   return (
     <div
@@ -575,7 +830,9 @@ function AdvancedMidiBanner({ onOpenAdvancedMidi }: { onOpenAdvancedMidi?: () =>
       className="mb-4 rounded-lg border border-accent-secondary/60 bg-accent-secondary/10 p-3"
     >
       <div className="flex items-start gap-3">
-        <span className="text-xl leading-none" aria-hidden="true">🎛</span>
+        <span className="text-xl leading-none" aria-hidden="true">
+          🎛
+        </span>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-semibold text-accent-secondary mb-1">
             Erweiterte MIDI-Einstellungen
@@ -601,27 +858,48 @@ function AdvancedMidiBanner({ onOpenAdvancedMidi }: { onOpenAdvancedMidi?: () =>
   );
 }
 
-function MidiDevicesSection({ midi, onOpenAdvancedMidi }: { midi: MidiState & MidiActions; onOpenAdvancedMidi?: () => void }) {
+function MidiDevicesSection({
+  midi,
+  onOpenAdvancedMidi,
+}: {
+  midi: MidiState & MidiActions;
+  onOpenAdvancedMidi?: () => void;
+}) {
   return (
     <div className="space-y-4">
       <AdvancedMidiBanner onOpenAdvancedMidi={onOpenAdvancedMidi} />
-      <h3 className="text-sm font-bold text-text-primary">MIDI Geräte & Clock</h3>
+      <h3 className="text-sm font-bold text-text-primary">
+        MIDI Geräte & Clock
+      </h3>
       {!midi.isAvailable ? (
-        <div className="text-xs text-accent-danger">Web MIDI API nicht verfügbar (Chrome/Edge empfohlen).</div>
+        <div className="text-xs text-accent-danger">
+          Web MIDI API nicht verfügbar (Chrome/Edge empfohlen).
+        </div>
       ) : !midi.isEnabled ? (
-        <button onClick={midi.enable} className="px-4 py-2 rounded bg-accent-primary text-white text-xs font-bold">
+        <button
+          onClick={midi.enable}
+          className="px-4 py-2 rounded bg-accent-primary text-white text-xs font-bold"
+        >
           MIDI aktivieren
         </button>
       ) : (
         <>
           {/* MIDI Eingang */}
           <div>
-            <h4 className="text-xs font-semibold text-text-muted mb-2">Eingang (Input)</h4>
-            <select value={midi.activeDeviceId ?? ""}
+            <h4 className="text-xs font-semibold text-text-muted mb-2">
+              Eingang (Input)
+            </h4>
+            <select
+              value={midi.activeDeviceId ?? ""}
               onChange={e => midi.setActiveDevice(e.target.value || null)}
-              className="w-full bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color">
+              className="w-full bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color"
+            >
               <option value="">Alle Geräte</option>
-              {midi.devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {midi.devices.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
             </select>
             {/* #11: Live-Signal-Anzeige — sofort sehen, ob das Gerät MIDI sendet. */}
             <div className="mt-2">
@@ -631,26 +909,51 @@ function MidiDevicesSection({ midi, onOpenAdvancedMidi }: { midi: MidiState & Mi
 
           {/* MIDI Ausgang */}
           <div>
-            <h4 className="text-xs font-semibold text-text-muted mb-2">Ausgang (Output)</h4>
+            <h4 className="text-xs font-semibold text-text-muted mb-2">
+              Ausgang (Output)
+            </h4>
             <label className="flex items-center gap-2 mb-2 cursor-pointer">
-              <input type="checkbox" checked={midi.midiOutEnabled}
-                onChange={e => midi.setMidiOutEnabled(e.target.checked)} className="accent-accent-primary" />
-              <span className="text-xs text-text-primary">MIDI Out aktiv (Steps an Hardware-Synth senden)</span>
+              <input
+                type="checkbox"
+                checked={midi.midiOutEnabled}
+                onChange={e => midi.setMidiOutEnabled(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              <span className="text-xs text-text-primary">
+                MIDI Out aktiv (Steps an Hardware-Synth senden)
+              </span>
             </label>
             {midi.midiOutEnabled && (
               <>
-                <select value={midi.activeOutputDeviceId ?? ""}
-                  onChange={e => midi.setActiveOutputDevice(e.target.value || null)}
-                  className="w-full mb-2 bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color">
+                <select
+                  value={midi.activeOutputDeviceId ?? ""}
+                  onChange={e =>
+                    midi.setActiveOutputDevice(e.target.value || null)
+                  }
+                  className="w-full mb-2 bg-bg-elevated text-text-primary text-xs px-3 py-2 rounded border border-border-color"
+                >
                   <option value="">Ausgangsgerät wählen</option>
-                  {midi.outputDevices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  {midi.outputDevices.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
                 </select>
                 <div className="flex items-center gap-2 mb-2">
                   <label className="text-xs text-text-muted">MIDI-Kanal:</label>
-                  <input type="number" min={1} max={16} value={midi.midiOutChannel}
-                    onChange={e => midi.setMidiOutChannel(Number(e.target.value))}
-                    className="w-16 bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color" />
-                  <span className="text-[10px] text-text-dim">(10 = GM Drums)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={midi.midiOutChannel}
+                    onChange={e =>
+                      midi.setMidiOutChannel(Number(e.target.value))
+                    }
+                    className="w-16 bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
+                  />
+                  <span className="text-[10px] text-text-dim">
+                    (10 = GM Drums)
+                  </span>
                 </div>
                 {/* v1.89: MIDI-Output-Test-Button */}
                 {midi.activeOutputDeviceId && (
@@ -692,8 +995,12 @@ function MidiDevicesSection({ midi, onOpenAdvancedMidi }: { midi: MidiState & Mi
                 {/* v1.97: MIDI-Clock-Out — sendet 24 PPQ an aktives Output-Device */}
                 {midi.activeOutputDeviceId && (
                   <label className="flex items-center gap-2 cursor-pointer pt-2 border-t border-border-color/50">
-                    <input type="checkbox" checked={midi.clockOutEnabled}
-                      onChange={e => midi.setClockOutEnabled(e.target.checked)} className="accent-accent-primary" />
+                    <input
+                      type="checkbox"
+                      checked={midi.clockOutEnabled}
+                      onChange={e => midi.setClockOutEnabled(e.target.checked)}
+                      className="accent-accent-primary"
+                    />
                     <span className="text-xs text-text-primary">
                       MIDI-Clock senden ({midi.clockOutBpm} BPM, 24 PPQ)
                     </span>
@@ -708,13 +1015,24 @@ function MidiDevicesSection({ midi, onOpenAdvancedMidi }: { midi: MidiState & Mi
 
           {/* MIDI Clock */}
           <div>
-            <h4 className="text-xs font-semibold text-text-muted mb-2">Clock Sync</h4>
+            <h4 className="text-xs font-semibold text-text-muted mb-2">
+              Clock Sync
+            </h4>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={midi.clockSync} onChange={e => midi.setClockSync(e.target.checked)} className="accent-accent-primary" />
-              <span className="text-xs text-text-primary">MIDI Clock Sync (empfange BPM vom Controller)</span>
+              <input
+                type="checkbox"
+                checked={midi.clockSync}
+                onChange={e => midi.setClockSync(e.target.checked)}
+                className="accent-accent-primary"
+              />
+              <span className="text-xs text-text-primary">
+                MIDI Clock Sync (empfange BPM vom Controller)
+              </span>
             </label>
             {midi.clockSync && midi.externalBpm !== null && (
-              <div className="text-xs text-accent-secondary mt-1">Externer BPM: {midi.externalBpm}</div>
+              <div className="text-xs text-accent-secondary mt-1">
+                Externer BPM: {midi.externalBpm}
+              </div>
             )}
           </div>
         </>
@@ -735,19 +1053,30 @@ function ChordMemorySection() {
       </p>
 
       <label className="flex items-center gap-2 mb-4 cursor-pointer">
-        <input type="checkbox" checked={chordState.enabled}
-          onChange={e => setChordMemoryEnabled(e.target.checked)} className="accent-accent-primary" />
-        <span className="text-xs text-text-primary font-medium">Chord Memory aktiv</span>
+        <input
+          type="checkbox"
+          checked={chordState.enabled}
+          onChange={e => setChordMemoryEnabled(e.target.checked)}
+          className="accent-accent-primary"
+        />
+        <span className="text-xs text-text-primary font-medium">
+          Chord Memory aktiv
+        </span>
       </label>
 
       {chordState.enabled && (
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-text-muted block mb-1.5">Akkord-Typ</label>
+            <label className="text-xs text-text-muted block mb-1.5">
+              Akkord-Typ
+            </label>
             <div className="grid grid-cols-4 gap-1">
               {allTypes.map(t => (
-                <button key={t} onClick={() => setChordType(t)}
-                  className={`py-1 text-xs rounded border transition-colors ${chordState.chordType === t ? "border-accent-primary bg-accent-primary/20 text-accent-primary" : "border-border-color text-text-dim hover:text-text-primary"}`}>
+                <button
+                  key={t}
+                  onClick={() => setChordType(t)}
+                  className={`py-1 text-xs rounded border transition-colors ${chordState.chordType === t ? "border-accent-primary bg-accent-primary/20 text-accent-primary" : "border-border-color text-text-dim hover:text-text-primary"}`}
+                >
                   {CHORD_LABELS[t]}
                 </button>
               ))}
@@ -756,22 +1085,32 @@ function ChordMemorySection() {
 
           <div className="flex gap-4">
             <div className="flex-1">
-              <label className="text-xs text-text-muted block mb-1">Lage (Voicing)</label>
+              <label className="text-xs text-text-muted block mb-1">
+                Lage (Voicing)
+              </label>
               <div className="flex gap-1">
                 {([0, 1, 2] as const).map(v => (
-                  <button key={v} onClick={() => setChordVoicing(v)}
-                    className={`flex-1 py-1 text-xs rounded border ${chordState.voicing === v ? "border-accent-secondary text-accent-secondary bg-accent-secondary/20" : "border-border-color text-text-dim"}`}>
+                  <button
+                    key={v}
+                    onClick={() => setChordVoicing(v)}
+                    className={`flex-1 py-1 text-xs rounded border ${chordState.voicing === v ? "border-accent-secondary text-accent-secondary bg-accent-secondary/20" : "border-border-color text-text-dim"}`}
+                  >
                     {v === 0 ? "Grund" : `${v}. Umk`}
                   </button>
                 ))}
               </div>
             </div>
             <div className="flex-1">
-              <label className="text-xs text-text-muted block mb-1">Oktaven-Spread</label>
+              <label className="text-xs text-text-muted block mb-1">
+                Oktaven-Spread
+              </label>
               <div className="flex gap-1">
                 {([0, 1, 2] as const).map(s => (
-                  <button key={s} onClick={() => setChordSpread(s)}
-                    className={`flex-1 py-1 text-xs rounded border ${chordState.spread === s ? "border-accent-secondary text-accent-secondary bg-accent-secondary/20" : "border-border-color text-text-dim"}`}>
+                  <button
+                    key={s}
+                    onClick={() => setChordSpread(s)}
+                    className={`flex-1 py-1 text-xs rounded border ${chordState.spread === s ? "border-accent-secondary text-accent-secondary bg-accent-secondary/20" : "border-border-color text-text-dim"}`}
+                  >
                     +{s * 12}
                   </button>
                 ))}
@@ -795,29 +1134,48 @@ function MpeSectionSimple() {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-bold text-text-primary">MPE (MIDI Polyphonic Expression)</h3>
+      <h3 className="text-sm font-bold text-text-primary">
+        MPE (MIDI Polyphonic Expression)
+      </h3>
       <p className="text-xs text-text-dim">
-        MPE ermöglicht individuelle Pitch Bend, Pressure und Timbre-Kontrolle pro Note.
-        Geeignet für MPE-fähige Controller wie ROLI Seaboard, Linnstrument, Sensel Morph.
+        MPE ermöglicht individuelle Pitch Bend, Pressure und Timbre-Kontrolle
+        pro Note. Geeignet für MPE-fähige Controller wie ROLI Seaboard,
+        Linnstrument, Sensel Morph.
       </p>
 
       <label className="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}
-          className="accent-accent-primary" />
-        <span className="text-xs text-text-primary font-medium">MPE-Modus aktivieren</span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={e => setEnabled(e.target.checked)}
+          className="accent-accent-primary"
+        />
+        <span className="text-xs text-text-primary font-medium">
+          MPE-Modus aktivieren
+        </span>
       </label>
 
       {enabled && (
         <div className="space-y-3">
           <div>
             <label className="text-xs text-text-muted block mb-1">
-              Pitch-Bend-Bereich: <span className="font-mono text-accent-secondary">±{pbRange} Halbtöne</span>
+              Pitch-Bend-Bereich:{" "}
+              <span className="font-mono text-accent-secondary">
+                ±{pbRange} Halbtöne
+              </span>
             </label>
-            <input type="range" min={1} max={96} value={pbRange}
+            <input
+              type="range"
+              min={1}
+              max={96}
+              value={pbRange}
               onChange={e => setPbRange(Number(e.target.value))}
-              className="w-full accent-accent-primary" />
+              className="w-full accent-accent-primary"
+            />
             <div className="flex justify-between text-[10px] text-text-dim mt-0.5">
-              <span>±1 (eng)</span><span>±48 (MPE Standard)</span><span>±96 (max)</span>
+              <span>±1 (eng)</span>
+              <span>±48 (MPE Standard)</span>
+              <span>±96 (max)</span>
             </div>
           </div>
 
@@ -870,7 +1228,10 @@ function MidiLayoutImportButton({
   parts: PartData[];
 }) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
-  const [feedback, setFeedback] = React.useState<{ kind: "ok" | "error"; msg: string } | null>(null);
+  const [feedback, setFeedback] = React.useState<{
+    kind: "ok" | "error";
+    msg: string;
+  } | null>(null);
 
   // Auto-clear feedback nach 5s
   React.useEffect(() => {
@@ -889,20 +1250,30 @@ function MidiLayoutImportButton({
       const text = await file.text();
       const result = parseMidiLayoutJson(text);
       if (!result.ok || !result.layout) {
-        setFeedback({ kind: "error", msg: result.error ?? "Parse fehlgeschlagen." });
+        setFeedback({
+          kind: "error",
+          msg: result.error ?? "Parse fehlgeschlagen.",
+        });
         return;
       }
       // Cross-Check: gibt es Note-Mappings die unbekannte partIds referenzieren?
-      const knownIds = parts.map((p) => p.id);
-      const partWarnings = checkPartIdsExist(result.layout.noteMappings, knownIds);
-      const totalWarnings = (result.warnings?.length ?? 0) + partWarnings.length;
+      const knownIds = parts.map(p => p.id);
+      const partWarnings = checkPartIdsExist(
+        result.layout.noteMappings,
+        knownIds
+      );
+      const totalWarnings =
+        (result.warnings?.length ?? 0) + partWarnings.length;
 
       midi.loadTemplate(result.layout.ccMappings, result.layout.noteMappings);
 
       const cc = result.layout.ccMappings.length;
       const notes = result.layout.noteMappings.length;
       const name = result.layout.name ? ` "${result.layout.name}"` : "";
-      const warnSuffix = totalWarnings > 0 ? ` (${totalWarnings} Warnungen — siehe Konsole)` : "";
+      const warnSuffix =
+        totalWarnings > 0
+          ? ` (${totalWarnings} Warnungen — siehe Konsole)`
+          : "";
       setFeedback({
         kind: "ok",
         msg: `Layout${name} importiert: ${cc} CC + ${notes} Note Mappings.${warnSuffix}`,
@@ -914,7 +1285,10 @@ function MidiLayoutImportButton({
         console.warn("[MidiLayoutImport] Part-Warnungen:", partWarnings);
       }
     } catch (e) {
-      setFeedback({ kind: "error", msg: e instanceof Error ? e.message : String(e) });
+      setFeedback({
+        kind: "error",
+        msg: e instanceof Error ? e.message : String(e),
+      });
     }
   };
 
@@ -934,7 +1308,7 @@ function MidiLayoutImportButton({
         type="file"
         accept="application/json,.json"
         className="hidden"
-        onChange={(e) => {
+        onChange={e => {
           const f = e.target.files?.[0];
           if (f) void handleFile(f);
           e.target.value = "";
@@ -945,7 +1319,9 @@ function MidiLayoutImportButton({
           data-testid="midi-layout-import-feedback"
           className={[
             "text-[10px] ml-2",
-            feedback.kind === "ok" ? "text-accent-success" : "text-accent-danger",
+            feedback.kind === "ok"
+              ? "text-accent-success"
+              : "text-accent-danger",
           ].join(" ")}
         >
           {feedback.msg}
@@ -955,60 +1331,107 @@ function MidiLayoutImportButton({
   );
 }
 
-function MidiCcSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState & MidiActions; parts: PartData[]; onOpenAdvancedMidi?: () => void }) {
+function MidiCcSection({
+  midi,
+  parts,
+  onOpenAdvancedMidi,
+}: {
+  midi: MidiState & MidiActions;
+  parts: PartData[];
+  onOpenAdvancedMidi?: () => void;
+}) {
   const targets = buildCcTargets(parts);
   const categories = [...new Set(targets.map(t => t.category))];
 
   const getExisting = (target: MidiLearnTarget) =>
-    midi.mappings.find(m => JSON.stringify(m.target) === JSON.stringify(target));
+    midi.mappings.find(
+      m => JSON.stringify(m.target) === JSON.stringify(target)
+    );
 
   const isLearning = (target: MidiLearnTarget) =>
-    midi.isLearning && JSON.stringify(midi.learnTarget) === JSON.stringify(target);
+    midi.isLearning &&
+    JSON.stringify(midi.learnTarget) === JSON.stringify(target);
 
   return (
     <div>
       <AdvancedMidiBanner onOpenAdvancedMidi={onOpenAdvancedMidi} />
       <div className="flex items-center gap-3 mb-4">
-        <h3 className="text-sm font-bold text-text-primary">MIDI CC-Zuweisungen</h3>
+        <h3 className="text-sm font-bold text-text-primary">
+          MIDI CC-Zuweisungen
+        </h3>
         <MidiLayoutImportButton midi={midi} parts={parts} />
         {midi.mappings.length > 0 && (
-          <button onClick={midi.clearAllMappings} className="ml-auto text-xs text-accent-danger hover:opacity-80">
+          <button
+            onClick={midi.clearAllMappings}
+            className="ml-auto text-xs text-accent-danger hover:opacity-80"
+          >
             Alle löschen
           </button>
         )}
       </div>
       <p className="text-xs text-text-dim mb-4">
-        Klicke auf eine Funktion → drücke einen CC-Regler → Zuweisung gespeichert.
-        {midi.isLearning && <span className="ml-2 text-accent-primary font-bold animate-pulse">Warte auf MIDI-Signal…</span>}
+        Klicke auf eine Funktion → drücke einen CC-Regler → Zuweisung
+        gespeichert.
+        {midi.isLearning && (
+          <span className="ml-2 text-accent-primary font-bold animate-pulse">
+            Warte auf MIDI-Signal…
+          </span>
+        )}
       </p>
 
       {categories.map(cat => (
         <div key={cat} className="mb-5">
-          <div className="text-[10px] text-text-dim uppercase tracking-widest mb-2 border-b border-border-color pb-1">{cat}</div>
+          <div className="text-[10px] text-text-dim uppercase tracking-widest mb-2 border-b border-border-color pb-1">
+            {cat}
+          </div>
           <div className="space-y-1">
-            {targets.filter(t => t.category === cat).map((def, i) => {
-              const existing = getExisting(def.target);
-              const learning = isLearning(def.target);
-              return (
-                <div key={i} className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors ${learning ? "bg-accent-primary/20 ring-1 ring-accent-primary" : "hover:bg-bg-elevated"}`}>
-                  <span className="flex-1 text-xs text-text-muted">{def.label}</span>
-                  <button
-                    onClick={() => learning ? midi.cancelLearn() : midi.startLearn(def.target)}
-                    className={`min-w-[80px] px-2 py-0.5 rounded border font-mono text-[11px] text-center transition-colors ${
-                      learning ? "border-accent-primary text-accent-primary animate-pulse" :
-                      existing ? "border-accent-secondary text-accent-secondary hover:border-accent-danger" :
-                      "border-border-color text-text-dim hover:border-accent-primary hover:text-text-primary"
-                    }`}
+            {targets
+              .filter(t => t.category === cat)
+              .map((def, i) => {
+                const existing = getExisting(def.target);
+                const learning = isLearning(def.target);
+                return (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors ${learning ? "bg-accent-primary/20 ring-1 ring-accent-primary" : "hover:bg-bg-elevated"}`}
                   >
-                    {learning ? "…" : existing ? `CC${existing.cc}${existing.channel ? ` Ch${existing.channel}` : ""}` : "Zuweisen"}
-                  </button>
-                  {existing && (
-                    <button onClick={() => midi.removeMapping(existing.cc, existing.channel)}
-                      className="text-text-dim hover:text-accent-danger text-sm leading-none flex-shrink-0" title="Entfernen">✕</button>
-                  )}
-                </div>
-              );
-            })}
+                    <span className="flex-1 text-xs text-text-muted">
+                      {def.label}
+                    </span>
+                    <button
+                      onClick={() =>
+                        learning
+                          ? midi.cancelLearn()
+                          : midi.startLearn(def.target)
+                      }
+                      className={`min-w-[80px] px-2 py-0.5 rounded border font-mono text-[11px] text-center transition-colors ${
+                        learning
+                          ? "border-accent-primary text-accent-primary animate-pulse"
+                          : existing
+                            ? "border-accent-secondary text-accent-secondary hover:border-accent-danger"
+                            : "border-border-color text-text-dim hover:border-accent-primary hover:text-text-primary"
+                      }`}
+                    >
+                      {learning
+                        ? "…"
+                        : existing
+                          ? `CC${existing.cc}${existing.channel ? ` Ch${existing.channel}` : ""}`
+                          : "Zuweisen"}
+                    </button>
+                    {existing && (
+                      <button
+                        onClick={() =>
+                          midi.removeMapping(existing.cc, existing.channel)
+                        }
+                        className="text-text-dim hover:text-accent-danger text-sm leading-none flex-shrink-0"
+                        title="Entfernen"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         </div>
       ))}
@@ -1016,25 +1439,62 @@ function MidiCcSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState & 
   );
 }
 
-function MidiNotesSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState & MidiActions; parts: PartData[]; onOpenAdvancedMidi?: () => void }) {
+function MidiNotesSection({
+  midi,
+  parts,
+  onOpenAdvancedMidi,
+}: {
+  midi: MidiState & MidiActions;
+  parts: PartData[];
+  onOpenAdvancedMidi?: () => void;
+}) {
   const [manualNote, setManualNote] = useState(36);
-  const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","A","A#","H"];
-  const noteToName = (n: number) => `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`;
+  const NOTE_NAMES = [
+    "C",
+    "C#",
+    "D",
+    "D#",
+    "E",
+    "F",
+    "F#",
+    "G",
+    "A",
+    "A#",
+    "H",
+  ];
+  const noteToName = (n: number) =>
+    `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`;
 
   return (
     <div>
       <AdvancedMidiBanner onOpenAdvancedMidi={onOpenAdvancedMidi} />
-      <h3 className="text-sm font-bold text-text-primary mb-4">MIDI Note-Zuweisungen</h3>
+      <h3 className="text-sm font-bold text-text-primary mb-4">
+        MIDI Note-Zuweisungen
+      </h3>
       <div className="space-y-2 mb-4">
         {parts.map(part => {
           const mapping = midi.noteMappings.find(m => m.partId === part.id);
           return (
-            <div key={part.id} className="flex items-center gap-2 px-2 py-1.5 rounded border border-border-color hover:border-border-subtle">
-              <span className="flex-1 text-xs text-text-primary">{part.name}</span>
+            <div
+              key={part.id}
+              className="flex items-center gap-2 px-2 py-1.5 rounded border border-border-color hover:border-border-subtle"
+            >
+              <span className="flex-1 text-xs text-text-primary">
+                {part.name}
+              </span>
               {mapping ? (
                 <>
-                  <span className="font-mono text-xs text-accent-secondary">{noteToName(mapping.note)} (Note {mapping.note})</span>
-                  <button onClick={() => midi.removeNoteMapping(mapping.note, mapping.channel)} className="text-text-dim hover:text-accent-danger text-sm">✕</button>
+                  <span className="font-mono text-xs text-accent-secondary">
+                    {noteToName(mapping.note)} (Note {mapping.note})
+                  </span>
+                  <button
+                    onClick={() =>
+                      midi.removeNoteMapping(mapping.note, mapping.channel)
+                    }
+                    className="text-text-dim hover:text-accent-danger text-sm"
+                  >
+                    ✕
+                  </button>
                 </>
               ) : (
                 <span className="text-xs text-text-dim">–</span>
@@ -1044,20 +1504,34 @@ function MidiNotesSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState
         })}
       </div>
       <div className="border-t border-border-color pt-3">
-        <div className="text-xs text-text-muted mb-2">Neue Zuweisung manuell</div>
+        <div className="text-xs text-text-muted mb-2">
+          Neue Zuweisung manuell
+        </div>
         <div className="flex gap-2 items-center flex-wrap">
           <div className="flex flex-col gap-0.5">
             <label className="text-[10px] text-text-dim">Note</label>
             <div className="flex items-center gap-1">
-              <input type="number" min={0} max={127} value={manualNote} onChange={e => setManualNote(Number(e.target.value))}
-                className="w-16 bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color" />
-              <span className="text-xs text-text-dim">{noteToName(manualNote)}</span>
+              <input
+                type="number"
+                min={0}
+                max={127}
+                value={manualNote}
+                onChange={e => setManualNote(Number(e.target.value))}
+                className="w-16 bg-bg-elevated text-text-primary text-xs px-2 py-1 rounded border border-border-color"
+              />
+              <span className="text-xs text-text-dim">
+                {noteToName(manualNote)}
+              </span>
             </div>
           </div>
           {parts.map(part => (
-            <button key={part.id}
-              onClick={() => midi.addNoteMapping(manualNote, 0, part.id, part.name)}
-              className="px-2 py-1 text-[10px] rounded bg-bg-elevated text-text-muted hover:bg-accent-primary/20 hover:text-accent-primary transition-colors">
+            <button
+              key={part.id}
+              onClick={() =>
+                midi.addNoteMapping(manualNote, 0, part.id, part.name)
+              }
+              className="px-2 py-1 text-[10px] rounded bg-bg-elevated text-text-muted hover:bg-accent-primary/20 hover:text-accent-primary transition-colors"
+            >
               → {part.name}
             </button>
           ))}
@@ -1067,7 +1541,11 @@ function MidiNotesSection({ midi, parts, onOpenAdvancedMidi }: { midi: MidiState
   );
 }
 
-function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => void }) {
+function SavingSection({
+  onOpenVersionHistory,
+}: {
+  onOpenVersionHistory?: () => void;
+}) {
   const api = useApiSettingsStore();
   // v3.57.0: AutoSave-Settings (projekt-bezogen, separater Store).
   const autoSave = useAutoSaveStore();
@@ -1077,7 +1555,8 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
 
   const handleDeleteAll = useCallback(async () => {
     const ok = await confirm({
-      title: "Alle AutoSave-Versionen für ALLE Projekte unwiderruflich löschen?",
+      title:
+        "Alle AutoSave-Versionen für ALLE Projekte unwiderruflich löschen?",
       confirmLabel: "Löschen",
       destructive: true,
     });
@@ -1092,7 +1571,9 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
       // erfolgt ohnehin via Rolling.).
       const all = await listAutoSaveVersions("default");
       for (const v of all) {
-        await deleteAutoSaveVersion("default", v.versionId).catch(() => undefined);
+        await deleteAutoSaveVersion("default", v.versionId).catch(
+          () => undefined
+        );
       }
       toast("Versionen gelöscht", { kind: "info" });
     } finally {
@@ -1102,17 +1583,21 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
 
   return (
     <div className="space-y-5">
-      <h3 className="text-sm font-bold text-text-primary">Speichern & Auto-Save</h3>
+      <h3 className="text-sm font-bold text-text-primary">
+        Speichern & Auto-Save
+      </h3>
 
       {/* v3.57.0: Projekt-AutoSave (rolling Versionen, Engine-basiert) */}
       <div className="rounded-lg border border-accent-primary/40 p-4 space-y-3 bg-accent-primary/5">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-xs font-semibold text-text-primary">
-              Projekt-AutoSave <span className="text-[9px] text-accent-primary ml-1">v3.57</span>
+              Projekt-AutoSave{" "}
+              <span className="text-[9px] text-accent-primary ml-1">v3.57</span>
             </div>
             <div className="text-[10px] text-text-dim mt-0.5">
-              Speichert bis zu 10 Versionen pro Projekt — wiederherstellbar via Versions-History
+              Speichert bis zu 10 Versionen pro Projekt — wiederherstellbar via
+              Versions-History
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -1123,7 +1608,9 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
               className="accent-accent-primary w-4 h-4"
               data-testid="settings-autosave-enabled-toggle"
             />
-            <span className={`text-xs font-bold ${autoSave.enabled ? "text-accent-success" : "text-text-dim"}`}>
+            <span
+              className={`text-xs font-bold ${autoSave.enabled ? "text-accent-success" : "text-text-dim"}`}
+            >
               {autoSave.enabled ? "AN" : "AUS"}
             </span>
           </label>
@@ -1138,11 +1625,15 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
                 min={AUTOSAVE_MIN_INTERVAL_MIN}
                 max={AUTOSAVE_MAX_INTERVAL_MIN}
                 value={autoSave.intervalMin}
-                onChange={e => setProjectAutoSaveInterval(Number(e.target.value))}
+                onChange={e =>
+                  setProjectAutoSaveInterval(Number(e.target.value))
+                }
                 className="w-14 px-2 py-1 text-xs bg-bg-base border border-border-color rounded text-text-primary"
                 data-testid="settings-autosave-interval-input"
               />
-              <span className="text-[10px] text-text-dim">Min ({AUTOSAVE_MIN_INTERVAL_MIN}–{AUTOSAVE_MAX_INTERVAL_MIN})</span>
+              <span className="text-[10px] text-text-dim">
+                Min ({AUTOSAVE_MIN_INTERVAL_MIN}–{AUTOSAVE_MAX_INTERVAL_MIN})
+              </span>
             </label>
           </div>
         )}
@@ -1173,16 +1664,24 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
       <div className="rounded-lg border border-border-color p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold text-text-primary">Browser-Cache Auto-Save</div>
+            <div className="text-xs font-semibold text-text-primary">
+              Browser-Cache Auto-Save
+            </div>
             <div className="text-[10px] text-text-dim mt-0.5">
-              Speichert das letzte Projekt im <code>localStorage</code> für Recovery beim Reload
+              Speichert das letzte Projekt im <code>localStorage</code> für
+              Recovery beim Reload
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={api.autoSaveEnabled}
+            <input
+              type="checkbox"
+              checked={api.autoSaveEnabled}
               onChange={e => setAutoSaveEnabled(e.target.checked)}
-              className="accent-accent-primary w-4 h-4" />
-            <span className={`text-xs font-bold ${api.autoSaveEnabled ? "text-accent-success" : "text-text-dim"}`}>
+              className="accent-accent-primary w-4 h-4"
+            />
+            <span
+              className={`text-xs font-bold ${api.autoSaveEnabled ? "text-accent-success" : "text-text-dim"}`}
+            >
               {api.autoSaveEnabled ? "AN" : "AUS"}
             </span>
           </label>
@@ -1193,12 +1692,15 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
             <span className="text-xs text-text-muted">Intervall:</span>
             <div className="flex gap-1">
               {[1, 3, 5, 10, 15].map(min => (
-                <button key={min} onClick={() => setAutoSaveInterval(min)}
+                <button
+                  key={min}
+                  onClick={() => setAutoSaveInterval(min)}
                   className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
                     api.autoSaveIntervalMin === min
                       ? "border-accent-primary bg-accent-primary/20 text-accent-primary"
                       : "border-border-color text-text-dim hover:text-text-primary"
-                  }`}>
+                  }`}
+                >
                   {min} Min
                 </button>
               ))}
@@ -1211,13 +1713,18 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
       </div>
 
       {/* v3.138: Embed-Verhalten beim Project-Save */}
-      <div className="rounded-lg border border-border-color p-4 space-y-3" data-testid="embed-behavior-section">
+      <div
+        className="rounded-lg border border-border-color p-4 space-y-3"
+        data-testid="embed-behavior-section"
+      >
         <div>
-          <div className="text-xs font-semibold text-text-primary">Embed-Verhalten beim Speichern</div>
+          <div className="text-xs font-semibold text-text-primary">
+            Embed-Verhalten beim Speichern
+          </div>
           <div className="text-[10px] text-text-dim mt-0.5">
-            Steuert ob/wann Samples ins <code>.synth</code>-File eingebettet werden.
-            Transformierte Samples (Blob-URLs) gehen nach einem Browser-Reload verloren,
-            wenn sie nicht eingebettet sind.
+            Steuert ob/wann Samples ins <code>.synth</code>-File eingebettet
+            werden. Transformierte Samples (Blob-URLs) gehen nach einem
+            Browser-Reload verloren, wenn sie nicht eingebettet sind.
           </div>
         </div>
         <div className="flex flex-col gap-2 mt-2">
@@ -1236,15 +1743,27 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
                 data-testid={`embed-behavior-${b}`}
               />
               <span className="flex flex-col gap-0.5">
-                <span className={api.embedBehavior === b ? "text-accent-primary font-semibold" : "text-text-muted"}>
-                  {b === "auto" && "Auto — nur transformierte Samples einbetten (empfohlen)"}
-                  {b === "always" && "Immer — alle Samples einbetten (sicherer Round-Trip)"}
-                  {b === "never" && "Nie — kompakte Files (Daten-Verlust-Risiko bei Blob-URLs)"}
+                <span
+                  className={
+                    api.embedBehavior === b
+                      ? "text-accent-primary font-semibold"
+                      : "text-text-muted"
+                  }
+                >
+                  {b === "auto" &&
+                    "Auto — nur transformierte Samples einbetten (empfohlen)"}
+                  {b === "always" &&
+                    "Immer — alle Samples einbetten (sicherer Round-Trip)"}
+                  {b === "never" &&
+                    "Nie — kompakte Files (Daten-Verlust-Risiko bei Blob-URLs)"}
                 </span>
                 <span className="text-[10px] text-text-dim">
-                  {b === "auto" && "Default-Verhalten — Blob-URL-Samples (z.B. nach Sample-Transform) werden eingebettet."}
-                  {b === "always" && "Alle Samples werden eingebettet — die .synth-Datei ist vollständig self-contained, größere Dateien."}
-                  {b === "never" && "Keine Einbettung — kleinere Dateien, aber transformierte Samples gehen nach Reload verloren."}
+                  {b === "auto" &&
+                    "Default-Verhalten — Blob-URL-Samples (z.B. nach Sample-Transform) werden eingebettet."}
+                  {b === "always" &&
+                    "Alle Samples werden eingebettet — die .synth-Datei ist vollständig self-contained, größere Dateien."}
+                  {b === "never" &&
+                    "Keine Einbettung — kleinere Dateien, aber transformierte Samples gehen nach Reload verloren."}
                 </span>
               </span>
             </label>
@@ -1253,12 +1772,18 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
       </div>
 
       {/* v3.151: WAV-Export Bit-Depth */}
-      <div className="rounded-lg border border-border-color p-4 space-y-3" data-testid="wav-bit-depth-section">
+      <div
+        className="rounded-lg border border-border-color p-4 space-y-3"
+        data-testid="wav-bit-depth-section"
+      >
         <div>
-          <div className="text-xs font-semibold text-text-primary">WAV-Export Bit-Depth</div>
+          <div className="text-xs font-semibold text-text-primary">
+            WAV-Export Bit-Depth
+          </div>
           <div className="text-[10px] text-text-dim mt-0.5">
             Betrifft Live-Recording, Audio-Input-Aufnahme und Channel-Bounce.
-            16-bit ist DAW-Standard, 24-bit hat höhere Dynamic Range (~50% mehr Dateigröße).
+            16-bit ist DAW-Standard, 24-bit hat höhere Dynamic Range (~50% mehr
+            Dateigröße).
           </div>
         </div>
         <div className="flex flex-col gap-2 mt-2">
@@ -1277,12 +1802,21 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
                 data-testid={`wav-bit-depth-${d}`}
               />
               <span className="flex flex-col gap-0.5">
-                <span className={api.wavBitDepth === d ? "text-accent-primary font-semibold" : "text-text-muted"}>
-                  {d === 16 ? "16-bit (default, DAW-Standard)" : "24-bit (Mastering-Standard)"}
+                <span
+                  className={
+                    api.wavBitDepth === d
+                      ? "text-accent-primary font-semibold"
+                      : "text-text-muted"
+                  }
+                >
+                  {d === 16
+                    ? "16-bit (default, DAW-Standard)"
+                    : "24-bit (Mastering-Standard)"}
                 </span>
                 <span className="text-[10px] text-text-dim">
                   {d === 16 && "Kompaktere Dateien, kompatibel mit allen DAWs."}
-                  {d === 24 && "Höhere Dynamic Range für Mastering / Hi-Res-Distribution."}
+                  {d === 24 &&
+                    "Höhere Dynamic Range für Mastering / Hi-Res-Distribution."}
                 </span>
               </span>
             </label>
@@ -1294,33 +1828,50 @@ function SavingSection({ onOpenVersionHistory }: { onOpenVersionHistory?: () => 
       <div className="rounded-lg border border-border-color p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold text-text-primary">Version-Snapshots</div>
+            <div className="text-xs font-semibold text-text-primary">
+              Version-Snapshots
+            </div>
             <div className="text-[10px] text-text-dim mt-0.5">
-              Erstellt alle 5 Minuten einen Checkpoint (max. 10) → Kollaborations-Tab
+              Erstellt alle 5 Minuten einen Checkpoint (max. 10) →
+              Kollaborations-Tab
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={api.snapshotsEnabled}
+            <input
+              type="checkbox"
+              checked={api.snapshotsEnabled}
               onChange={e => setSnapshotsEnabled(e.target.checked)}
-              className="accent-accent-secondary w-4 h-4" />
-            <span className={`text-xs font-bold ${api.snapshotsEnabled ? "text-accent-success" : "text-text-dim"}`}>
+              className="accent-accent-secondary w-4 h-4"
+            />
+            <span
+              className={`text-xs font-bold ${api.snapshotsEnabled ? "text-accent-success" : "text-text-dim"}`}
+            >
               {api.snapshotsEnabled ? "AN" : "AUS"}
             </span>
           </label>
         </div>
         {api.snapshotsEnabled && (
           <div className="text-[10px] text-text-dim">
-            Snapshots findest du im Kollaborations-Tab → Version-Snapshots.
-            Sie werden nicht beim Schließen gelöscht.
+            Snapshots findest du im Kollaborations-Tab → Version-Snapshots. Sie
+            werden nicht beim Schließen gelöscht.
           </div>
         )}
       </div>
 
       {/* Info */}
       <div className="text-[10px] text-text-dim space-y-1 border-t border-border-color pt-3">
-        <div>💡 <strong>Auto-Save</strong> speichert im <code>localStorage</code> des Browsers — kein echter Datei-Export.</div>
-        <div>💡 Zum echten Speichern: <strong>Ctrl+S</strong> oder ProjectManager → Speichern (exportiert <code>.synth</code>-Datei).</div>
-        <div>💡 Beim nächsten App-Start wird der letzte Auto-Save automatisch geladen.</div>
+        <div>
+          💡 <strong>Auto-Save</strong> speichert im <code>localStorage</code>{" "}
+          des Browsers — kein echter Datei-Export.
+        </div>
+        <div>
+          💡 Zum echten Speichern: <strong>Ctrl+S</strong> oder ProjectManager →
+          Speichern (exportiert <code>.synth</code>-Datei).
+        </div>
+        <div>
+          💡 Beim nächsten App-Start wird der letzte Auto-Save automatisch
+          geladen.
+        </div>
       </div>
     </div>
   );
@@ -1343,7 +1894,9 @@ function OscSection() {
       args: [123.45],
     });
     if (res.success) {
-      toast(`Test-OSC an ${oscOut.host}:${oscOut.port} gesendet`, { kind: "success" });
+      toast(`Test-OSC an ${oscOut.host}:${oscOut.port} gesendet`, {
+        kind: "success",
+      });
     } else {
       toast(`OSC-Send fehlgeschlagen: ${res.error}`, { kind: "error" });
     }
@@ -1356,7 +1909,12 @@ function OscSection() {
     bindHost: string | null;
     receivedCount: number;
     errorCount: number;
-    lastMessage: { address: string; args: Array<number | string | boolean | null>; source: string; at: number } | null;
+    lastMessage: {
+      address: string;
+      args: Array<number | string | boolean | null>;
+      source: string;
+      at: number;
+    } | null;
   } | null>(null);
   React.useEffect(() => {
     if (!electron.isElectron) return;
@@ -1367,15 +1925,27 @@ function OscSection() {
     };
     void tick();
     const id = window.setInterval(tick, 1000);
-    return () => { stop = true; window.clearInterval(id); };
+    return () => {
+      stop = true;
+      window.clearInterval(id);
+    };
   }, [electron]);
   const startUdp = async () => {
     if (!electron.isElectron) return;
-    const res = await electron.startOscServer({ port: udpPort, acceptFromNetwork: udpAcceptNetwork });
+    const res = await electron.startOscServer({
+      port: udpPort,
+      acceptFromNetwork: udpAcceptNetwork,
+    });
     if (!res.success) {
-      toast(`UDP-Listener konnte nicht gestartet werden: ${res.error ?? "Unbekannter Fehler"}`, { kind: "error" });
+      toast(
+        `UDP-Listener konnte nicht gestartet werden: ${res.error ?? "Unbekannter Fehler"}`,
+        { kind: "error" }
+      );
     } else {
-      toast(`OSC-UDP-Listener läuft auf ${udpAcceptNetwork ? "0.0.0.0" : "127.0.0.1"}:${res.port}`, { kind: "success" });
+      toast(
+        `OSC-UDP-Listener läuft auf ${udpAcceptNetwork ? "0.0.0.0" : "127.0.0.1"}:${res.port}`,
+        { kind: "success" }
+      );
     }
   };
   const stopUdp = async () => {
@@ -1385,43 +1955,69 @@ function OscSection() {
   };
 
   const connect = () => {
-    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
     try {
       const ws = new WebSocket(url);
-      ws.onopen  = () => setConnected(true);
-      ws.onclose = () => { setConnected(false); wsRef.current = null; };
-      ws.onerror = () => { setConnected(false); wsRef.current = null; };
-      ws.onmessage = (e) => {
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => {
+        setConnected(false);
+        wsRef.current = null;
+      };
+      ws.onerror = () => {
+        setConnected(false);
+        wsRef.current = null;
+      };
+      ws.onmessage = e => {
         try {
           const msg = JSON.parse(e.data);
           window.dispatchEvent(new CustomEvent("osc:message", { detail: msg }));
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       };
       wsRef.current = ws;
-    } catch { setConnected(false); }
+    } catch {
+      setConnected(false);
+    }
   };
 
-  React.useEffect(() => () => { wsRef.current?.close(); }, []);
+  React.useEffect(
+    () => () => {
+      wsRef.current?.close();
+    },
+    []
+  );
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-bold text-text-primary">OSC (Open Sound Control)</h3>
+      <h3 className="text-sm font-bold text-text-primary">
+        OSC (Open Sound Control)
+      </h3>
 
       {/* v2.23: Direkter UDP-Listener (Electron-only) */}
       {electron.isElectron && (
-        <div className="rounded-lg border border-accent-secondary/50 bg-accent-secondary/5 p-3 space-y-2" data-testid="osc-udp-listener">
+        <div
+          className="rounded-lg border border-accent-secondary/50 bg-accent-secondary/5 p-3 space-y-2"
+          data-testid="osc-udp-listener"
+        >
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-accent-secondary">📡 Direkter UDP-Listener</div>
+            <div className="text-xs font-semibold text-accent-secondary">
+              📡 Direkter UDP-Listener
+            </div>
             {udpStatus?.listening && (
               <span className="text-[10px] text-accent-success font-mono">
-                ● {udpStatus.bindHost}:{udpStatus.port} · {udpStatus.receivedCount} msgs
+                ● {udpStatus.bindHost}:{udpStatus.port} ·{" "}
+                {udpStatus.receivedCount} msgs
               </span>
             )}
           </div>
           <p className="text-[10px] text-text-muted leading-relaxed">
             Empfange OSC direkt per UDP — keine Bridge nötig. TouchOSC, Lemur,
-            Reaktor und CLI-Tools wie <code>oscchief</code> können direkt senden.
-            Default-Bind ist <code>127.0.0.1</code> (localhost-only).
+            Reaktor und CLI-Tools wie <code>oscchief</code> können direkt
+            senden. Default-Bind ist <code>127.0.0.1</code> (localhost-only).
           </p>
           <div className="flex items-center gap-2">
             <label className="text-[10px] text-text-muted">Port:</label>
@@ -1465,11 +2061,17 @@ function OscSection() {
           </div>
           {udpStatus?.lastMessage && (
             <div className="text-[10px] text-text-dim font-mono border-t border-border-color pt-2">
-              <span className="text-text-muted">letzte:</span> {udpStatus.lastMessage.address}
+              <span className="text-text-muted">letzte:</span>{" "}
+              {udpStatus.lastMessage.address}
               {udpStatus.lastMessage.args.length > 0 && (
-                <span className="text-accent-secondary"> {JSON.stringify(udpStatus.lastMessage.args)}</span>
+                <span className="text-accent-secondary">
+                  {" "}
+                  {JSON.stringify(udpStatus.lastMessage.args)}
+                </span>
               )}
-              <span className="text-text-dim ml-2">← {udpStatus.lastMessage.source}</span>
+              <span className="text-text-dim ml-2">
+                ← {udpStatus.lastMessage.source}
+              </span>
             </div>
           )}
         </div>
@@ -1477,9 +2079,14 @@ function OscSection() {
 
       {/* v2.26: OSC-Out (Electron-only) */}
       {electron.isElectron && (
-        <div className="rounded-lg border border-accent-primary/40 bg-accent-primary/5 p-3 space-y-2" data-testid="osc-udp-sender">
+        <div
+          className="rounded-lg border border-accent-primary/40 bg-accent-primary/5 p-3 space-y-2"
+          data-testid="osc-udp-sender"
+        >
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-accent-primary">📤 OSC-Out (BPM-Sync)</div>
+            <div className="text-xs font-semibold text-accent-primary">
+              📤 OSC-Out (BPM-Sync)
+            </div>
             <label className="flex items-center gap-1 text-[10px] text-text-muted cursor-pointer">
               <input
                 type="checkbox"
@@ -1492,9 +2099,10 @@ function OscSection() {
             </label>
           </div>
           <p className="text-[10px] text-text-muted leading-relaxed">
-            Sendet bei jeder BPM-Änderung <code>/synth/bpm/current &lt;float&gt;</code> per
-            UDP. Nutze einen externen OSC-Receiver (TouchOSC, Lemur, Reaktor,
-            MaxMSP, PD) am angegebenen Host/Port.
+            Sendet bei jeder BPM-Änderung{" "}
+            <code>/synth/bpm/current &lt;float&gt;</code> per UDP. Nutze einen
+            externen OSC-Receiver (TouchOSC, Lemur, Reaktor, MaxMSP, PD) am
+            angegebenen Host/Port.
           </p>
           <div className="flex items-center gap-2">
             <label className="text-[10px] text-text-muted">Host:</label>
@@ -1532,7 +2140,9 @@ function OscSection() {
               <input
                 type="checkbox"
                 checked={oscOut.syncTransport}
-                onChange={e => setOscOutConfig({ syncTransport: e.target.checked })}
+                onChange={e =>
+                  setOscOutConfig({ syncTransport: e.target.checked })
+                }
                 disabled={!oscOut.enabled}
                 className="accent-accent-primary"
                 data-testid="osc-out-sync-transport"
@@ -1565,7 +2175,9 @@ function OscSection() {
               <input
                 type="checkbox"
                 checked={oscOut.syncMacros}
-                onChange={e => setOscOutConfig({ syncMacros: e.target.checked })}
+                onChange={e =>
+                  setOscOutConfig({ syncMacros: e.target.checked })
+                }
                 disabled={!oscOut.enabled}
                 className="accent-accent-primary"
                 data-testid="osc-out-sync-macros"
@@ -1576,7 +2188,9 @@ function OscSection() {
               <input
                 type="checkbox"
                 checked={oscOut.syncVolumes}
-                onChange={e => setOscOutConfig({ syncVolumes: e.target.checked })}
+                onChange={e =>
+                  setOscOutConfig({ syncVolumes: e.target.checked })
+                }
                 disabled={!oscOut.enabled}
                 className="accent-accent-primary"
                 data-testid="osc-out-sync-volumes"
@@ -1587,7 +2201,9 @@ function OscSection() {
               <input
                 type="checkbox"
                 checked={oscOut.syncPatternSwitch}
-                onChange={e => setOscOutConfig({ syncPatternSwitch: e.target.checked })}
+                onChange={e =>
+                  setOscOutConfig({ syncPatternSwitch: e.target.checked })
+                }
                 disabled={!oscOut.enabled}
                 className="accent-accent-primary"
                 data-testid="osc-out-sync-pattern"
@@ -1602,7 +2218,9 @@ function OscSection() {
                   min={1}
                   max={16}
                   value={oscOut.stepRate}
-                  onChange={e => setOscOutConfig({ stepRate: Number(e.target.value) })}
+                  onChange={e =>
+                    setOscOutConfig({ stepRate: Number(e.target.value) })
+                  }
                   disabled={!oscOut.enabled}
                   className="w-12 bg-bg-elevated border border-border-color rounded px-1 py-0.5 text-text-primary"
                   title="1 = jeden Step, 4 = jeden Viertel, 16 = einmal pro Bar"
@@ -1625,29 +2243,67 @@ function OscSection() {
       )}
 
       <p className="text-xs text-text-dim">
-        Alternativ: verbinde Synthstudio mit TouchOSC, Protokol oder einem anderen OSC-fähigen Gerät
-        über eine WebSocket-Bridge (z.B. <code className="text-accent-secondary">osc-websocket-bridge</code>).
+        Alternativ: verbinde Synthstudio mit TouchOSC, Protokol oder einem
+        anderen OSC-fähigen Gerät über eine WebSocket-Bridge (z.B.{" "}
+        <code className="text-accent-secondary">osc-websocket-bridge</code>).
       </p>
 
       <div className="flex gap-2">
-        <input value={url} onChange={e => setUrl(e.target.value)}
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
           placeholder="ws://localhost:8080"
-          className="flex-1 text-xs bg-bg-elevated border border-border-color rounded px-3 py-2 text-text-primary placeholder:text-text-dim" />
-        <button onClick={connect}
-          className={`px-3 py-1.5 text-xs rounded font-bold transition-colors ${connected ? "bg-accent-success text-white" : "bg-bg-elevated border border-border-color text-text-muted hover:text-accent-primary"}`}>
+          className="flex-1 text-xs bg-bg-elevated border border-border-color rounded px-3 py-2 text-text-primary placeholder:text-text-dim"
+        />
+        <button
+          onClick={connect}
+          className={`px-3 py-1.5 text-xs rounded font-bold transition-colors ${connected ? "bg-accent-success text-white" : "bg-bg-elevated border border-border-color text-text-muted hover:text-accent-primary"}`}
+        >
           {connected ? "✓ Verbunden" : "Verbinden"}
         </button>
-        {connected && <button onClick={() => { wsRef.current?.close(); setConnected(false); }}
-          className="px-2 py-1.5 text-xs rounded text-text-dim hover:text-accent-danger border border-border-color">✕</button>}
+        {connected && (
+          <button
+            onClick={() => {
+              wsRef.current?.close();
+              setConnected(false);
+            }}
+            className="px-2 py-1.5 text-xs rounded text-text-dim hover:text-accent-danger border border-border-color"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <div className="text-[10px] text-text-dim space-y-1 border-t border-border-color pt-3">
-        <div className="font-semibold text-text-muted mb-1">OSC-Adress-Mapping:</div>
-        <div><code className="text-accent-secondary">/synthstudio/play</code> → Play/Stop</div>
-        <div><code className="text-accent-secondary">/synthstudio/bpm</code> <span className="text-text-dim">float</span> → BPM setzen</div>
-        <div><code className="text-accent-secondary">/synthstudio/volume/{"{0-8}"}</code> <span className="text-text-dim">float 0–1</span> → Kanal-Volume</div>
-        <div><code className="text-accent-secondary">/synthstudio/macro/{"{0-7}"}</code> <span className="text-text-dim">float 0–1</span> → Makro-Wert</div>
-        <div><code className="text-accent-secondary">/synthstudio/scene/{"{1-8}"}</code> → Scene starten</div>
+        <div className="font-semibold text-text-muted mb-1">
+          OSC-Adress-Mapping:
+        </div>
+        <div>
+          <code className="text-accent-secondary">/synthstudio/play</code> →
+          Play/Stop
+        </div>
+        <div>
+          <code className="text-accent-secondary">/synthstudio/bpm</code>{" "}
+          <span className="text-text-dim">float</span> → BPM setzen
+        </div>
+        <div>
+          <code className="text-accent-secondary">
+            /synthstudio/volume/{"{0-8}"}
+          </code>{" "}
+          <span className="text-text-dim">float 0–1</span> → Kanal-Volume
+        </div>
+        <div>
+          <code className="text-accent-secondary">
+            /synthstudio/macro/{"{0-7}"}
+          </code>{" "}
+          <span className="text-text-dim">float 0–1</span> → Makro-Wert
+        </div>
+        <div>
+          <code className="text-accent-secondary">
+            /synthstudio/scene/{"{1-8}"}
+          </code>{" "}
+          → Scene starten
+        </div>
       </div>
     </div>
   );
@@ -1664,10 +2320,13 @@ function QuickActionMacrosSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-lg font-semibold text-text-primary">Quick-Action Macros</h3>
+        <h3 className="text-lg font-semibold text-text-primary">
+          Quick-Action Macros
+        </h3>
         <p className="text-sm text-text-muted mt-1">
-          User-definierte Multi-Action-Shortcuts. Eine Sequenz von Actions kann an einen
-          Tastatur-Shortcut gebunden und mit einer Taste ausgelöst werden.
+          User-definierte Multi-Action-Shortcuts. Eine Sequenz von Actions kann
+          an einen Tastatur-Shortcut gebunden und mit einer Taste ausgelöst
+          werden.
         </p>
       </div>
 
@@ -1696,20 +2355,26 @@ function QuickActionMacrosSection() {
             Keine Macros vorhanden.
           </div>
         )}
-        {macros.map((m) => (
+        {macros.map(m => (
           <div
             key={m.id}
             className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border-subtle last:border-b-0 hover:bg-bg-elevated"
           >
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-text-primary truncate">{m.name}</span>
+                <span className="font-medium text-text-primary truncate">
+                  {m.name}
+                </span>
                 {m.keybind && (
-                  <span className="text-xs text-accent-secondary font-mono">{m.keybind}</span>
+                  <span className="text-xs text-accent-secondary font-mono">
+                    {m.keybind}
+                  </span>
                 )}
               </div>
               {m.description && (
-                <div className="text-xs text-text-muted truncate">{m.description}</div>
+                <div className="text-xs text-text-muted truncate">
+                  {m.description}
+                </div>
               )}
               <div className="text-xs text-text-dim mt-0.5">
                 {m.actions.length} Action{m.actions.length === 1 ? "" : "s"}
@@ -1717,7 +2382,8 @@ function QuickActionMacrosSection() {
             </div>
             <button
               onClick={() => {
-                if (confirm(`Macro "${m.name}" löschen?`)) removeQuickActionMacro(m.id);
+                if (confirm(`Macro "${m.name}" löschen?`))
+                  removeQuickActionMacro(m.id);
               }}
               className="px-2 py-1 text-xs text-accent-danger hover:bg-bg-base rounded"
             >
@@ -1791,7 +2457,11 @@ function PatchesSection() {
   };
   const handleClear = () => {
     if (!patches.length) return;
-    if (confirm(`Alle ${patches.length} Patches löschen? Das kann nicht rückgängig gemacht werden.`)) {
+    if (
+      confirm(
+        `Alle ${patches.length} Patches löschen? Das kann nicht rückgängig gemacht werden.`
+      )
+    ) {
       clearAllPatches();
       toast("Patch-Library geleert", { kind: "info" });
     }
@@ -1799,11 +2469,16 @@ function PatchesSection() {
 
   const sourceTypeLabel = (t?: string): string => {
     switch (t) {
-      case "wavetable": return "Wavetable";
-      case "fm":        return "FM";
-      case "granular":  return "Granular";
-      case "sample":    return "Sample";
-      default:          return "—";
+      case "wavetable":
+        return "Wavetable";
+      case "fm":
+        return "FM";
+      case "granular":
+        return "Granular";
+      case "sample":
+        return "Sample";
+      default:
+        return "—";
     }
   };
 
@@ -1891,9 +2566,9 @@ function PatchesSection() {
 
       {patches.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border-color p-8 text-center text-xs text-text-dim">
-          Noch keine Patches gespeichert. Aus einem Part-Editor heraus
-          (Synth- / Sample- / Granular-Panel) lassen sich Sound-Konfigurationen
-          hier ablegen.
+          Noch keine Patches gespeichert. Aus einem Part-Editor heraus (Synth- /
+          Sample- / Granular-Panel) lassen sich Sound-Konfigurationen hier
+          ablegen.
         </div>
       ) : filteredPatches.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border-color p-6 text-center text-xs text-text-dim">
@@ -1936,8 +2611,12 @@ function PatchesSection() {
                     {sourceTypeLabel(p.sourceType)}
                   </span>
                   {p.fx && <span>+FX</span>}
-                  {p.tags && p.tags.length > 0 && <span>· {p.tags.join(", ")}</span>}
-                  <span className="ml-auto">{new Date(p.createdAt).toLocaleString()}</span>
+                  {p.tags && p.tags.length > 0 && (
+                    <span>· {p.tags.join(", ")}</span>
+                  )}
+                  <span className="ml-auto">
+                    {new Date(p.createdAt).toLocaleString()}
+                  </span>
                 </div>
               </div>
               <button
@@ -1963,61 +2642,97 @@ function PatchesSection() {
 
 function PluginsSection() {
   const [url, setUrl] = React.useState("");
-  const [plugins, setPlugins] = React.useState<Array<{ id: string; meta: { name: string; version: string; author?: string }; url: string }>>([]);
+  const [plugins, setPlugins] = React.useState<
+    Array<{
+      id: string;
+      meta: { name: string; version: string; author?: string };
+      url: string;
+    }>
+  >([]);
   const [loading, setLoading] = React.useState(false);
   const [lastError, setLastError] = React.useState<string | null>(null);
 
   const load = async () => {
     if (!url.trim()) return;
-    setLoading(true); setLastError(null);
+    setLoading(true);
+    setLastError(null);
     const { loadPlugin, getLoadedPlugins } = await import("@/utils/pluginApi");
     const result = await loadPlugin(url.trim(), {});
     setLoading(false);
-    if (result.success) { setUrl(""); setPlugins(getLoadedPlugins()); }
-    else setLastError(result.error ?? "Unbekannter Fehler");
+    if (result.success) {
+      setUrl("");
+      setPlugins(getLoadedPlugins());
+    } else setLastError(result.error ?? "Unbekannter Fehler");
   };
 
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">Plugins (ESM)</h3>
       <p className="text-xs text-text-dim">
-        Lade externe JavaScript-Plugins (ESM-Format) über eine URL. Plugins haben Zugriff
-        auf die Synthstudio Plugin API (setBpm, setStep, dispatch, onStep, …).
+        Lade externe JavaScript-Plugins (ESM-Format) über eine URL. Plugins
+        haben Zugriff auf die Synthstudio Plugin API (setBpm, setStep, dispatch,
+        onStep, …).
       </p>
 
       <div className="flex gap-2">
-        <input value={url} onChange={e => setUrl(e.target.value)}
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
           placeholder="https://example.com/my-plugin.js"
-          className="flex-1 text-xs bg-bg-elevated border border-border-color rounded px-3 py-2 text-text-primary placeholder:text-text-dim" />
-        <button onClick={load} disabled={loading || !url.trim()}
-          className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-80 disabled:opacity-40 font-bold">
+          className="flex-1 text-xs bg-bg-elevated border border-border-color rounded px-3 py-2 text-text-primary placeholder:text-text-dim"
+        />
+        <button
+          onClick={load}
+          disabled={loading || !url.trim()}
+          className="px-3 py-1.5 text-xs rounded bg-accent-primary text-white hover:opacity-80 disabled:opacity-40 font-bold"
+        >
           {loading ? "Lade…" : "Laden"}
         </button>
       </div>
-      {lastError && <div className="text-[10px] text-accent-danger">{lastError}</div>}
+      {lastError && (
+        <div className="text-[10px] text-accent-danger">{lastError}</div>
+      )}
 
       {plugins.length > 0 && (
         <div className="space-y-1">
-          <div className="text-[10px] text-text-dim uppercase tracking-wide mb-1">Aktive Plugins</div>
+          <div className="text-[10px] text-text-dim uppercase tracking-wide mb-1">
+            Aktive Plugins
+          </div>
           {plugins.map(p => (
-            <div key={p.id} className="flex items-center gap-2 px-3 py-2 rounded bg-bg-elevated border border-border-color text-xs">
+            <div
+              key={p.id}
+              className="flex items-center gap-2 px-3 py-2 rounded bg-bg-elevated border border-border-color text-xs"
+            >
               <span className="flex-1">
-                <span className="text-text-primary font-medium">{p.meta.name}</span>
+                <span className="text-text-primary font-medium">
+                  {p.meta.name}
+                </span>
                 <span className="text-text-dim ml-2">v{p.meta.version}</span>
-                {p.meta.author && <span className="text-text-dim ml-2">by {p.meta.author}</span>}
+                {p.meta.author && (
+                  <span className="text-text-dim ml-2">by {p.meta.author}</span>
+                )}
               </span>
-              <button onClick={async () => {
-                const { unloadPlugin, getLoadedPlugins } = await import("@/utils/pluginApi");
-                unloadPlugin(p.id);
-                setPlugins(getLoadedPlugins());
-              }} className="text-text-dim hover:text-accent-danger">✕</button>
+              <button
+                onClick={async () => {
+                  const { unloadPlugin, getLoadedPlugins } =
+                    await import("@/utils/pluginApi");
+                  unloadPlugin(p.id);
+                  setPlugins(getLoadedPlugins());
+                }}
+                className="text-text-dim hover:text-accent-danger"
+              >
+                ✕
+              </button>
             </div>
           ))}
         </div>
       )}
 
       <div className="border-t border-border-color pt-3 text-[10px] text-text-dim">
-        Plugin API: <code className="text-accent-secondary">export function onLoad(api)</code>
+        Plugin API:{" "}
+        <code className="text-accent-secondary">
+          export function onLoad(api)
+        </code>
         {" · "}
         <code className="text-accent-secondary">api.setBpm()</code>
         {" · "}
@@ -2043,7 +2758,11 @@ function LicenseSection() {
   // Status-Label + Farbe je Status für leichtes Scannen.
   const statusInfo = (() => {
     if (pro && state.status === "pro") {
-      return { label: "Pro — aktiviert", color: "text-accent-success", desc: "Alle Pro-Features freigeschaltet." };
+      return {
+        label: "Pro — aktiviert",
+        color: "text-accent-success",
+        desc: "Alle Pro-Features freigeschaltet.",
+      };
     }
     if (state.status === "trial") {
       return {
@@ -2053,12 +2772,24 @@ function LicenseSection() {
       };
     }
     if (state.status === "expired") {
-      return { label: "Trial abgelaufen", color: "text-accent-danger", desc: "Pro-Features sind gesperrt." };
+      return {
+        label: "Trial abgelaufen",
+        color: "text-accent-danger",
+        desc: "Pro-Features sind gesperrt.",
+      };
     }
     if (state.status === "invalid") {
-      return { label: "Ungültige Lizenz", color: "text-accent-danger", desc: "Die zuletzt eingegebene Lizenz wurde nicht akzeptiert." };
+      return {
+        label: "Ungültige Lizenz",
+        color: "text-accent-danger",
+        desc: "Die zuletzt eingegebene Lizenz wurde nicht akzeptiert.",
+      };
     }
-    return { label: "Free", color: "text-text-muted", desc: "Du nutzt die kostenlose Variante." };
+    return {
+      label: "Free",
+      color: "text-text-muted",
+      desc: "Du nutzt die kostenlose Variante.",
+    };
   })();
 
   const handleDeactivate = async () => {
@@ -2070,24 +2801,35 @@ function LicenseSection() {
     });
     if (!ok) return;
     clearLicense();
-    toast("Lizenz entfernt — Pro-Features gesperrt.", { kind: "info", duration: 4000 });
+    toast("Lizenz entfernt — Pro-Features gesperrt.", {
+      kind: "info",
+      duration: 4000,
+    });
   };
 
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">Lizenz</h3>
 
-      <div className="rounded border border-border-color bg-bg-elevated p-3 space-y-2" data-testid="settings-license-status">
+      <div
+        className="rounded border border-border-color bg-bg-elevated p-3 space-y-2"
+        data-testid="settings-license-status"
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs text-text-muted">Status</span>
-          <span className={["text-xs font-semibold", statusInfo.color].join(" ")}>
+          <span
+            className={["text-xs font-semibold", statusInfo.color].join(" ")}
+          >
             {statusInfo.label}
           </span>
         </div>
         <div className="text-[11px] text-text-dim">{statusInfo.desc}</div>
         {state.activatedEmail && (
           <div className="text-[11px] text-text-dim">
-            Aktiviert für <span className="font-mono text-text-muted">{state.activatedEmail}</span>
+            Aktiviert für{" "}
+            <span className="font-mono text-text-muted">
+              {state.activatedEmail}
+            </span>
           </div>
         )}
       </div>
@@ -2125,7 +2867,10 @@ function LicenseSection() {
       </div>
 
       <div className="border-t border-border-subtle pt-3 text-[10px] text-text-dim space-y-1">
-        <div>Pro-Features: Live-Looping, USB-Audio-Eingang, Stem-Bounce, Electribe-Import, MIDI-Note-Out.</div>
+        <div>
+          Pro-Features: Live-Looping, USB-Audio-Eingang, Stem-Bounce,
+          Electribe-Import, MIDI-Note-Out.
+        </div>
         <div>Die Aktivierung läuft offline — kein Konto, kein Tracking.</div>
       </div>
 
@@ -2150,9 +2895,63 @@ function LicenseSection() {
 //
 // Beim "Apply" wird AudioEngine.reinit() aufgerufen — der AudioContext wird
 // kurz geschlossen + neu erzeugt. Playback unterbricht.
+interface AudioOutputDevice {
+  deviceId: string;
+  label: string;
+}
+
 function AudioEngineSection() {
   const cfg = useAudioEngineConfigStore();
+  const audioOut = useAudioOutputStore();
+  const [outputs, setOutputs] = useState<AudioOutputDevice[]>([]);
+  const [sinkSupported, setSinkSupported] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  // Ausgabegeräte enumerieren (z.B. Scarlett 2i2). Labels sind erst nach einer
+  // Media-Permission sichtbar; ohne bleibt die deviceId (immerhin wählbar).
+  const refreshOutputs = useCallback(async () => {
+    try {
+      const md = navigator.mediaDevices;
+      if (!md?.enumerateDevices) {
+        setSinkSupported(false);
+        return;
+      }
+      // setSinkId nur verfügbar, wenn AudioContext es kennt (Chromium/Electron).
+      setSinkSupported(
+        typeof (AudioContext.prototype as { setSinkId?: unknown }).setSinkId ===
+          "function"
+      );
+      const devs = await md.enumerateDevices();
+      setOutputs(
+        devs
+          .filter(d => d.kind === "audiooutput")
+          .map((d, i) => ({
+            deviceId: d.deviceId,
+            label: d.label || `Ausgang ${i + 1}`,
+          }))
+      );
+    } catch {
+      setSinkSupported(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOutputs();
+  }, [refreshOutputs]);
+
+  const applyOutput = useCallback(
+    async (deviceId: string) => {
+      audioOut.setDeviceId(deviceId);
+      const ok = await AudioEngine.setOutputDevice(deviceId);
+      if (!ok && deviceId) {
+        toast("Ausgabegerät konnte nicht gesetzt werden.", {
+          kind: "warning",
+          duration: 4000,
+        });
+      }
+    },
+    [audioOut]
+  );
   // Tickender Latenz-Anzeige-Refresh (~1×/s) — getEstimatedSystemLatencyMs
   // ist kein React-State, also brauchen wir ein Trigger.
   const [, tickLatency] = useReducer((x: number) => x + 1, 0);
@@ -2165,8 +2964,10 @@ function AudioEngineSection() {
   // AudioEngine.ctx ist privat — wir lesen es defensiv über einen
   // strukturellen Cast (kein ts-expect-error, der Cast ist explizit).
   const ctxRate =
-    typeof window !== "undefined" && (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext
-      ? (AudioEngine as unknown as { ctx?: AudioContext | null }).ctx?.sampleRate ?? null
+    typeof window !== "undefined" &&
+    (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext
+      ? ((AudioEngine as unknown as { ctx?: AudioContext | null }).ctx
+          ?.sampleRate ?? null)
       : null;
   const rateMismatch =
     typeof cfg.sampleRate === "number" &&
@@ -2199,9 +3000,12 @@ function AudioEngineSection() {
 
       <div className="text-[11px] text-text-muted leading-relaxed">
         Konfiguriert den Web-Audio-Context. Niedrigere Latenz reduziert das
-        spürbare Verzögerung zwischen Tastendruck und Klang, kostet aber
-        mehr CPU und kann bei sehr alten Geräten zu Glitches führen.
-        <span className="text-text-dim"> Empfehlung für Live-Performance: „Interactive".</span>
+        spürbare Verzögerung zwischen Tastendruck und Klang, kostet aber mehr
+        CPU und kann bei sehr alten Geräten zu Glitches führen.
+        <span className="text-text-dim">
+          {" "}
+          Empfehlung für Live-Performance: „Interactive".
+        </span>
       </div>
 
       {/* Latency-Hint-Dropdown */}
@@ -2209,12 +3013,16 @@ function AudioEngineSection() {
         <label className="text-xs text-text-muted">Latenz-Profil</label>
         <select
           value={cfg.latencyHint}
-          onChange={(e) => setLatencyHint(e.target.value as LatencyHint)}
+          onChange={e => setLatencyHint(e.target.value as LatencyHint)}
           data-testid="audio-engine-latency-hint"
           className="w-full bg-bg-elevated border border-border-color rounded px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
         >
-          <option value="interactive">Interactive — ~10-20 ms (empfohlen)</option>
-          <option value="balanced">Balanced — ~30-50 ms (Browser-Default)</option>
+          <option value="interactive">
+            Interactive — ~10-20 ms (empfohlen)
+          </option>
+          <option value="balanced">
+            Balanced — ~30-50 ms (Browser-Default)
+          </option>
           <option value="playback">Playback — ~50-200 ms (CPU-schonend)</option>
         </select>
       </div>
@@ -2224,9 +3032,11 @@ function AudioEngineSection() {
         <label className="text-xs text-text-muted">Sample-Rate</label>
         <select
           value={String(cfg.sampleRate)}
-          onChange={(e) => {
+          onChange={e => {
             const v = e.target.value;
-            setSampleRate(v === "auto" ? "auto" : (Number(v) as SampleRateOption));
+            setSampleRate(
+              v === "auto" ? "auto" : (Number(v) as SampleRateOption)
+            );
           }}
           data-testid="audio-engine-sample-rate"
           className="w-full bg-bg-elevated border border-border-color rounded px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
@@ -2247,13 +3057,51 @@ function AudioEngineSection() {
         )}
       </div>
 
+      {/* Ausgabegerät (z.B. Scarlett 2i2) — via setSinkId, live, kein Reinit */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-text-muted">Ausgabegerät</label>
+          <button
+            type="button"
+            onClick={() => void refreshOutputs()}
+            className="text-[10px] text-text-dim hover:text-text-primary transition-colors"
+          >
+            ⟳ neu laden
+          </button>
+        </div>
+        <select
+          value={audioOut.deviceId}
+          disabled={!sinkSupported}
+          onChange={e => void applyOutput(e.target.value)}
+          data-testid="audio-engine-output-device"
+          className="w-full bg-bg-elevated border border-border-color rounded px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none disabled:opacity-40"
+        >
+          <option value="">System-Standard</option>
+          {outputs
+            .filter(o => o.deviceId && o.deviceId !== "default")
+            .map(o => (
+              <option key={o.deviceId} value={o.deviceId}>
+                {o.label}
+              </option>
+            ))}
+        </select>
+        {!sinkSupported && (
+          <div className="text-[11px] text-text-dim">
+            Gezielte Ausgabewahl braucht die Desktop-App (Electron) bzw. einen
+            Chromium-Browser — sonst geht Audio ans System-Standardgerät.
+          </div>
+        )}
+      </div>
+
       {/* Live-Latenz-Anzeige */}
       <div
         className="rounded border border-border-color bg-bg-elevated p-3"
         data-testid="audio-engine-status"
       >
         <div className="flex items-center justify-between">
-          <span className="text-xs text-text-muted">Aktuelle System-Latenz</span>
+          <span className="text-xs text-text-muted">
+            Aktuelle System-Latenz
+          </span>
           <span className="text-xs font-mono font-semibold text-accent-primary">
             {latencyMs > 0 ? `${latencyMs} ms` : "—"}
           </span>
@@ -2279,7 +3127,9 @@ function AudioEngineSection() {
             : "bg-accent-primary text-bg-base hover:opacity-90",
         ].join(" ")}
       >
-        {busy ? "Audio-Engine wird neu gestartet …" : "Anwenden (Audio-Engine neu starten)"}
+        {busy
+          ? "Audio-Engine wird neu gestartet …"
+          : "Anwenden (Audio-Engine neu starten)"}
       </button>
 
       <div className="border-t border-border-subtle pt-3 text-[10px] text-text-dim space-y-1">
@@ -2305,43 +3155,67 @@ function AboutSection() {
   // Live-Version vom Electron-Main holen (oder package.json-Fallback)
   useEffect(() => {
     if (!electron.isElectron) return;
-    electron.getVersion?.().then((v) => {
-      if (typeof v === "string" && v.length > 0) setAppVersion(v);
-    }).catch(() => {});
+    electron
+      .getVersion?.()
+      .then(v => {
+        if (typeof v === "string" && v.length > 0) setAppVersion(v);
+      })
+      .catch(() => {});
   }, [electron]);
 
   // Update-Status als lesbarer Text
   const updaterLabel = (() => {
     switch (updaterState.phase) {
-      case "idle":        return "Bereit zur Update-Prüfung";
-      case "checking":    return "Suche nach Updates…";
-      case "up-to-date":  return "Du bist auf dem neuesten Stand";
-      case "available":   return `Update ${updaterState.version ? `v${updaterState.version}` : ""} verfügbar — wird heruntergeladen…`;
-      case "downloading": return `Lade Update… ${updaterState.percent ?? 0}%`;
-      case "ready":       return `Update v${updaterState.version} bereit — beim nächsten Start installiert`;
-      case "error":       return `Fehler: ${updaterState.errorMessage ?? "unbekannt"}`;
-      default:            return "";
+      case "idle":
+        return "Bereit zur Update-Prüfung";
+      case "checking":
+        return "Suche nach Updates…";
+      case "up-to-date":
+        return "Du bist auf dem neuesten Stand";
+      case "available":
+        return `Update ${updaterState.version ? `v${updaterState.version}` : ""} verfügbar — wird heruntergeladen…`;
+      case "downloading":
+        return `Lade Update… ${updaterState.percent ?? 0}%`;
+      case "ready":
+        return `Update v${updaterState.version} bereit — beim nächsten Start installiert`;
+      case "error":
+        return `Fehler: ${updaterState.errorMessage ?? "unbekannt"}`;
+      default:
+        return "";
     }
   })();
 
   const updaterLabelColor = (() => {
     switch (updaterState.phase) {
-      case "up-to-date":  return "text-accent-success";
-      case "available":   return "text-accent-secondary";
-      case "downloading": return "text-accent-primary";
-      case "ready":       return "text-accent-success";
-      case "error":       return "text-accent-danger";
-      default:            return "text-text-muted";
+      case "up-to-date":
+        return "text-accent-success";
+      case "available":
+        return "text-accent-secondary";
+      case "downloading":
+        return "text-accent-primary";
+      case "ready":
+        return "text-accent-success";
+      case "error":
+        return "text-accent-danger";
+      default:
+        return "text-text-muted";
     }
   })();
 
-  const canCheck = electron.isElectron && (updaterState.phase === "idle" || updaterState.phase === "up-to-date" || updaterState.phase === "error");
+  const canCheck =
+    electron.isElectron &&
+    (updaterState.phase === "idle" ||
+      updaterState.phase === "up-to-date" ||
+      updaterState.phase === "error");
 
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-text-primary">Über Synthstudio</h3>
       <div className="text-xs text-text-muted space-y-1">
-        <div>Version <span className="font-mono text-text-primary">{appVersion}</span></div>
+        <div>
+          Version{" "}
+          <span className="font-mono text-text-primary">{appVersion}</span>
+        </div>
         <div>Professionelle Drum Machine & Sample Synthesizer</div>
         <div className="text-text-dim pt-2">
           Gebaut mit React 19, Electron 40, Tone.js, Web Audio API.
@@ -2388,10 +3262,13 @@ function AboutSection() {
           data-testid="settings-replay-welcome"
           onClick={() => {
             resetWelcomeWizard();
-            toast("Welcome-Tour wird beim nächsten Start angezeigt — oder lade die App neu.", {
-              kind: "info",
-              duration: 5000,
-            });
+            toast(
+              "Welcome-Tour wird beim nächsten Start angezeigt — oder lade die App neu.",
+              {
+                kind: "info",
+                duration: 5000,
+              }
+            );
           }}
           className="px-3 py-1.5 rounded text-[11px] font-medium bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30 border border-accent-primary/40 transition-colors"
           title="Setzt firstRun zurück — Wizard erscheint beim nächsten App-Mount erneut."
@@ -2402,9 +3279,16 @@ function AboutSection() {
 
       <div className="border-t border-border-color pt-3 text-[10px] text-text-dim space-y-1">
         <div>Speicher-Nutzung: localStorage für Settings & Presets</div>
-        <div>Projekte: <code>.synth</code> JSON Format</div>
-        <button onClick={() => { localStorage.clear(); window.location.reload(); }}
-          className="mt-3 text-accent-danger hover:opacity-80 text-[10px]">
+        <div>
+          Projekte: <code>.synth</code> JSON Format
+        </div>
+        <button
+          onClick={() => {
+            localStorage.clear();
+            window.location.reload();
+          }}
+          className="mt-3 text-accent-danger hover:opacity-80 text-[10px]"
+        >
           Alle Einstellungen zurücksetzen (localStorage löschen)
         </button>
       </div>
@@ -2431,11 +3315,16 @@ function TempoMapSection() {
       const stepCount = AudioEngine.stepCount || 16;
       const stepsPerBar = stepCount === 16 ? 16 : stepCount;
       const bar = getCurrentBar(step, stepsPerBar);
-      setCurrentBar((prev) => (prev === bar ? prev : bar));
+      setCurrentBar(prev => (prev === bar ? prev : bar));
     }, 500);
     return () => clearInterval(id);
   }, []);
-  return <TempoMapPanel currentBar={currentBar} stepsPerBar={AudioEngine.stepCount === 16 ? 16 : AudioEngine.stepCount} />;
+  return (
+    <TempoMapPanel
+      currentBar={currentBar}
+      stepsPerBar={AudioEngine.stepCount === 16 ? 16 : AudioEngine.stepCount}
+    />
+  );
 }
 
 interface SettingsPanelProps {
@@ -2458,13 +3347,23 @@ interface SettingsPanelProps {
   onOpenVersionHistory?: () => void;
 }
 
-export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "design", onOpenAdvancedMidi, onOpenVersionHistory }: SettingsPanelProps) {
+export function SettingsPanel({
+  isOpen,
+  onClose,
+  midi,
+  parts,
+  initialSection = "design",
+  onOpenAdvancedMidi,
+  onOpenVersionHistory,
+}: SettingsPanelProps) {
   const [active, setActive] = useState<Section>(initialSection);
 
   // Esc zum Schließen
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
@@ -2474,25 +3373,35 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
   const groups = [...new Set(SECTIONS.map(s => s.group))];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={e => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="w-full max-w-4xl max-h-[90vh] bg-bg-panel border border-border-color rounded-xl shadow-2xl flex overflow-hidden">
-
         {/* ── Sidebar ────────────────────────────────────────────────────── */}
         <nav className="w-48 flex-shrink-0 bg-bg-base border-r border-border-color flex flex-col py-4 overflow-y-auto">
           <div className="px-4 mb-4">
-            <span className="text-xs font-bold text-text-dim uppercase tracking-widest">Einstellungen</span>
+            <span className="text-xs font-bold text-text-dim uppercase tracking-widest">
+              Einstellungen
+            </span>
           </div>
           {groups.map(group => (
             <div key={group} className="mb-2">
-              <div className="px-4 py-1 text-[10px] text-text-dim uppercase tracking-wider">{group}</div>
+              <div className="px-4 py-1 text-[10px] text-text-dim uppercase tracking-wider">
+                {group}
+              </div>
               {SECTIONS.filter(s => s.group === group).map(sec => (
-                <button key={sec.id} onClick={() => setActive(sec.id)}
+                <button
+                  key={sec.id}
+                  onClick={() => setActive(sec.id)}
                   className={`w-full flex items-center gap-2 px-4 py-2 text-xs text-left transition-colors ${
                     active === sec.id
                       ? "bg-accent-primary/15 text-accent-primary border-r-2 border-accent-primary"
                       : "text-text-muted hover:text-text-primary hover:bg-bg-elevated"
-                  }`}>
+                  }`}
+                >
                   <span className="text-base leading-none">{sec.icon}</span>
                   {sec.label}
                 </button>
@@ -2500,7 +3409,10 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
             </div>
           ))}
           <div className="mt-auto px-4 pb-2">
-            <button onClick={onClose} className="text-[10px] text-text-dim hover:text-text-muted">
+            <button
+              onClick={onClose}
+              className="text-[10px] text-text-dim hover:text-text-muted"
+            >
               ✕ Schließen
             </button>
           </div>
@@ -2508,32 +3420,52 @@ export function SettingsPanel({ isOpen, onClose, midi, parts, initialSection = "
 
         {/* ── Content ────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-6">
-          {active === "design"       && <DesignSection />}
-          {active === "workspace"    && <WorkspaceSection />}
-          {active === "ki"           && <KiSection />}
-          {active === "keyboard"     && <KeyboardBindingsPanel />}
-          {active === "metronome"    && <MetronomeSection />}
+          {active === "design" && <DesignSection />}
+          {active === "workspace" && <WorkspaceSection />}
+          {active === "ki" && <KiSection />}
+          {active === "keyboard" && <KeyboardBindingsPanel />}
+          {active === "metronome" && <MetronomeSection />}
           {active === "audio-engine" && <AudioEngineSection />}
-          {active === "performance"  && <PerformanceMonitor mode="expanded" />}
-          {active === "tempo-map"    && <TempoMapSection />}
-          {active === "midi-devices" && <MidiDevicesSection midi={midi} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
-          {active === "midi-cc"      && <MidiCcSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
-          {active === "midi-notes"   && <MidiNotesSection midi={midi} parts={parts} onOpenAdvancedMidi={onOpenAdvancedMidi} />}
-          {active === "midi-chord"   && <ChordMemorySection />}
-          {active === "midi-mpe"     && <MpeSectionSimple />}
-          {active === "midi-fx"      && <MidiFxSection />}
-          {active === "omnitribe"    && <DeviceConnectionPanel />}
-          {active === "saving"        && <SavingSection onOpenVersionHistory={onOpenVersionHistory} />}
-          {active === "patches"      && <PatchesSection />}
-          {active === "macros"       && <QuickActionMacrosSection />}
-          {active === "osc"          && <OscSection />}
-          {active === "plugins"      && <PluginsSection />}
-          {active === "license"      && <LicenseSection />}
-          {active === "about"        && <AboutSection />}
+          {active === "performance" && <PerformanceMonitor mode="expanded" />}
+          {active === "tempo-map" && <TempoMapSection />}
+          {active === "midi-devices" && (
+            <MidiDevicesSection
+              midi={midi}
+              onOpenAdvancedMidi={onOpenAdvancedMidi}
+            />
+          )}
+          {active === "midi-cc" && (
+            <MidiCcSection
+              midi={midi}
+              parts={parts}
+              onOpenAdvancedMidi={onOpenAdvancedMidi}
+            />
+          )}
+          {active === "midi-notes" && (
+            <MidiNotesSection
+              midi={midi}
+              parts={parts}
+              onOpenAdvancedMidi={onOpenAdvancedMidi}
+            />
+          )}
+          {active === "midi-chord" && <ChordMemorySection />}
+          {active === "midi-mpe" && <MpeSectionSimple />}
+          {active === "midi-fx" && <MidiFxSection />}
+          {active === "omnitribe" && <DeviceConnectionPanel />}
+          {active === "saving" && (
+            <SavingSection onOpenVersionHistory={onOpenVersionHistory} />
+          )}
+          {active === "patches" && <PatchesSection />}
+          {active === "macros" && <QuickActionMacrosSection />}
+          {active === "osc" && <OscSection />}
+          {active === "plugins" && <PluginsSection />}
+          {active === "license" && <LicenseSection />}
+          {active === "about" && <AboutSection />}
         </div>
 
         {/* ── Close Button ───────────────────────────────────────────────── */}
-        <button onClick={onClose}
+        <button
+          onClick={onClose}
           className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
           aria-label="Close"
           title="Schließen (ESC)"

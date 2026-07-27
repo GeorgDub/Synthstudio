@@ -38,7 +38,7 @@ import {
   parseFxPreset,
   type E2FxPreset,
   type FxSourceEncoding,
-} from "@/utils/korg/e2FxPreset";
+} from "@/utils/korg/e2FxPresetInspect";
 
 const SELECT_CLASS =
   "bg-bg-base border border-border-color rounded px-1 py-0.5 text-[10px] text-text-primary";

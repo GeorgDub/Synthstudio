@@ -193,6 +193,14 @@ export interface EsxStepEvent {
    * Synthstudio-Kontext.
    */
   accent?: boolean;
+  /**
+   * v3.286: Bei Keyboard/Synth-Parts die Note-Nummer (0..127, C4≈60) dieses
+   * Steps. Undefined bei Drum-Parts (reine Trigger). Der Converter mappt sie zu
+   * Synthstudio-Step-Pitch (note − 60).
+   */
+  note?: number;
+  /** v3.286: Gate-Länge (Keyboard/Synth) roh, 0..127. Undefined bei Drums. */
+  gate?: number;
 }
 
 /**
@@ -206,6 +214,35 @@ export interface EsxStepEvent {
  *   - `motionSequencer` wird in v3.5 NICHT gesetzt (Motion-Daten-Layout
  *     ist nicht RE-d).
  */
+/**
+ * v3.293: Per-Part Filter/Modulation eines ESX-1-Parts. Offsets VERIFIZIERT
+ * gegen open-electribe-editor v1.2.0 (PartDrumImpl/PartKeyboardImpl/
+ * PartStretchSliceImpl `init()`):
+ *   - filterType: 0=LPF, 1=HPF, 2=BPF, 3=BPF+ (FilterType.java)
+ *   - cutoff/resonance/egIntensity/modSpeed/modDepth: je 1 signed Byte
+ *     (rohes Geräte-0..127; die Editor-Quelle klemmt sie nicht, die 0..127-
+ *     Semantik stammt aus Korgs MIDI-Impl — daher als 0..127 behandelt).
+ *   - modType: 0=Saw,1=Square,2=Tri,3=S&H,4=Env; modDest: 0=Pitch,1=Cutoff,2=Amp,3=Pan.
+ */
+export interface EsxPartFilter {
+  /** 0=LPF, 1=HPF, 2=BPF, 3=BPF+ (BPF-Variante). */
+  filterType: number;
+  /** 0..127 (roh). */
+  cutoff: number;
+  /** 0..127 (roh). */
+  resonance: number;
+  /** 0..127 (roh) — Filter-EG-Intensität. */
+  egIntensity: number;
+  /** 0=Saw,1=Square,2=Tri,3=S&H,4=Env. */
+  modType: number;
+  /** 0=Pitch,1=Cutoff,2=Amp,3=Pan. */
+  modDest: number;
+  /** 0..127 (roh). */
+  modSpeed: number;
+  /** 0..127 (roh). */
+  modDepth: number;
+}
+
 export interface EsxPart {
   partIndex: number;
   /** 0..255 — ESX-1 Sample-Slot-Index. Best-Effort; 0 wenn unbekannt. */
@@ -218,10 +255,38 @@ export interface EsxPart {
   pitch: number;
   /** 0..127. */
   fxAmount: number;
+  /** v3.293: Verifizierte Per-Part Filter/Mod-Werte (siehe EsxPartFilter). */
+  filter?: EsxPartFilter;
   /** Trigger-Steps, Laenge === ESX1_DEFAULT_STEPS. */
   steps: EsxStepEvent[];
+  /**
+   * v3.287: Mute-Zustand aus der Pattern-muteStatus-Maske (Header-Offset 16).
+   * Best-Effort — Bit-Reihenfolge/Polarität gegen reale Files plausibilisiert,
+   * aber final erst mit Hardware verifizierbar (siehe ESX1_MUTE_* Konstanten).
+   */
+  muted?: boolean;
   /** Reserviert fuer Motion-Sequencer (v3.5: stets undefined). */
   motionSequencer?: undefined;
+}
+
+/**
+ * Ein Keyboard/Synth-Part des ESX-1 (2 pro Pattern). Anders als Drum-Parts
+ * trägt er ECHTE 128 Note- + 128 Gate-Werte (die realen 128-Step-Melodiedaten
+ * eines Length_8-Patterns). Verifiziert gegen open-electribe-editor v1.2.0.
+ */
+export interface EsxKeyboardPart {
+  /** 0..1 (die beiden Keyboard-Parts). */
+  partIndex: number;
+  /** Sample-Slot-Index (BE u16, 0 = keins). */
+  sampleId: number;
+  /** 0..127. */
+  volume: number;
+  /** 0..127 (64 = center). */
+  pan: number;
+  /** 128 Note-Bytes (roh — die Note-Semantik ist nicht öffentlich RE-d). */
+  note: Uint8Array;
+  /** 128 Gate-Bytes (roh — Gate-Länge pro Step). */
+  gate: Uint8Array;
 }
 
 /**
@@ -242,12 +307,33 @@ export interface EsxPattern {
   name: string;
   /** BPM (Hardware-Range 20..300). */
   bpm: number;
-  /** Step-Count (16 fuer alle bisherigen Real-Files). */
+  /** Last-Step innerhalb EINER Bank (1..16, aus Byte 13). */
   lengthSteps: number;
+  /**
+   * Pattern-Länge als Wiederhol-Multiplikator (1..8 = Length_1..Length_8, aus
+   * dem gepackten Byte 11). Verifiziert gegen open-electribe-editor.
+   */
+  patternLength: number;
+  /**
+   * Effektive Step-Länge = patternLength × 16 (16..128). Die ESX-1 kann bis 128
+   * (8 Bänke × 16), die E2S nur 64 (4 Bänke) — daher beim Konvertieren >64 → 64
+   * reduzieren.
+   */
+  effectiveSteps: number;
   /** Swing 0..100 (Best-Effort). */
   swing: number;
+  /**
+   * v3.287: rohe 16-Bit muteStatus-Maske (Header @16, BE). Für Export + Debug.
+   * Per-Part-Mute steht dekodiert in `parts[i].muted`.
+   */
+  muteMask?: number;
   /** 16 Parts (immer voll besetzt; leere Parts haben alle Steps inactive). */
   parts: EsxPart[];
+  /**
+   * 2 Keyboard/Synth-Parts mit je 128 Note/Gate-Bytes (echte 128-Step-Melodie-
+   * daten). Additiv zu `parts` — verifiziert gegen open-electribe-editor.
+   */
+  keyboardParts: EsxKeyboardPart[];
   /** Rohbytes des 4280-Byte Pattern-Blocks. Hilft beim Debugging + Diff. */
   raw?: Uint8Array;
 }
@@ -361,7 +447,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 function safeSlice(buf: Uint8Array, off: number, len: number): Uint8Array {
   if (off < 0 || off + len > buf.length) {
     throw new EsxParseError(
-      `Out-of-bounds read at 0x${off.toString(16)} (length ${len}, file ${buf.length})`,
+      `Out-of-bounds read at 0x${off.toString(16)} (length ${len}, file ${buf.length})`
     );
   }
   return buf.subarray(off, off + len);
@@ -560,29 +646,76 @@ export function isEmptyEsxPattern(raw: Uint8Array): boolean {
 //     → sampleId=0x86, pitch=0x36 (–10 semi), level=0x7f, pan=0x40, fx=0x00
 //     steps=01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 (4-on-the-floor)
 //
-// ESX1_DRUM_PARTS_DECODED = 10 (Drum 1..10).
-// ESX1_STRETCH_PART_INDEX = 10 (1 Stretch part at offset 0x25C, 34B-stride).
-// ESX1_SHORT_PART_INDICES = 11..14 (4 Sample/Slice parts, 32B-stride).
-// ESX1_AUDIOIN_PART_INDEX = 15 (Audio-In, no triggers in real files → Defaults).
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.286: KORREKTES Pattern/Part-Layout — verifiziert gegen zwei unabhängige
+// Referenzen (skratchdot/open-electribe-editor v1.2.0 EsxUtil.java +
+// lammas/electribe src/*.js) und empirisch gegen reale .esx-Files.
+//
+// Part-Tabelle innerhalb eines 4280-B-Patterns (contiguous, Typ = Position):
+//   Drum-Parts:        Offset 24,   9 Parts, Stride 34
+//   Keyboard-Parts:    Offset 330,  2 Parts, Stride 274 (128 Note + 128 Gate)
+//   Stretch/Slice:     Offset 878,  3 Parts, Stride 32
+//   AudioIn:           Offset 974,  1 Part,  156 B
+//   Accent:            Offset 1130, 1 Part,  18 B
+//
+// STEP-TRIGGER (Drum/Stretch/Slice/Accent): die 16 sequenceData-Bytes sind
+// eine 128-BIT-BITMASKE — 8 Steps pro Byte, MSB zuerst. Step s → Byte s>>3,
+// Bit 7-(s&7). NICHT ein Byte pro Step (das war der Bug: 0x11 & 0x01 = 1 →
+// alle Steps "aktiv"). Keyboard-Parts: echte 128 Note- + 128 Gate-Bytes.
+// ═══════════════════════════════════════════════════════════════════════════
 const ESX1_PART_STRIDE = 34;
 const ESX1_PART_HEADER_BYTES = 18;
-const ESX1_PART_STEPS_BYTES = 16;
+const ESX1_PART_STEPS_BYTES = 16; // 16 Bytes = 128 Bits = 128 Steps
+const ESX1_PATTERN_MAX_STEPS = 128;
 const ESX1_DRUM_PART_OFFSET = 24;
-const ESX1_DRUM_PARTS_DECODED = 10;
-const ESX1_SAMPLEID_UNASSIGNED = 0x8000;
+const ESX1_DRUM_PARTS_DECODED = 9;
+const ESX1_SAMPLEID_OFF_FLAG = 0x8000; // Bit 15 des samplePointer = "off"
+const ESX1_SAMPLEID_MASK = 0x7fff; // Bits 0..14 = Sample-ID
 
-/** Offset of the Stretch part 11 (34B-stride like drum parts). */
-const ESX1_STRETCH_PART_OFFSET = 0x25c;
-/** Per-part offsets for parts 12..15 (16B header + 16B steps = 32B stride). */
-const ESX1_SHORT_PART_OFFSETS: ReadonlyArray<number> = [
-  0x36e, // Part 12 (Sample 1 / Slice 1 — best-effort)
-  0x38e, // Part 13 (Sample 2 / Slice 2)
-  0x3ae, // Part 14 (Synth 1)
-  0x3ce, // Part 15 (Synth 2 / Audio-In — usually default-empty)
-];
-const ESX1_SHORT_PART_HEADER_BYTES = 16;
-const ESX1_SHORT_PART_STEPS_BYTES = 16;
+/** Stretch/Slice-Parts: Offset 878, 3 Parts, Stride 32, sequenceData @ +16. */
+const ESX1_STRETCHSLICE_OFFSET = 878;
+const ESX1_STRETCHSLICE_COUNT = 3;
+const ESX1_STRETCHSLICE_STRIDE = 32;
+const ESX1_STRETCHSLICE_STEPS_OFFSET = 16;
 const ESX1_PITCH_NEUTRAL_RAW = 0x40;
+
+// ─── Mute-Status (Pattern-Header) ────────────────────────────────────────────
+// PatternHeader-Offset 16: 16-Bit muteStatus (per-Part). Storage-Order der
+// Parts: Drum 0..8 → Bits 0..8, Keyboard 0..1 → Bits 9..10, Stretch/Slice 0..2
+// → Bits 11..13, AudioIn → Bit 14, Accent → Bit 15.
+//
+// Polarität (best-effort, gegen reale .esx plausibilisiert): Bit GESETZT = Part
+// SPIELT, Bit 0 = Part GEMUTET. (lukn kicks: Maske 0x77FF → nur Bits 11 & 15
+// clear = passt zu „fast alles spielt".) Endianness = BE (open-electribe-editor).
+// Beide leicht umkehrbar, falls Hardware-Check das Gegenteil zeigt.
+const ESX1_MUTE_STATUS_OFFSET = 16;
+const ESX1_MUTE_BIT_SET_MEANS_PLAYING = true;
+/** Storage-Order-Bit für einen dekodierten Part-Index (0..13). */
+function esxMuteBitForPart(partIndex: number): number {
+  if (partIndex < 9) return partIndex; // Drum 0..8 → Bit 0..8
+  if (partIndex < 12) return 11 + (partIndex - 9); // Stretch/Slice → Bit 11..13
+  return 9 + (partIndex - 12); // Keyboard/Synth → Bit 9..10
+}
+/** true = Part ist gemutet (gemäß Maske + Polarität). */
+function esxIsPartMuted(muteMask: number, partIndex: number): boolean {
+  const bit = esxMuteBitForPart(partIndex);
+  const set = (muteMask & (1 << bit)) !== 0;
+  return ESX1_MUTE_BIT_SET_MEANS_PLAYING ? !set : set;
+}
+
+// ─── Keyboard-Parts (verifiziert gegen open-electribe-editor v1.2.0) ─────────
+// Der ESX-1 hat 2 Keyboard/Synth-Parts, jeder 274 Bytes, direkt nach den 9
+// Drum-Parts: Offset 330 (0x14A) + k*274. Anders als Drum-Parts (16 Trigger)
+// speichern sie ECHTE 128 Note- + 128 Gate-Bytes — das sind die realen 128-Step-
+// Melodiedaten eines Length_8-Patterns. Verifiziert: EsxUtil NUM_PARTS_KEYBOARD=2,
+// CHUNKSIZE_PARTS_KEYBOARD=274, NUM_SEQUENCE_DATA_NOTE/GATE=128; Offsets gegen
+// reale .esx bestätigt (KEYB0@0x14A / KEYB1@0x25C mit plausiblen Sample/Note/Gate).
+const ESX1_KEYBOARD_PART_OFFSET = 330;
+const ESX1_KEYBOARD_PART_STRIDE = 274;
+const ESX1_KEYBOARD_PART_COUNT = 2;
+const ESX1_KEYBOARD_NOTE_OFFSET = 18; // 128 Note-Bytes
+const ESX1_KEYBOARD_GATE_OFFSET = 146; // 128 Gate-Bytes
+const ESX1_KEYBOARD_SEQ_LEN = 128;
 
 /**
  * v3.23.0: Decoded ein einzelnes step-byte zu {active, velocity, accent}.
@@ -600,14 +733,22 @@ const ESX1_PITCH_NEUTRAL_RAW = 0x40;
  * bleiben nicht-RE-d und werden NICHT als Pseudo-Velocity exportiert
  * (vermeidet false-positive Note-Encodings).
  */
-function decodeStepByte(rawByte: number): EsxStepEvent {
-  const b = rawByte & 0xff;
-  const active = (b & 0x01) !== 0;
-  if (!active) {
-    return { active: false, velocity: 0 };
+/**
+ * v3.286: Dekodiert die 16 sequenceData-Bytes eines Drum/Stretch/Slice/Accent-
+ * Parts als 128-BIT-BITMASKE (8 Steps pro Byte, MSB zuerst) → boolean[128].
+ *
+ * Step s liegt in Byte (s>>3), Bit (7 − (s&7)). Verifiziert gegen
+ * lammas/electribe DrumSequenceSteps + real .esx (lukn kicks Part0 →
+ * Steps 3,7,11,15,… statt fälschlich „alle 16 aktiv").
+ */
+function decodeSequenceBitmask(raw: Uint8Array, seqOff: number): boolean[] {
+  const out = new Array<boolean>(ESX1_PATTERN_MAX_STEPS).fill(false);
+  for (let s = 0; s < ESX1_PATTERN_MAX_STEPS; s++) {
+    const byte = raw[seqOff + (s >> 3)] ?? 0;
+    const bit = 7 - (s & 7);
+    out[s] = (byte & (1 << bit)) !== 0;
   }
-  const accent = (b & 0x10) !== 0;
-  return { active: true, velocity: accent ? 127 : 100, accent };
+  return out;
 }
 
 /**
@@ -629,10 +770,98 @@ function decodePitchByte(rawByte: number): number {
   return signed;
 }
 
-/** Decoded part = 0..9 (Drum 1..10). Out-of-range → undefined (Defaults). */
+/** Liest den samplePointer (BE u16) → {sampleId, off}. Bit 15 = off-flag. */
+function decodeSamplePointer(
+  raw: Uint8Array,
+  off: number
+): {
+  sampleId: number;
+  off: boolean;
+} {
+  const sp = ((raw[off] ?? 0) << 8) | (raw[off + 1] ?? 0);
+  return {
+    sampleId: sp & ESX1_SAMPLEID_MASK,
+    off: (sp & ESX1_SAMPLEID_OFF_FLAG) !== 0,
+  };
+}
+
+/** Baut die 128 EsxStepEvents eines Drum/Stretch/Slice-Parts aus der Bitmaske. */
+function bitmaskToSteps(raw: Uint8Array, seqOff: number): EsxStepEvent[] {
+  const bits = decodeSequenceBitmask(raw, seqOff);
+  return bits.map(active => ({ active, velocity: active ? 100 : 0 }));
+}
+
+/**
+ * v3.293: Byte-Offsets der Filter/Mod-Felder INNERHALB eines Parts, je Part-Typ
+ * (verifiziert gegen open-electribe-editor v1.2.0). Drum und Keyboard teilen
+ * Level/Pan/Fx/Mod-Offsets; Keyboard schiebt nur den Filter-Sub-Block um +1
+ * (glide@4), Stretch/Slice den ganzen Block um −2 (kein sliceNumber/reserved).
+ */
+interface EsxFilterLayout {
+  filterType: number;
+  cutoff: number;
+  resonance: number;
+  egIntensity: number;
+  modByte: number;
+  modSpeed: number;
+  modDepth: number;
+}
+const ESX_FILTER_LAYOUT_DRUM: EsxFilterLayout = {
+  filterType: 4,
+  cutoff: 5,
+  resonance: 6,
+  egIntensity: 7,
+  modByte: 14,
+  modSpeed: 15,
+  modDepth: 16,
+};
+const ESX_FILTER_LAYOUT_KEYBOARD: EsxFilterLayout = {
+  filterType: 5, // glide@4 schiebt den Filter-Sub-Block +1
+  cutoff: 6,
+  resonance: 7,
+  egIntensity: 8,
+  modByte: 14,
+  modSpeed: 15,
+  modDepth: 16,
+};
+const ESX_FILTER_LAYOUT_STRETCHSLICE: EsxFilterLayout = {
+  filterType: 2, // kein sliceNumber/reserved → gesamter Block −2
+  cutoff: 3,
+  resonance: 4,
+  egIntensity: 5,
+  modByte: 12,
+  modSpeed: 13,
+  modDepth: 14,
+};
+
+/** Liest den (verifizierten) Filter/Mod-Block eines Parts. */
+function decodeEsxFilter(
+  raw: Uint8Array,
+  partOff: number,
+  o: EsxFilterLayout
+): EsxPartFilter {
+  const b = (i: number) => Math.max(0, Math.min(127, raw[partOff + i] ?? 0));
+  const modRaw = raw[partOff + o.modByte] ?? 0;
+  return {
+    filterType: (raw[partOff + o.filterType] ?? 0) & 0x03,
+    cutoff: b(o.cutoff),
+    resonance: b(o.resonance),
+    egIntensity: b(o.egIntensity),
+    modDest: modRaw & 0x07, // bits 0-2
+    modType: (modRaw >> 4) & 0x07, // bits 4-6
+    modSpeed: b(o.modSpeed),
+    modDepth: b(o.modDepth),
+  };
+}
+
+/**
+ * v3.286: Decoded einen Drum-Part (Index 0..8, 9 Parts) @ 24 + i*34.
+ * Layout (PartDrumImpl.java): samplePointer BE @0 (bit15=off), pitch@8,
+ * level@9, pan@10, sequenceData @+18 (16 Byte = 128-Bit-Maske).
+ */
 function decodeDrumPart(
   raw: Uint8Array,
-  partIndex: number,
+  partIndex: number
 ):
   | {
       sampleId: number;
@@ -640,6 +869,7 @@ function decodeDrumPart(
       pan: number;
       pitch: number;
       fxAmount: number;
+      filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
   | undefined {
@@ -647,71 +877,32 @@ function decodeDrumPart(
   const partOff = ESX1_DRUM_PART_OFFSET + partIndex * ESX1_PART_STRIDE;
   if (partOff + ESX1_PART_STRIDE > raw.length) return undefined;
 
-  // sample-id BE u16
-  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
-  // 0x8000 = unassigned. Lower 9 bits cover 0..511 valid slot range
-  // (ESX-1: 256 mono + 128 stereo = 384 max).
-  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
-
-  // Pitch @ +8 (signed i8 around 0x40 = neutral)  — v3.20.0
+  const { sampleId, off } = decodeSamplePointer(raw, partOff);
   const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
-
-  // Level + Pan
-  const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
-  const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
-
-  // FxSend @ +11 (u8, 0..127)  — v3.20.0
-  const fxAmount = Math.max(0, Math.min(127, raw[partOff + 11] ?? 0));
-
-  // 16 step-bytes
-  const stepsOff = partOff + ESX1_PART_HEADER_BYTES;
-  const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
-  for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
-    const b = raw[stepsOff + s] || 0;
-    steps[s] = decodeStepByte(b);
-  }
-  return { sampleId, volume, pan, pitch, fxAmount, steps };
+  const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_DRUM);
+  const steps = bitmaskToSteps(raw, partOff + ESX1_PART_HEADER_BYTES);
+  return {
+    sampleId: off ? 0 : sampleId,
+    volume,
+    pan,
+    pitch,
+    fxAmount: 0,
+    filter,
+    steps,
+  };
 }
 
 /**
- * Decoded Stretch-Part (Part-Index 10) — 34B-Layout @ 0x25C, gleicher Stride
- * wie Drum-Parts. v3.20.0 NEU.
+ * v3.286: Decoded einen Stretch/Slice-Part (Index 0..2, 3 Parts) @ 878 + i*32.
+ * 32-Byte-Layout: 16-Byte-Header + 16-Byte sequenceData (128-Bit-Maske) @ +16.
+ * v3.293: Offsets korrigiert (open-electribe-editor v1.2.0 PartStretchSliceImpl):
+ * kein sliceNumber/reserved → pitch@6, level@7, pan@8 (vorher fälschlich @8/9/10).
  */
-function decodeStretchPart(raw: Uint8Array):
-  | {
-      sampleId: number;
-      volume: number;
-      pan: number;
-      pitch: number;
-      fxAmount: number;
-      steps: EsxStepEvent[];
-    }
-  | undefined {
-  const partOff = ESX1_STRETCH_PART_OFFSET;
-  if (partOff + ESX1_PART_STRIDE > raw.length) return undefined;
-  // Same shape as drum-part. Just reuse the layout interpretation.
-  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
-  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
-  const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
-  const volume = Math.max(0, Math.min(127, raw[partOff + 9] || 100));
-  const pan = Math.max(0, Math.min(127, raw[partOff + 10] || 64));
-  const fxAmount = Math.max(0, Math.min(127, raw[partOff + 11] ?? 0));
-  const stepsOff = partOff + ESX1_PART_HEADER_BYTES;
-  const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
-  for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
-    const b = raw[stepsOff + s] || 0;
-    steps[s] = decodeStepByte(b);
-  }
-  return { sampleId, volume, pan, pitch, fxAmount, steps };
-}
-
-/**
- * Decoded Short-Part (Sample/Slice/Synth) — 32B-Layout (16B Header + 16B Steps).
- * v3.20.0 NEU. Index 0..3 maps to part-indices 11..14.
- */
-function decodeShortPart(
+function decodeStretchSlicePart(
   raw: Uint8Array,
-  shortIndex: number,
+  index: number
 ):
   | {
       sampleId: number;
@@ -719,32 +910,79 @@ function decodeShortPart(
       pan: number;
       pitch: number;
       fxAmount: number;
+      filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
   | undefined {
-  if (shortIndex < 0 || shortIndex >= ESX1_SHORT_PART_OFFSETS.length) return undefined;
-  const partOff = ESX1_SHORT_PART_OFFSETS[shortIndex];
-  const blockSize = ESX1_SHORT_PART_HEADER_BYTES + ESX1_SHORT_PART_STEPS_BYTES;
-  if (partOff + blockSize > raw.length) return undefined;
-  // Header layout (verified BOTTROP[1] @0x36E):
-  //   +0..+1 = sample-id BE u16
-  //   +6     = pitch (i8, 0x40 neutral)
-  //   +7     = level (u8 0..127)
-  //   +8     = pan (u8 0..127, 0x40 center)
-  //   +10    = fxSend (u8 0..127)
-  const sidRaw = (raw[partOff] << 8) | raw[partOff + 1];
-  const sampleId = sidRaw === ESX1_SAMPLEID_UNASSIGNED ? 0 : (sidRaw & 0x01ff);
+  if (index < 0 || index >= ESX1_STRETCHSLICE_COUNT) return undefined;
+  const partOff = ESX1_STRETCHSLICE_OFFSET + index * ESX1_STRETCHSLICE_STRIDE;
+  if (partOff + ESX1_STRETCHSLICE_STRIDE > raw.length) return undefined;
+  const { sampleId, off } = decodeSamplePointer(raw, partOff);
   const pitch = decodePitchByte(raw[partOff + 6] ?? ESX1_PITCH_NEUTRAL_RAW);
-  const volume = Math.max(0, Math.min(127, raw[partOff + 7] || 100));
-  const pan = Math.max(0, Math.min(127, raw[partOff + 8] || 64));
-  const fxAmount = Math.max(0, Math.min(127, raw[partOff + 10] ?? 0));
-  const stepsOff = partOff + ESX1_SHORT_PART_HEADER_BYTES;
-  const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
-  for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
-    const b = raw[stepsOff + s] || 0;
-    steps[s] = decodeStepByte(b);
+  const volume = Math.max(0, Math.min(127, raw[partOff + 7] ?? 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 8] ?? 64));
+  const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_STRETCHSLICE);
+  const steps = bitmaskToSteps(raw, partOff + ESX1_STRETCHSLICE_STEPS_OFFSET);
+  return {
+    sampleId: off ? 0 : sampleId,
+    volume,
+    pan,
+    pitch,
+    fxAmount: 0,
+    filter,
+    steps,
+  };
+}
+
+/**
+ * v3.286: Decoded einen Keyboard/Synth-Part (Index 0..1) @ 330 + k*274.
+ * Layout (PartKeyboardImpl.java): samplePointer BE @0, level@9, pan@10,
+ * sequenceDataNote @+18 (128 Byte), sequenceDataGate @+146 (128 Byte).
+ *
+ * Note-Byte: bit7 = OFF-Flag (MSBOff8) → Note-on wenn (note & 0x80)==0,
+ * Note-Nummer = note & 0x7f. Gate = Gate-Länge. Verifiziert empirisch gegen
+ * lukn kicks (KB1 = Note-on jeden 4. Step, Noten 39–41 = Bassline).
+ *
+ * Liefert (a) die rohen note/gate-Arrays (EsxKeyboardPart, Kompat) UND
+ * (b) 128 EsxStepEvents mit note/gate für den melodischen Import.
+ */
+function decodeKeyboardPart(
+  raw: Uint8Array,
+  keyIndex: number
+):
+  | (EsxKeyboardPart & { steps: EsxStepEvent[]; filter: EsxPartFilter })
+  | undefined {
+  if (keyIndex < 0 || keyIndex >= ESX1_KEYBOARD_PART_COUNT) return undefined;
+  const partOff =
+    ESX1_KEYBOARD_PART_OFFSET + keyIndex * ESX1_KEYBOARD_PART_STRIDE;
+  if (partOff + ESX1_KEYBOARD_PART_STRIDE > raw.length) return undefined;
+  const { sampleId, off } = decodeSamplePointer(raw, partOff);
+  const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
+  const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_KEYBOARD);
+  const noteOff = partOff + ESX1_KEYBOARD_NOTE_OFFSET;
+  const gateOff = partOff + ESX1_KEYBOARD_GATE_OFFSET;
+  const note = raw.slice(noteOff, noteOff + ESX1_KEYBOARD_SEQ_LEN);
+  const gate = raw.slice(gateOff, gateOff + ESX1_KEYBOARD_SEQ_LEN);
+
+  const steps: EsxStepEvent[] = new Array(ESX1_KEYBOARD_SEQ_LEN);
+  for (let s = 0; s < ESX1_KEYBOARD_SEQ_LEN; s++) {
+    const nb = note[s] ?? 0x80;
+    const active = (nb & 0x80) === 0; // bit7 = OFF-Flag
+    steps[s] = active
+      ? { active: true, velocity: 100, note: nb & 0x7f, gate: gate[s] ?? 0 }
+      : { active: false, velocity: 0 };
   }
-  return { sampleId, volume, pan, pitch, fxAmount, steps };
+  return {
+    partIndex: keyIndex,
+    sampleId: off ? 0 : sampleId,
+    volume,
+    pan,
+    note,
+    gate,
+    filter,
+    steps,
+  };
 }
 
 /**
@@ -776,13 +1014,32 @@ function decodeShortPart(
  *   Offset 12    : roll-type (init=0x00)
  *   Offset 15    : swing (init=0x3c)
  */
+/**
+ * Dekodiert die Pattern-Länge (patternLength = Length_1..Length_8) aus dem
+ * gepackten Byte 11 des ESX-1-Pattern-Blocks. Rein + testbar.
+ *
+ * Verifiziert gegen open-electribe-editor v1.2.0 (EsxUtil / esx.ecore:
+ * `PatternLength` EEnum-Literale Length_1..Length_8, gespeichert als 0..7) UND
+ * gegen reale .esx-Dateien (Byte 11 ∈ {0x00 → Length_1, 0x07 → Length_8}).
+ *
+ * Die ESX-1 speichert 16 Trigger-Steps pro Drum-Part; `patternLength` ist ein
+ * Wiederhol-/Längen-Multiplikator → effektive Länge = patternLength × 16.
+ */
+export function decodeEsxPatternLength(byte11: number): {
+  length: number;
+  effectiveSteps: number;
+} {
+  const length = (byte11 & 0x07) + 1; // low 3 bits = Length_1..Length_8 index
+  return { length, effectiveSteps: length * ESX1_DEFAULT_STEPS };
+}
+
 export function parseEsxPattern(
   raw: Uint8Array,
-  patternIndex: number,
+  patternIndex: number
 ): EsxPattern | null {
   if (raw.length !== ESX1_CHUNKSIZE_PATTERN) {
     throw new EsxParseError(
-      `parseEsxPattern: erwarte ${ESX1_CHUNKSIZE_PATTERN} bytes, bekam ${raw.length}`,
+      `parseEsxPattern: erwarte ${ESX1_CHUNKSIZE_PATTERN} bytes, bekam ${raw.length}`
     );
   }
   if (isEmptyEsxPattern(raw)) return null;
@@ -800,61 +1057,79 @@ export function parseEsxPattern(
   // Wir klamern auf 1..64 als Hardware-plausibles Maximum.
   const stepIndicator = raw[13];
   let lengthSteps = (stepIndicator & 0x7f) + 1;
-  if (!Number.isFinite(lengthSteps) || lengthSteps < 1) lengthSteps = ESX1_DEFAULT_STEPS;
+  if (!Number.isFinite(lengthSteps) || lengthSteps < 1)
+    lengthSteps = ESX1_DEFAULT_STEPS;
   if (lengthSteps > 64) lengthSteps = ESX1_DEFAULT_STEPS;
+
+  // Pattern-Länge (Wiederhol-Multiplikator) aus Byte 11 — verifiziert gegen
+  // open-electribe-editor. effectiveSteps = patternLength × 16 (16..128).
+  const { length: patternLength, effectiveSteps } = decodeEsxPatternLength(
+    raw[11]
+  );
 
   // Swing: byte 15, Best-Effort, geklemmt 0..100.
   let swing = raw[15] & 0x7f;
   if (swing > 100) swing = 100;
 
+  // v3.287: muteStatus @16 (BE u16) → per-Part-Mute.
+  const muteMask = dv.getUint16(ESX1_MUTE_STATUS_OFFSET, false);
+
   // Build 16 Parts. v3.20.0:
-  //   parts 0..9   → decodeDrumPart  (34B-Stride @ 0x18 + i*34)
-  //   part 10      → decodeStretchPart (34B-Stride @ 0x25C)
-  //   parts 11..14 → decodeShortPart  (32B-Stride @ 0x36E, 0x38E, 0x3AE, 0x3CE)
-  //   part 15      → Defaults (Audio-In is unused in real-files)
-  const parts: EsxPart[] = new Array(ESX1_PARTS_PER_PATTERN);
-  for (let p = 0; p < ESX1_PARTS_PER_PATTERN; p++) {
-    let decoded:
+  //   v3.286 (verifiziertes Layout):
+  //   parts 0..8   → decodeDrumPart          (9 Drum, Stride 34 @ 24)
+  //   parts 9..11  → decodeStretchSlicePart  (3 Stretch/Slice, Stride 32 @ 878)
+  //   parts 12..13 → decodeKeyboardPart      (2 Keyboard/Synth, Stride 274 @ 330)
+  // Alle Step-Trigger sind 128-Bit-Bitmasken; Keyboard-Parts liefern zusätzlich
+  // note/gate pro Step (melodischer Import).
+  const parts: EsxPart[] = [];
+  const keyboardParts: EsxKeyboardPart[] = [];
+
+  const pushPart = (
+    decoded:
       | {
           sampleId: number;
           volume: number;
           pan: number;
           pitch: number;
           fxAmount: number;
+          filter?: EsxPartFilter;
           steps: EsxStepEvent[];
         }
-      | undefined;
-    if (p < ESX1_DRUM_PARTS_DECODED) {
-      decoded = decodeDrumPart(raw, p);
-    } else if (p === 10) {
-      decoded = decodeStretchPart(raw);
-    } else if (p >= 11 && p <= 14) {
-      decoded = decodeShortPart(raw, p - 11);
-    }
+      | undefined
+  ) => {
+    const partIndex = parts.length;
+    const muted = esxIsPartMuted(muteMask, partIndex);
     if (decoded) {
-      parts[p] = {
-        partIndex: p,
-        sampleId: decoded.sampleId,
-        volume: decoded.volume,
-        pan: decoded.pan,
-        pitch: decoded.pitch,
-        fxAmount: decoded.fxAmount,
-        steps: decoded.steps,
-      };
+      parts.push({ partIndex, muted, ...decoded });
     } else {
-      const steps: EsxStepEvent[] = new Array(ESX1_DEFAULT_STEPS);
-      for (let s = 0; s < ESX1_DEFAULT_STEPS; s++) {
-        steps[s] = { active: false, velocity: 0 };
-      }
-      parts[p] = {
-        partIndex: p,
+      parts.push({
+        partIndex,
         sampleId: 0,
         volume: 100,
         pan: 64,
         pitch: 0,
         fxAmount: 0,
-        steps,
-      };
+        muted,
+        steps: new Array(ESX1_PATTERN_MAX_STEPS)
+          .fill(null)
+          .map(() => ({ active: false, velocity: 0 })),
+      });
+    }
+  };
+
+  for (let p = 0; p < ESX1_DRUM_PARTS_DECODED; p++)
+    pushPart(decodeDrumPart(raw, p));
+  for (let i = 0; i < ESX1_STRETCHSLICE_COUNT; i++)
+    pushPart(decodeStretchSlicePart(raw, i));
+  for (let k = 0; k < ESX1_KEYBOARD_PART_COUNT; k++) {
+    const kp = decodeKeyboardPart(raw, k);
+    if (kp) {
+      const { steps, note, gate, sampleId, volume, pan, partIndex, filter } =
+        kp;
+      keyboardParts.push({ partIndex, sampleId, volume, pan, note, gate });
+      pushPart({ sampleId, volume, pan, pitch: 0, fxAmount: 0, filter, steps });
+    } else {
+      pushPart(undefined);
     }
   }
 
@@ -863,8 +1138,12 @@ export function parseEsxPattern(
     name,
     bpm,
     lengthSteps,
+    patternLength,
+    effectiveSteps,
     swing,
+    muteMask,
     parts,
+    keyboardParts,
     raw,
   };
 }
@@ -875,19 +1154,19 @@ function readPcmRange(
   relStart: number,
   relEnd: number,
   slotIndex: number,
-  channelLabel: string,
+  channelLabel: string
 ): Uint8Array {
   const absStart = ESX1_ADDR_SAMPLE_DATA + relStart;
   const absEnd = ESX1_ADDR_SAMPLE_DATA + relEnd;
   if (absStart > buf.length || absEnd > buf.length) {
     throw new EsxParseError(
-      `slot ${slotIndex} (${channelLabel}): PCM range 0x${absStart.toString(16)}..0x${absEnd.toString(16)} escapes file (size 0x${buf.length.toString(16)})`,
+      `slot ${slotIndex} (${channelLabel}): PCM range 0x${absStart.toString(16)}..0x${absEnd.toString(16)} escapes file (size 0x${buf.length.toString(16)})`
     );
   }
   const length = relEnd - relStart;
   if (length > MAX_BYTES_PER_SLOT) {
     throw new EsxParseError(
-      `slot ${slotIndex} (${channelLabel}): pcm length ${length} bytes exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`,
+      `slot ${slotIndex} (${channelLabel}): pcm length ${length} bytes exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`
     );
   }
   return buf.subarray(absStart, absEnd);
@@ -995,11 +1274,11 @@ export function isEmptyEsxSong(raw: Uint8Array): boolean {
 export function parseEsxSong(
   raw: Uint8Array,
   songIndex: number,
-  events: EsxSongEvent[] = [],
+  events: EsxSongEvent[] = []
 ): EsxSong | null {
   if (raw.length !== ESX1_CHUNKSIZE_SONG) {
     throw new EsxParseError(
-      `parseEsxSong: erwarte ${ESX1_CHUNKSIZE_SONG} bytes, bekam ${raw.length}`,
+      `parseEsxSong: erwarte ${ESX1_CHUNKSIZE_SONG} bytes, bekam ${raw.length}`
     );
   }
   if (isEmptyEsxSong(raw)) return null;
@@ -1042,7 +1321,7 @@ export function parseEsxSong(
  */
 export function parseEsxSongEvents(
   buf: Uint8Array,
-  numSongs: number = ESX1_NUM_SONGS,
+  numSongs: number = ESX1_NUM_SONGS
 ): { eventsPerSong: EsxSongEvent[][]; warnings: string[] } {
   const eventsPerSong: EsxSongEvent[][] = new Array(numSongs);
   for (let i = 0; i < numSongs; i++) eventsPerSong[i] = [];
@@ -1051,7 +1330,7 @@ export function parseEsxSongEvents(
   const start = ESX1_ADDR_SONG_EVENT_DATA;
   if (start >= buf.length) {
     warnings.push(
-      `song-event region missing: file ${buf.length} < expected start 0x${start.toString(16)}`,
+      `song-event region missing: file ${buf.length} < expected start 0x${start.toString(16)}`
     );
     return { eventsPerSong, warnings };
   }
@@ -1061,7 +1340,7 @@ export function parseEsxSongEvents(
   const end = Math.min(0x1b0000, buf.length);
   if (end <= start) {
     warnings.push(
-      `song-event region empty: start 0x${start.toString(16)} >= end 0x${end.toString(16)}`,
+      `song-event region empty: start 0x${start.toString(16)} >= end 0x${end.toString(16)}`
     );
     return { eventsPerSong, warnings };
   }
@@ -1069,7 +1348,7 @@ export function parseEsxSongEvents(
   const maxBytes = end - start;
   const maxFrames = Math.min(
     Math.floor(maxBytes / ESX1_CHUNKSIZE_SONG_EVENT),
-    ESX1_MAX_TOTAL_EVENTS,
+    ESX1_MAX_TOTAL_EVENTS
   );
 
   let currentSong = 0;
@@ -1078,7 +1357,11 @@ export function parseEsxSongEvents(
   // out of the loop and warn — defends against corrupted files that have
   // 200,000+ non-terminator frames.
   let iterationsSinceLastEnd = 0;
-  const dv = new DataView(buf.buffer, buf.byteOffset + start, maxFrames * ESX1_CHUNKSIZE_SONG_EVENT);
+  const dv = new DataView(
+    buf.buffer,
+    buf.byteOffset + start,
+    maxFrames * ESX1_CHUNKSIZE_SONG_EVENT
+  );
   for (let f = 0; f < maxFrames; f++) {
     const off = f * ESX1_CHUNKSIZE_SONG_EVENT;
     const time = dv.getUint16(off, false);
@@ -1091,7 +1374,13 @@ export function parseEsxSongEvents(
     // ESX-1 event-regions are typically 480KB+ and zero-padded after real events.
     // We stop reading at the first all-zero frame to avoid filling songs with
     // pseudo-events.
-    if (time === 0 && pattern === 0 && length === 0 && flags === 0 && data === 0) {
+    if (
+      time === 0 &&
+      pattern === 0 &&
+      length === 0 &&
+      flags === 0 &&
+      data === 0
+    ) {
       break;
     }
 
@@ -1119,7 +1408,7 @@ export function parseEsxSongEvents(
     if (iterationsSinceLastEnd > ESX1_MAX_ITERATIONS_NO_END) {
       if (currentSong > 0) {
         warnings.push(
-          `song-event stream exceeded ${ESX1_MAX_ITERATIONS_NO_END} events without end-marker; aborting parse at frame ${f}`,
+          `song-event stream exceeded ${ESX1_MAX_ITERATIONS_NO_END} events without end-marker; aborting parse at frame ${f}`
         );
       }
       break;
@@ -1152,9 +1441,10 @@ export function parseEsxSongEvents(
  *
  * @returns Tuple [songs, warnings].
  */
-export function parseEsxSongs(
-  buf: Uint8Array,
-): { songs: EsxSong[]; warnings: string[] } {
+export function parseEsxSongs(buf: Uint8Array): {
+  songs: EsxSong[];
+  warnings: string[];
+} {
   const warnings: string[] = [];
   const songs: EsxSong[] = [];
 
@@ -1162,13 +1452,13 @@ export function parseEsxSongs(
   const songsEnd = songsStart + ESX1_NUM_SONGS * ESX1_CHUNKSIZE_SONG;
   if (songsStart >= buf.length) {
     warnings.push(
-      `song area missing: file ${buf.length} < expected start 0x${songsStart.toString(16)}`,
+      `song area missing: file ${buf.length} < expected start 0x${songsStart.toString(16)}`
     );
     return { songs, warnings };
   }
   if (songsEnd > buf.length) {
     warnings.push(
-      `song area truncated: file ${buf.length} < required end ${songsEnd}`,
+      `song area truncated: file ${buf.length} < required end ${songsEnd}`
     );
   }
 
@@ -1204,24 +1494,36 @@ export function parseEsxSongs(
  * Soft-Errors (z.B. Slot mit invertiertem Offset) führen NICHT zum Abbruch,
  * sondern landen in {@link EsxBank.warnings}.
  */
+/** Optionen für {@link parseEsxBank}. */
+export interface ParseEsxBankOptions {
+  /**
+   * v3.285 — Wenn true, wird das PCM NICHT zu Float32 dekodiert (pcmData bleibt
+   * leer). Alle Metadaten (Name/Index/Kanäle/Rate/Frames/Loop/Level, Patterns,
+   * Songs) werden trotzdem vollständig gelesen. Für schnelles Scannen großer
+   * Bänke / vieler Dateien (spart die 2×-Float32-Expansion pro Sample).
+   */
+  headersOnly?: boolean;
+}
+
+const EMPTY_F32 = new Float32Array(0);
+
 export function parseEsxBank(
   input: ArrayBuffer | Uint8Array,
   source = "<bytes>",
+  opts: ParseEsxBankOptions = {}
 ): EsxBank {
-  const buf =
-    input instanceof Uint8Array
-      ? input
-      : new Uint8Array(input);
+  const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
+  const headersOnly = opts.headersOnly === true;
 
   // ── 1. Size-Checks ────────────────────────────────────────────────────────
   if (buf.length < ESX1_SIZE_FILE_MIN) {
     throw new EsxParseError(
-      `file too small to be a valid .esx: ${buf.length} bytes (need >= ${ESX1_SIZE_FILE_MIN})`,
+      `file too small to be a valid .esx: ${buf.length} bytes (need >= ${ESX1_SIZE_FILE_MIN})`
     );
   }
   if (buf.length > ESX_FILE_MAX_BYTES) {
     throw new EsxParseError(
-      `file size ${buf.length} exceeds max ${ESX_FILE_MAX_BYTES}`,
+      `file size ${buf.length} exceeds max ${ESX_FILE_MAX_BYTES}`
     );
   }
 
@@ -1234,10 +1536,10 @@ export function parseEsxBank(
   const sig = safeSlice(buf, 0, 4);
   if (!bytesEqual(sig, ESX1_SIGNATURE)) {
     const sigHex = Array.from(sig)
-      .map((b) => b.toString(16).padStart(2, "0"))
+      .map(b => b.toString(16).padStart(2, "0"))
       .join(" ");
     const sigAscii = Array.from(sig)
-      .map((b) => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "?"))
+      .map(b => (b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : "?"))
       .join("");
     return {
       source,
@@ -1255,7 +1557,7 @@ export function parseEsxBank(
   const submagic = safeSlice(buf, ESX1_SUBMAGIC_OFFSET, 4);
   if (!bytesEqual(submagic, ESX1_SUBMAGIC)) {
     const subHex = Array.from(submagic)
-      .map((b) => b.toString(16).padStart(2, "0"))
+      .map(b => b.toString(16).padStart(2, "0"))
       .join(" ");
     return {
       source,
@@ -1274,13 +1576,13 @@ export function parseEsxBank(
   // ── 3. Second magic at 0x001B0000 ─────────────────────────────────────────
   if (buf.length < ESX1_ADDR_VALID_CHECK_2 + 4) {
     throw new EsxParseError(
-      `file size ${buf.length} < expected sample-directory offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}`,
+      `file size ${buf.length} < expected sample-directory offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}`
     );
   }
   const check2 = safeSlice(buf, ESX1_ADDR_VALID_CHECK_2, 4);
   if (!bytesEqual(check2, ESX1_SIGNATURE)) {
     throw new EsxParseError(
-      `Invalid second magic at offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}: expected 'KORG'`,
+      `Invalid second magic at offset 0x${ESX1_ADDR_VALID_CHECK_2.toString(16)}: expected 'KORG'`
     );
   }
 
@@ -1288,7 +1590,7 @@ export function parseEsxBank(
   const countDv = new DataView(
     buf.buffer,
     buf.byteOffset + ESX1_ADDR_NUM_MONO_SAMPLES,
-    12,
+    12
   );
   const numMono = countDv.getUint32(0, false);
   const numStereo = countDv.getUint32(4, false);
@@ -1296,7 +1598,7 @@ export function parseEsxBank(
 
   if (numMono > ESX1_MAX_MONO_SLOTS || numStereo > ESX1_MAX_STEREO_SLOTS) {
     throw new EsxParseError(
-      `declared sample counts out of range: mono=${numMono} (cap ${ESX1_MAX_MONO_SLOTS}), stereo=${numStereo} (cap ${ESX1_MAX_STEREO_SLOTS})`,
+      `declared sample counts out of range: mono=${numMono} (cap ${ESX1_MAX_MONO_SLOTS}), stereo=${numStereo} (cap ${ESX1_MAX_STEREO_SLOTS})`
     );
   }
 
@@ -1324,13 +1626,13 @@ export function parseEsxBank(
       }
       if (f.off1End <= f.off1Start) {
         warnings.push(
-          `mono slot ${i}: offsetEnd (${f.off1End}) <= offsetStart (${f.off1Start}); skipped`,
+          `mono slot ${i}: offsetEnd (${f.off1End}) <= offsetStart (${f.off1Start}); skipped`
         );
         continue;
       }
 
       const pcmBytes = readPcmRange(buf, f.off1Start, f.off1End, i, "mono");
-      const pcm = be16PcmToFloat32(pcmBytes);
+      const pcm = headersOnly ? EMPTY_F32 : be16PcmToFloat32(pcmBytes);
       totalPcm += pcmBytes.length;
       // v3.90.0: Defensive tolerance — KASSEL.esx and friends overflow the
       // 24 MiB hardware cap by a few hundred bytes (real-file-padding /
@@ -1338,17 +1640,17 @@ export function parseEsxBank(
       // cap and soft-limit, emit a single warning per parse + continue.
       if (totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES) {
         throw new EsxParseError(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`
         );
       }
       if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES && !pcmCapWarned) {
         warnings.push(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`
         );
         pcmCapWarned = true;
       }
 
-      const frames = pcm.length;
+      const frames = headersOnly ? pcmBytes.length >> 1 : pcm.length;
       monoSamples.push({
         index: i,
         name,
@@ -1361,7 +1663,10 @@ export function parseEsxBank(
         level: Math.max(0, Math.min(127, f.playLevel || 100)),
       });
     } catch (err) {
-      if (err instanceof EsxParseError && err.message.includes("escapes file")) {
+      if (
+        err instanceof EsxParseError &&
+        err.message.includes("escapes file")
+      ) {
         // Defensive: hostile slot, skip + warn (other slots may still be valid)
         warnings.push(`mono slot ${i}: ${err.message}`);
         continue;
@@ -1374,8 +1679,13 @@ export function parseEsxBank(
   const stereoTableStart = ESX1_ADDR_SAMPLE_HEADER_STEREO;
   for (let i = 0; i < ESX1_MAX_STEREO_SLOTS; i++) {
     try {
-      const headerOff = stereoTableStart + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
-      const body = safeSlice(buf, headerOff, ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO);
+      const headerOff =
+        stereoTableStart + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
+      const body = safeSlice(
+        buf,
+        headerOff,
+        ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO
+      );
       const name = decodeEsxName(body.subarray(0, 8));
       const f = readStereoHeaderFields(body);
       if (
@@ -1388,38 +1698,55 @@ export function parseEsxBank(
       }
       if (f.off1End <= f.off1Start || f.off2End <= f.off2Start) {
         warnings.push(
-          `stereo slot ${i}: zero-or-inverted offset range; skipped`,
+          `stereo slot ${i}: zero-or-inverted offset range; skipped`
         );
         continue;
       }
       if (f.off1End - f.off1Start !== f.off2End - f.off2Start) {
-        warnings.push(
-          `stereo slot ${i}: channel lengths differ; skipped`,
-        );
+        warnings.push(`stereo slot ${i}: channel lengths differ; skipped`);
         continue;
       }
 
       const slotIndex = ESX1_MAX_MONO_SLOTS + i;
-      const leftBytes = readPcmRange(buf, f.off1Start, f.off1End, slotIndex, "stereo-L");
-      const rightBytes = readPcmRange(buf, f.off2Start, f.off2End, slotIndex, "stereo-R");
-      const left = be16PcmToFloat32(leftBytes);
-      const right = be16PcmToFloat32(rightBytes);
-      const frames = Math.min(left.length, right.length);
-      const inter = new Float32Array(frames * 2);
-      for (let k = 0; k < frames; k++) {
-        inter[k * 2] = left[k];
-        inter[k * 2 + 1] = right[k];
+      const leftBytes = readPcmRange(
+        buf,
+        f.off1Start,
+        f.off1End,
+        slotIndex,
+        "stereo-L"
+      );
+      const rightBytes = readPcmRange(
+        buf,
+        f.off2Start,
+        f.off2End,
+        slotIndex,
+        "stereo-R"
+      );
+      let frames: number;
+      let inter: Float32Array;
+      if (headersOnly) {
+        frames = Math.min(leftBytes.length >> 1, rightBytes.length >> 1);
+        inter = EMPTY_F32;
+      } else {
+        const left = be16PcmToFloat32(leftBytes);
+        const right = be16PcmToFloat32(rightBytes);
+        frames = Math.min(left.length, right.length);
+        inter = new Float32Array(frames * 2);
+        for (let k = 0; k < frames; k++) {
+          inter[k * 2] = left[k];
+          inter[k * 2 + 1] = right[k];
+        }
       }
       totalPcm += leftBytes.length + rightBytes.length;
       // v3.90.0: Same soft-limit/warning logic as mono path.
       if (totalPcm > ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES) {
         throw new EsxParseError(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 soft-limit ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES}`
         );
       }
       if (totalPcm > ESX1_MAX_SAMPLE_MEM_IN_BYTES && !pcmCapWarned) {
         warnings.push(
-          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`,
+          `cumulative PCM size ${totalPcm} exceeds ESX-1 hardware cap ${ESX1_MAX_SAMPLE_MEM_IN_BYTES} (within ${ESX1_SAMPLE_MEM_SOFT_LIMIT_BYTES} soft-limit, continuing)`
         );
         pcmCapWarned = true;
       }
@@ -1436,7 +1763,10 @@ export function parseEsxBank(
         level: Math.max(0, Math.min(127, f.playLevel || 100)),
       });
     } catch (err) {
-      if (err instanceof EsxParseError && err.message.includes("escapes file")) {
+      if (
+        err instanceof EsxParseError &&
+        err.message.includes("escapes file")
+      ) {
         warnings.push(`stereo slot ${i}: ${err.message}`);
         continue;
       }
@@ -1455,7 +1785,7 @@ export function parseEsxBank(
   const haveAllPatterns = patternsEnd <= buf.length;
   if (!haveAllPatterns) {
     warnings.push(
-      `pattern area truncated: file ${buf.length} < required end ${patternsEnd}`,
+      `pattern area truncated: file ${buf.length} < required end ${patternsEnd}`
     );
   }
   const usablePatternsEnd = Math.min(patternsEnd, buf.length);
@@ -1495,6 +1825,12 @@ export function isEsxBuffer(input: ArrayBuffer | Uint8Array): boolean {
   const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (buf.length < ESX1_SUBMAGIC_OFFSET + 4) return false;
   if (!bytesEqual(buf.subarray(0, 4), ESX1_SIGNATURE)) return false;
-  if (!bytesEqual(buf.subarray(ESX1_SUBMAGIC_OFFSET, ESX1_SUBMAGIC_OFFSET + 4), ESX1_SUBMAGIC)) return false;
+  if (
+    !bytesEqual(
+      buf.subarray(ESX1_SUBMAGIC_OFFSET, ESX1_SUBMAGIC_OFFSET + 4),
+      ESX1_SUBMAGIC
+    )
+  )
+    return false;
   return true;
 }

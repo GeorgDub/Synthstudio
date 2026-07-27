@@ -90,26 +90,20 @@ export const ESX1_SIZE_FILE_MIN = 0x00250010;
 export const ESX1_EMPTY_OFFSET = 0xffffffff;
 
 // ─── E2S device limits ────────────────────────────────────────────────────────
-// SoT: constants.py:65-102
 /**
- * Adressierbare Sample-Slots in einem `.all`. Die Offset-Tabelle füllt das
+ * Adressierbare Sample-Slots in einem `.all`. Die Offset-Tabelle fuellt das
  * Fenster `E2S_ALL_OFFSET_TABLE_START`..`E2S_ALL_SAMPLE_AREA_START` exakt aus:
- * `0x0058 + 1002 * 4 === 0x1000`.
+ * `0x0010 + 1020 * 4 === 0x1000`.
  *
- * v3.286: **war 250 — das war falsch.** Siehe die Herleitung bei
- * `E2S_ALL_OFFSET_TABLE_START`. Die 250 stammten aus einer fehlgedeuteten
- * Tabellen-Startadresse; mit der korrigierten Adresse ergibt sich die
- * Slot-Zahl zwangsläufig aus der Fenstergröße.
- *
- * Praktische Folge: Hacktribe legt User-Samples ab Index 501 ab. Mit 250
- * Slots war jede Hacktribe-Bank unlesbar — die Offsets lagen jenseits des
- * gelesenen Bereichs.
+ * Der Tabellen-Index ist zugleich die Geraete-Sample-Nummer: `i === esli.OSC_0index`
+ * (siehe `ESLI_OSC_INDEX_OFFSET`). Diese Redundanz ist die einzige Pruefung, die
+ * eine falsche Tabellen-Startadresse ueberhaupt auffliegen laesst — der Reader
+ * meldet Abweichungen als Warnung, siehe `parseE2sBank`.
  */
-export const E2S_MAX_SLOTS = 1002;
+export const E2S_MAX_SLOTS = 1020;
 /**
- * Höchster Slot-Index, den das Geräte-UI als wählbaren Sample-Platz zeigt
- * (exklusiv). Die zwei letzten Tabellen-Einträge sind reserviert und werden
- * nie als User-Slot angeboten. SoT: constants.py `SAMPLE_SLOT_INDEX_MAX`.
+ * Hoechster Slot-Index, den das Geraete-UI als waehlbaren Sample-Platz zeigt
+ * (exklusiv). Die restlichen Tabellen-Eintraege bleiben reserviert.
  */
 export const E2S_SLOT_INDEX_MAX = 1000;
 /** Maximum user-visible sample name length im Device-UI; on-disk speichert das
@@ -133,38 +127,59 @@ export const E2S_GLOBAL_SECTION_SIZE = 256;
 // SoT: constants.py:104-139
 /** 16-byte signature: "e2s sample all\x1a\x00". */
 export const E2S_ALL_SIGNATURE = new Uint8Array([
-  0x65, 0x32, 0x73, 0x20, // "e2s "
-  0x73, 0x61, 0x6d, 0x70, // "samp"
-  0x6c, 0x65, 0x20, 0x61, // "le a"
-  0x6c, 0x6c, 0x1a, 0x00, // "ll\x1a\0"
+  0x65,
+  0x32,
+  0x73,
+  0x20, // "e2s "
+  0x73,
+  0x61,
+  0x6d,
+  0x70, // "samp"
+  0x6c,
+  0x65,
+  0x20,
+  0x61, // "le a"
+  0x6c,
+  0x6c,
+  0x1a,
+  0x00, // "ll\x1a\0"
 ]);
 export const E2S_ALL_SIGNATURE_LEN = E2S_ALL_SIGNATURE.length; // 16
 /**
- * Startadresse der Offset-Tabelle im `.all`.
+ * Startadresse der Offset-Tabelle im `.all`. 1020 LE32-Eintraege, endet exakt
+ * auf `E2S_ALL_SAMPLE_AREA_START`. Ein Eintrag 0 heisst: Slot leer.
  *
- * v3.286: **war 0x07E0 — das war ein Trugschluss aus einer einzigen
- * Referenzdatei.** Die Herleitung, empirisch geklärt im Python-Editor gegen
- * die Werks-`e2sSample.all` von 2014 *und* 13 Dumps echter Geräte von 2025
- * (Korg_ESX_E2S_Editor, TASK-029, constants.py:110-133):
+ * SoT: Oe2sSLE `e2s_sample_all.py` — `load()` liest 4080 Bytes ab `0x0010`,
+ * der Pointer eines Samples ist `read_u32(0x10 + i * 4)`, und der Index i ist
+ * die 0-basierte Geraete-Sample-Nummer (`esli.OSC_0index`).
  *
- * Die Werksdatei hat 11 Samples, und die liegen auf den Tabellen-Indizes
- * 482..492. Weil `0x0058 + 482 * 4 === 0x07E0` ist, stand der erste
- * *nicht-null* Eintrag genau auf 0x07E0 — die Tabelle sah aus, als würde sie
- * dort anfangen. Die 482 Null-Einträge davor gingen als „reserved padding"
- * durch. Die Gerätedumps legen User-Samples ab Index 0 ab und haben das
- * sofort entlarvt: dort stehen alle Offsets bei `0x0058..`, und die Region
- * 0x07E0 ist leer.
+ * ## Zwei verworfene Vorgaengerwerte, und warum sie plausibel aussahen
  *
- * Die Werksdatei bleibt mit der korrigierten Adresse bit-exakt: 482 Nullen,
- * dann die 11 Offsets, dann Nullen bis 0x1000 — dieselben Bytes, nur richtig
- * interpretiert. Deshalb fiel der Fehler beim Round-Trip nie auf.
+ * **`0x07E0` mit 250 Eintraegen** (bis v3.285). Die Werks-Referenzdatei hat ihr
+ * erstes Sample bei OSC_0index 500, und `0x0010 + 500 * 4 === 0x07E0`. Der
+ * erste *nicht-null* Eintrag stand also genau dort — die Tabelle sah aus, als
+ * beginne sie da, und die 500 Nullen davor gingen als „reserved padding" durch.
  *
- * Nicht zu verwechseln mit Hacktribes `get_sample_pointer = i * 4 + 0x10`:
- * dessen Basis ist nicht der Dateianfang (Differenz 0x48).
+ * **`0x0058` mit 1002 Eintraegen** (v3.286, ebenfalls falsch). Entstand beim
+ * Versuch, `0x07E0` zu widerlegen: gegen 14 Datei-Dumps geprueft, aber
+ * ausschliesslich **gegen `0x07E0`** — `0x0010` stand nie zur Wahl. Der Fehler
+ * ist heimtueckisch, weil ein um 18 Eintraege (`0x48` Bytes) verschobener
+ * Tabellenstart **dieselben Offset-Werte** liefert, nur unter falschen Indizes.
+ * Die damaligen Kriterien (Offsets >= 0x1000, innerhalb der Datei, Anzahl
+ * nicht-null) koennen eine Verschiebung prinzipiell nicht sehen. Praktisch
+ * hiess das: jedes Sample landete 18 Slots neben seiner echten Nummer.
+ *
+ * ## Was die Frage entscheidet
+ *
+ * Nicht die Fenstergroesse — `0x0010 + 1020 * 4` und `0x0058 + 1002 * 4`
+ * ergeben beide exakt `0x1000`. Eine Exact-Fit-Pruefung unterscheidet die
+ * beiden also NICHT. Entscheidend ist allein `esli.OSC_0index`: die Datei
+ * traegt die Sample-Nummer ein zweites Mal, im korg-Chunk jedes Slots. Nur bei
+ * `0x0010` stimmen Tabellen-Index und OSC_0index ueberein.
  */
-export const E2S_ALL_OFFSET_TABLE_START = 0x0058;
-/** 1002 × LE32 = 4008 B. Füllt 0x0058..0x1000 exakt aus (siehe Invariante unten). */
-export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 4008
+export const E2S_ALL_OFFSET_TABLE_START = 0x0010;
+/** 1020 x LE32 = 4080 B. Fuellt 0x0010..0x1000 exakt aus. */
+export const E2S_ALL_OFFSET_TABLE_BYTES = E2S_MAX_SLOTS * 4; // 4080
 export const E2S_ALL_SAMPLE_AREA_START = 0x1000;
 
 // ─── korg/esli sub-chunk inside each E2S RIFF/WAVE ───────────────────────────

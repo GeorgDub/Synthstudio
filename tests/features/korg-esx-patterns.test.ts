@@ -10,6 +10,16 @@
  *   - convertEsxPatternToSynthstudio: 16 Parts gemappt, BPM/Name uebernommen
  *   - esxPartHint: korrektes Label fuer Drum/Synth/Stretch/etc.
  *   - Real-File-Test: parst .esx-Files aus Korg ESX files/ (conditional skip)
+ *
+ * v3.286: Der ESX-1 Pattern-Decode wurde auf das VERIFIZIERTE Format korrigiert
+ * (open-electribe-editor v1.2.0 + lammas/electribe + reale .esx): Step-Trigger
+ * sind eine 128-BIT-BITMASKE (8 Steps/Byte, MSB zuerst), NICHT ein Byte/Step;
+ * 9 Drum-Parts @24, 3 Stretch/Slice @878, 2 Keyboard @330 (128 Note+128 Gate).
+ * Die `it.skip`-Blöcke unten testeten die frühere, WIDERLEGTE Hypothese
+ * (bit0=aktiv, bit4=accent, Stretch @0x25C, Short-Parts @0x36E, „Synth-Note
+ * nicht exportiert"). Korrekte Abdeckung: siehe korg-esx-pattern-decode.test.ts.
+ * Die Builder-Round-Trips sind geskippt bis der Builder (esxPatternBuilder.ts)
+ * auf dasselbe verifizierte Format umgestellt ist (Folge-Arbeit).
  */
 
 import { describe, it, expect } from "vitest";
@@ -91,7 +101,9 @@ function buildInitPatternBlock(): Uint8Array {
   for (let i = 0; i < 8; i++) block[i] = 0x20;
   // Init signature at offset 8..19:
   //   3c 00 00 00 00 0f 00 3c 00 00 7f ff
-  const sig = [0x3c, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x00, 0x3c, 0x00, 0x00, 0x7f, 0xff];
+  const sig = [
+    0x3c, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x00, 0x3c, 0x00, 0x00, 0x7f, 0xff,
+  ];
   for (let i = 0; i < sig.length; i++) block[8 + i] = sig[i];
   // Rest 0x00 (default für init)
   return block;
@@ -114,12 +126,14 @@ function buildMinimalEsxWithPatterns(patternBlocks: Uint8Array[]): Uint8Array {
   dv.setUint32(ESX1_ADDR_NUM_MONO_SAMPLES + 8, 0, false);
   // Alle Sample-Headers auf EMPTY_OFFSET
   for (let i = 0; i < 256; i++) {
-    const off = ESX1_ADDR_SAMPLE_HEADER_MONO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
+    const off =
+      ESX1_ADDR_SAMPLE_HEADER_MONO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
     dv.setUint32(off + 8, ESX1_EMPTY_OFFSET, false);
     dv.setUint32(off + 12, ESX1_EMPTY_OFFSET, false);
   }
   for (let i = 0; i < 128; i++) {
-    const off = ESX1_ADDR_SAMPLE_HEADER_STEREO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
+    const off =
+      ESX1_ADDR_SAMPLE_HEADER_STEREO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
     dv.setUint32(off + 8, ESX1_EMPTY_OFFSET, false);
     dv.setUint32(off + 12, ESX1_EMPTY_OFFSET, false);
     dv.setUint32(off + 16, ESX1_EMPTY_OFFSET, false);
@@ -176,20 +190,14 @@ describe("korg/esxParser — parseEsxPattern (Header-Felder)", () => {
     expect(patHigh!.bpm).toBe(300);
   });
 
-  it("liefert 16 Parts mit jeweils 16 Step-Slots", () => {
-    // v3.14: buildPatternBlock fills mit 0x42 (LSB=0 → inactive). Aber Bytes
-    // 24..363 enthalten dann 0x42 in den step-byte-Positionen, was bit 0 = 0
-    // bedeutet — also alle Steps inactive. Diese Invariante ist v3.14-konform.
+  it("liefert 14 Parts (9 Drum + 3 Stretch/Slice + 2 Synth) mit je 128 Step-Slots", () => {
+    // v3.286: verifiziertes Layout — 14 Parts, jeder mit 128-Step-Bitmaske.
     const block = buildPatternBlock({ name: "X", bpm: 130 });
     const pat = parseEsxPattern(block, 5);
     expect(pat).not.toBeNull();
-    expect(pat!.parts.length).toBe(ESX1_PARTS_PER_PATTERN);
+    expect(pat!.parts.length).toBe(14);
     for (const part of pat!.parts) {
-      expect(part.steps.length).toBe(ESX1_DEFAULT_STEPS);
-      // 0x42 = 0100 0010 → bit 0 = 0 → inactive
-      for (const step of part.steps) {
-        expect(step.active).toBe(false);
-      }
+      expect(part.steps.length).toBe(128);
     }
   });
 
@@ -204,8 +212,12 @@ describe("korg/esxParser — parseEsxPattern (Header-Felder)", () => {
   });
 
   it("wirft EsxParseError bei falscher Block-Groesse", () => {
-    expect(() => parseEsxPattern(new Uint8Array(100), 0)).toThrow(EsxParseError);
-    expect(() => parseEsxPattern(new Uint8Array(5000), 0)).toThrow(EsxParseError);
+    expect(() => parseEsxPattern(new Uint8Array(100), 0)).toThrow(
+      EsxParseError
+    );
+    expect(() => parseEsxPattern(new Uint8Array(5000), 0)).toThrow(
+      EsxParseError
+    );
   });
 });
 
@@ -260,14 +272,14 @@ describe("korg/esxParser — parseEsxBank patterns-Array", () => {
 });
 
 describe("korg/esxPatternConvert — Synthstudio-Mapping", () => {
-  it("convertEsxPatternToSynthstudio mappt 16 Parts → drumParts", () => {
+  it("convertEsxPatternToSynthstudio mappt alle Parts → drumParts", () => {
     const block = buildPatternBlock({ name: "Beat", bpm: 130 });
     const pat = parseEsxPattern(block, 0)!;
     const conv = convertEsxPatternToSynthstudio(pat);
-    expect(conv.drumParts.length).toBe(ESX1_PARTS_PER_PATTERN);
+    expect(conv.drumParts.length).toBe(pat.parts.length); // 14
     expect(conv.name).toBe("Beat");
     expect(conv.bpm).toBeCloseTo(130, 5);
-    expect(conv.stepCount).toBe(16);
+    expect(conv.stepCount).toBe(16); // buildPatternBlock: patternLength 1 → 16
     expect(conv.automationLanes).toEqual([]);
   });
 
@@ -286,7 +298,9 @@ describe("korg/esxPatternConvert — Synthstudio-Mapping", () => {
           pan: 64,
           pitch: 0,
           fxAmount: 0,
-          steps: new Array(16).fill(null).map(() => ({ active: false, velocity: 0 })),
+          steps: new Array(16)
+            .fill(null)
+            .map(() => ({ active: false, velocity: 0 })),
         },
         {
           partIndex: 1,
@@ -295,7 +309,9 @@ describe("korg/esxPatternConvert — Synthstudio-Mapping", () => {
           pan: 127,
           pitch: 0,
           fxAmount: 0,
-          steps: new Array(16).fill(null).map(() => ({ active: false, velocity: 0 })),
+          steps: new Array(16)
+            .fill(null)
+            .map(() => ({ active: false, velocity: 0 })),
         },
       ],
     };
@@ -306,14 +322,13 @@ describe("korg/esxPatternConvert — Synthstudio-Mapping", () => {
     expect(conv.drumParts[1].pan).toBeCloseTo(1, 1);
   });
 
-  it("esxPartHint liefert konservative Labels fuer Drum/Stretch/Slice/Synth", () => {
+  it("esxPartHint liefert Labels fuer das 14-Part-Layout (9 Drum + 3 Stretch/Slice + 2 Synth)", () => {
     expect(esxPartHint(0)).toBe("ESX Drum 1");
     expect(esxPartHint(8)).toBe("ESX Drum 9");
-    expect(esxPartHint(9)).toBe("ESX Stretch 1");
-    expect(esxPartHint(11)).toBe("ESX Slice 1");
-    expect(esxPartHint(13)).toBe("ESX Audio-In");
-    expect(esxPartHint(14)).toBe("ESX Synth 1");
-    expect(esxPartHint(15)).toBe("ESX Synth 2");
+    expect(esxPartHint(9)).toBe("ESX Stretch/Slice 1");
+    expect(esxPartHint(11)).toBe("ESX Stretch/Slice 3");
+    expect(esxPartHint(12)).toBe("ESX Synth 1");
+    expect(esxPartHint(13)).toBe("ESX Synth 2");
   });
 
   it("convertEsxPatternsToSynthstudio konvertiert Array (Bulk)", () => {
@@ -341,7 +356,9 @@ describe("korg/esxPatternConvert — Synthstudio-Mapping", () => {
         pan: 64,
         pitch: 0,
         fxAmount: 0,
-        steps: new Array(16).fill(null).map(() => ({ active: false, velocity: 0 })),
+        steps: new Array(16)
+          .fill(null)
+          .map(() => ({ active: false, velocity: 0 })),
       })),
     };
     const conv = convertEsxPatternToSynthstudio(pat);
@@ -353,62 +370,75 @@ describe("korg/esxPatternConvert — Synthstudio-Mapping", () => {
 
 const REAL_FILES_DIR = path.resolve(__dirname, "../../Korg ESX files");
 const hasRealFiles =
-  fs.existsSync(REAL_FILES_DIR) && fs.readdirSync(REAL_FILES_DIR).some((f) => f.toLowerCase().endsWith(".esx"));
+  fs.existsSync(REAL_FILES_DIR) &&
+  fs.readdirSync(REAL_FILES_DIR).some(f => f.toLowerCase().endsWith(".esx"));
 
-describe.skipIf(!hasRealFiles)("korg/esxParser — Real-File Pattern-Parsing", () => {
-  /**
-   * Hilfsfunktion: parst ein Real-File defensive. Manche User-Files knapp
-   * ueber der PCM-Cap (24 MB + ein paar Bytes durch Slot-Padding) werfen
-   * EsxParseError — diese werden hier als "skip" behandelt damit der Test
-   * trotzdem N Files durchprobieren kann.
-   */
-  function tryParseFile(filePath: string): ReturnType<typeof parseEsxBank> | null {
-    try {
-      const bytes = fs.readFileSync(filePath);
-      return parseEsxBank(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), path.basename(filePath));
-    } catch {
-      return null;
-    }
-  }
-
-  it("parst Patterns aus real .esx-Files mit verifizierten BPMs", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    expect(files.length).toBeGreaterThan(0);
-    let totalParsed = 0;
-    let filesWithPatterns = 0;
-    for (const f of files.slice(0, 10)) {
-      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
-      if (!bank) continue;
-      totalParsed += bank.patterns.length;
-      if (bank.patterns.length > 0) filesWithPatterns++;
-      for (const pat of bank.patterns) {
-        // BPM muss Hardware-plausibel sein
-        expect(pat.bpm).toBeGreaterThanOrEqual(20);
-        expect(pat.bpm).toBeLessThanOrEqual(300);
-        expect(pat.parts.length).toBe(ESX1_PARTS_PER_PATTERN);
+describe.skipIf(!hasRealFiles)(
+  "korg/esxParser — Real-File Pattern-Parsing",
+  () => {
+    /**
+     * Hilfsfunktion: parst ein Real-File defensive. Manche User-Files knapp
+     * ueber der PCM-Cap (24 MB + ein paar Bytes durch Slot-Padding) werfen
+     * EsxParseError — diese werden hier als "skip" behandelt damit der Test
+     * trotzdem N Files durchprobieren kann.
+     */
+    function tryParseFile(
+      filePath: string
+    ): ReturnType<typeof parseEsxBank> | null {
+      try {
+        const bytes = fs.readFileSync(filePath);
+        return parseEsxBank(
+          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          path.basename(filePath)
+        );
+      } catch {
+        return null;
       }
     }
-    expect(filesWithPatterns).toBeGreaterThan(0);
-    expect(totalParsed).toBeGreaterThan(0);
-  });
 
-  it("erkennt mindestens ein Pattern mit BPM zwischen 100 und 200 (typisch fuer User-Inhalt)", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let found = false;
-    for (const f of files.slice(0, 10)) {
-      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
-      if (!bank) continue;
-      for (const pat of bank.patterns) {
-        if (pat.bpm >= 100 && pat.bpm <= 200) {
-          found = true;
-          break;
+    it("parst Patterns aus real .esx-Files mit verifizierten BPMs", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      expect(files.length).toBeGreaterThan(0);
+      let totalParsed = 0;
+      let filesWithPatterns = 0;
+      for (const f of files.slice(0, 10)) {
+        const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+        if (!bank) continue;
+        totalParsed += bank.patterns.length;
+        if (bank.patterns.length > 0) filesWithPatterns++;
+        for (const pat of bank.patterns) {
+          // BPM muss Hardware-plausibel sein
+          expect(pat.bpm).toBeGreaterThanOrEqual(20);
+          expect(pat.bpm).toBeLessThanOrEqual(300);
+          expect(pat.parts.length).toBe(14); // v3.286: 9 Drum + 3 Stretch/Slice + 2 Synth
         }
       }
-      if (found) break;
-    }
-    expect(found).toBe(true);
-  });
-});
+      expect(filesWithPatterns).toBeGreaterThan(0);
+      expect(totalParsed).toBeGreaterThan(0);
+    });
+
+    it("erkennt mindestens ein Pattern mit BPM zwischen 100 und 200 (typisch fuer User-Inhalt)", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let found = false;
+      for (const f of files.slice(0, 10)) {
+        const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+        if (!bank) continue;
+        for (const pat of bank.patterns) {
+          if (pat.bpm >= 100 && pat.bpm <= 200) {
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      expect(found).toBe(true);
+    });
+  }
+);
 
 // ─── v3.14: Step-Encoding-Tests ──────────────────────────────────────────────
 
@@ -425,7 +455,7 @@ function buildPatternBlockWithSteps(
   mask16: number,
   sampleId = 0x000a,
   level = 100,
-  pan = 64,
+  pan = 64
 ): Uint8Array {
   const block = buildPatternBlock({ name: baseName, bpm });
   if (p < 0 || p >= 10) return block;
@@ -449,7 +479,7 @@ function buildPatternBlockWithSteps(
 }
 
 describe("korg/esxParser — v3.14 Step-Encoding (Drum-Parts)", () => {
-  it("dekodiert klassisches 4-on-the-floor Kick-Pattern (Part 0)", () => {
+  it.skip("dekodiert klassisches 4-on-the-floor Kick-Pattern (Part 0)", () => {
     // Steps 0, 4, 8, 12 aktiv → mask 0b0001000100010001 = 0x1111
     const block = buildPatternBlockWithSteps("Kick", 120, 0, 0x1111);
     const pat = parseEsxPattern(block, 0);
@@ -461,11 +491,11 @@ describe("korg/esxParser — v3.14 Step-Encoding (Drum-Parts)", () => {
     expect(part0.steps[12].active).toBe(true);
     expect(part0.steps[1].active).toBe(false);
     expect(part0.steps[2].active).toBe(false);
-    const activeCount = part0.steps.filter((s) => s.active).length;
+    const activeCount = part0.steps.filter(s => s.active).length;
     expect(activeCount).toBe(4);
   });
 
-  it("dekodiert Offbeat-Hat (Part 1, alle ungeraden Steps)", () => {
+  it.skip("dekodiert Offbeat-Hat (Part 1, alle ungeraden Steps)", () => {
     // Steps 1,3,5,...,15 → mask 0xAAAA
     const block = buildPatternBlockWithSteps("Hat", 120, 1, 0xaaaa);
     const pat = parseEsxPattern(block, 0);
@@ -490,7 +520,7 @@ describe("korg/esxParser — v3.14 Step-Encoding (Drum-Parts)", () => {
     expect(pat!.parts[3].sampleId).toBe(0);
   });
 
-  it("Parts 10..14 dekodieren aus dezidierten Offsets (v3.20), Part 15 bleibt Default", () => {
+  it.skip("Parts 10..14 dekodieren aus dezidierten Offsets (v3.20), Part 15 bleibt Default", () => {
     // v3.20: Pattern-Block ist mit 0x42 vor-gefuellt. Das wirkt sich auf die
     // dezidierten Part-10..14 Offsets aus (0x25C fuer Stretch, 0x36E/8E/AE/CE
     // fuer Sample/Slice/Synth). Wir testen daher hier nur Part 15, das in
@@ -508,7 +538,7 @@ describe("korg/esxParser — v3.14 Step-Encoding (Drum-Parts)", () => {
     }
   });
 
-  it("velocity wird auf 100 gesetzt wenn aktiv aber 0x01-rein-binary", () => {
+  it.skip("velocity wird auf 100 gesetzt wenn aktiv aber 0x01-rein-binary", () => {
     const block = buildPatternBlockWithSteps("V", 120, 0, 0x0001);
     const pat = parseEsxPattern(block, 0);
     expect(pat!.parts[0].steps[0].active).toBe(true);
@@ -531,8 +561,8 @@ function buildPatternBlockWithPitchFx(
   bpm: number,
   p: number,
   pitchSigned: number, // -64..+63
-  fxSendU8: number,    // 0..127
-  sampleId = 0x000a,
+  fxSendU8: number, // 0..127
+  sampleId = 0x000a
 ): Uint8Array {
   const block = buildPatternBlockWithSteps(baseName, bpm, p, 0, sampleId);
   if (p < 0 || p >= 10) return block;
@@ -575,7 +605,7 @@ describe("korg/esxParser — v3.20 Pitch + FxSend (Drum-Parts)", () => {
     expect(patLow!.parts[0].pitch).toBe(-64);
   });
 
-  it("dekodiert FxSend (0..127)", () => {
+  it.skip("dekodiert FxSend (0..127)", () => {
     const block = buildPatternBlockWithPitchFx("F", 120, 1, 0, 96);
     const pat = parseEsxPattern(block, 0);
     expect(pat!.parts[1].fxAmount).toBe(96);
@@ -583,7 +613,7 @@ describe("korg/esxParser — v3.20 Pitch + FxSend (Drum-Parts)", () => {
     expect(parseEsxPattern(blockMax, 0)!.parts[1].fxAmount).toBe(127);
   });
 
-  it("FxSend unterscheidet Kick (0) vs HiHat (high) typischen Reverb-Bus-Setup", () => {
+  it.skip("FxSend unterscheidet Kick (0) vs HiHat (high) typischen Reverb-Bus-Setup", () => {
     let block = buildPatternBlockWithPitchFx("K", 120, 0, 0, 0); // Kick Part 0
     block = buildPatternBlockWithPitchFx("K", 120, 6, 0, 90); // HiHat Part 6
     // Pre-fill auf 0x42 ueberschreibt Part 0's bytes. Wir bauen seperaten Block:
@@ -605,7 +635,7 @@ describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", ()
     level: number,
     pan: number,
     fxSend: number,
-    stepsMask: number,
+    stepsMask: number
   ): Uint8Array {
     const block = buildPatternBlock({ name: "S", bpm: 120 });
     const partOff = 0x25c;
@@ -630,7 +660,7 @@ describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", ()
     level: number,
     pan: number,
     fxSend: number,
-    stepsMask: number,
+    stepsMask: number
   ): Uint8Array {
     const block = buildPatternBlock({ name: "X", bpm: 120 });
     const SHORT_OFFSETS = [0x36e, 0x38e, 0x3ae, 0x3ce];
@@ -647,7 +677,7 @@ describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", ()
     return block;
   }
 
-  it("Part 10 (Stretch) wird aus 34B-Layout @ 0x25C dekodiert", () => {
+  it.skip("Part 10 (Stretch) wird aus 34B-Layout @ 0x25C dekodiert", () => {
     // 4-on-the-floor mask
     const block = buildBlockWithStretchPart(0x1f, +3, 120, 64, 64, 0x1111);
     const pat = parseEsxPattern(block, 0);
@@ -662,14 +692,22 @@ describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", ()
     expect(part10.steps[4].active).toBe(true);
     expect(part10.steps[8].active).toBe(true);
     expect(part10.steps[12].active).toBe(true);
-    const activeCount = part10.steps.filter((s) => s.active).length;
+    const activeCount = part10.steps.filter(s => s.active).length;
     expect(activeCount).toBe(4);
   });
 
-  it("Parts 11..14 (Short-Parts) verwenden 32B-Stride aus dezidierten Offsets", () => {
+  it.skip("Parts 11..14 (Short-Parts) verwenden 32B-Stride aus dezidierten Offsets", () => {
     for (let si = 0; si < 4; si++) {
       const partIndex = 11 + si;
-      const block = buildBlockWithShortPart(si, 0x42 + si, +5, 100, 64, 80, 0x8888);
+      const block = buildBlockWithShortPart(
+        si,
+        0x42 + si,
+        +5,
+        100,
+        64,
+        80,
+        0x8888
+      );
       const pat = parseEsxPattern(block, 0);
       expect(pat).not.toBeNull();
       const part = pat!.parts[partIndex];
@@ -686,13 +724,13 @@ describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", ()
     }
   });
 
-  it("0x8000-Sentinel im Short-Part wird als sampleId=0 interpretiert", () => {
+  it.skip("0x8000-Sentinel im Short-Part wird als sampleId=0 interpretiert", () => {
     const block = buildBlockWithShortPart(0, 0x8000, 0, 100, 64, 0, 0);
     const pat = parseEsxPattern(block, 0);
     expect(pat!.parts[11].sampleId).toBe(0);
   });
 
-  it("Part 15 (Audio-In) bleibt Defaults — kein Decoder gewired", () => {
+  it.skip("Part 15 (Audio-In) bleibt Defaults — kein Decoder gewired", () => {
     const block = buildPatternBlock({ name: "A", bpm: 120 });
     const pat = parseEsxPattern(block, 0);
     expect(pat!.parts[15].sampleId).toBe(0);
@@ -703,112 +741,136 @@ describe("korg/esxParser — v3.20 Stretch (Part 10) + Short-Parts (11..14)", ()
   });
 });
 
-describe.skipIf(!hasRealFiles)("korg/esxParser — v3.20 Real-File Pitch/FxSend Variance", () => {
-  function tryParseFile(filePath: string): ReturnType<typeof parseEsxBank> | null {
-    try {
-      const bytes = fs.readFileSync(filePath);
-      return parseEsxBank(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), path.basename(filePath));
-    } catch {
-      return null;
-    }
-  }
-
-  it("findet Real-Patterns mit non-default pitch (≠0) ODER non-default fxSend (>0)", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let foundPitch = false;
-    let foundFx = false;
-    let allParts = 0;
-    for (const f of files.slice(0, 5)) {
-      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
-      if (!bank) continue;
-      for (const pat of bank.patterns.slice(0, 10)) {
-        for (let p = 0; p < 11; p++) {
-          // include Stretch (part 10) too
-          allParts++;
-          if (pat.parts[p].pitch !== 0) foundPitch = true;
-          if (pat.parts[p].fxAmount > 0) foundFx = true;
-        }
-      }
-      if (foundPitch && foundFx) break;
-    }
-    expect(allParts).toBeGreaterThan(0);
-    // Real-File-Variance: in BOTTROP alone hat ~10 % der Parts pitch != 0
-    // (signed-i8 around 0x40). FxSend > 0 ist in fast jedem File.
-    expect(foundPitch || foundFx).toBe(true);
-  });
-
-  it("Pitch + FxSend bleiben in Hardware-Range (-64..+63 / 0..127)", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let totalChecked = 0;
-    for (const f of files.slice(0, 5)) {
-      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
-      if (!bank) continue;
-      for (const pat of bank.patterns.slice(0, 5)) {
-        for (const part of pat.parts) {
-          expect(part.pitch).toBeGreaterThanOrEqual(-64);
-          expect(part.pitch).toBeLessThanOrEqual(63);
-          expect(part.fxAmount).toBeGreaterThanOrEqual(0);
-          expect(part.fxAmount).toBeLessThanOrEqual(127);
-          totalChecked++;
-        }
+describe.skipIf(!hasRealFiles)(
+  "korg/esxParser — v3.20 Real-File Pitch/FxSend Variance",
+  () => {
+    function tryParseFile(
+      filePath: string
+    ): ReturnType<typeof parseEsxBank> | null {
+      try {
+        const bytes = fs.readFileSync(filePath);
+        return parseEsxBank(
+          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          path.basename(filePath)
+        );
+      } catch {
+        return null;
       }
     }
-    expect(totalChecked).toBeGreaterThan(0);
-  });
-});
 
-describe.skipIf(!hasRealFiles)("korg/esxParser — v3.14 Real-File Step-Decoding", () => {
-  function tryParseFile(filePath: string): ReturnType<typeof parseEsxBank> | null {
-    try {
-      const bytes = fs.readFileSync(filePath);
-      return parseEsxBank(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), path.basename(filePath));
-    } catch {
-      return null;
-    }
-  }
-
-  it("findet mindestens ein Pattern mit aktiven Step-Triggers in den Drum-Parts", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let foundActiveSteps = false;
-    let totalActiveSteps = 0;
-    for (const f of files.slice(0, 10)) {
-      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
-      if (!bank || bank.patterns.length === 0) continue;
-      for (const pat of bank.patterns.slice(0, 5)) {
-        for (let p = 0; p < 10; p++) {
-          const activeCount = pat.parts[p].steps.filter((s) => s.active).length;
-          totalActiveSteps += activeCount;
-          if (activeCount > 0) foundActiveSteps = true;
-        }
-      }
-      if (foundActiveSteps) break;
-    }
-    expect(foundActiveSteps).toBe(true);
-    expect(totalActiveSteps).toBeGreaterThan(0);
-  });
-
-  it("identifiziert plausible Drum-Patterns (mind. 1 Part mit 1..16 aktiven Steps)", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let plausibleCount = 0;
-    for (const f of files.slice(0, 5)) {
-      const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
-      if (!bank) continue;
-      for (const pat of bank.patterns.slice(0, 10)) {
-        // Plausible: mindestens 1 Part hat 1-16 aktive Steps (kein "alles aus", aber nicht > 16)
-        let hasPlausiblePart = false;
-        for (let p = 0; p < 10; p++) {
-          const cnt = pat.parts[p].steps.filter((s) => s.active).length;
-          if (cnt >= 1 && cnt <= 16) {
-            hasPlausiblePart = true;
-            break;
+    it("findet Real-Patterns mit non-default pitch (≠0) ODER non-default fxSend (>0)", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let foundPitch = false;
+      let foundFx = false;
+      let allParts = 0;
+      for (const f of files.slice(0, 5)) {
+        const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+        if (!bank) continue;
+        for (const pat of bank.patterns.slice(0, 10)) {
+          for (let p = 0; p < 11; p++) {
+            // include Stretch (part 10) too
+            allParts++;
+            if (pat.parts[p].pitch !== 0) foundPitch = true;
+            if (pat.parts[p].fxAmount > 0) foundFx = true;
           }
         }
-        if (hasPlausiblePart) plausibleCount++;
+        if (foundPitch && foundFx) break;
+      }
+      expect(allParts).toBeGreaterThan(0);
+      // Real-File-Variance: in BOTTROP alone hat ~10 % der Parts pitch != 0
+      // (signed-i8 around 0x40). FxSend > 0 ist in fast jedem File.
+      expect(foundPitch || foundFx).toBe(true);
+    });
+
+    it("Pitch + FxSend bleiben in Hardware-Range (-64..+63 / 0..127)", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let totalChecked = 0;
+      for (const f of files.slice(0, 5)) {
+        const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+        if (!bank) continue;
+        for (const pat of bank.patterns.slice(0, 5)) {
+          for (const part of pat.parts) {
+            expect(part.pitch).toBeGreaterThanOrEqual(-64);
+            expect(part.pitch).toBeLessThanOrEqual(63);
+            expect(part.fxAmount).toBeGreaterThanOrEqual(0);
+            expect(part.fxAmount).toBeLessThanOrEqual(127);
+            totalChecked++;
+          }
+        }
+      }
+      expect(totalChecked).toBeGreaterThan(0);
+    });
+  }
+);
+
+describe.skipIf(!hasRealFiles)(
+  "korg/esxParser — v3.14 Real-File Step-Decoding",
+  () => {
+    function tryParseFile(
+      filePath: string
+    ): ReturnType<typeof parseEsxBank> | null {
+      try {
+        const bytes = fs.readFileSync(filePath);
+        return parseEsxBank(
+          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+          path.basename(filePath)
+        );
+      } catch {
+        return null;
       }
     }
-    expect(plausibleCount).toBeGreaterThan(0);
-  });
-});
+
+    it("findet mindestens ein Pattern mit aktiven Step-Triggers in den Drum-Parts", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let foundActiveSteps = false;
+      let totalActiveSteps = 0;
+      for (const f of files.slice(0, 10)) {
+        const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+        if (!bank || bank.patterns.length === 0) continue;
+        for (const pat of bank.patterns.slice(0, 5)) {
+          for (let p = 0; p < 10; p++) {
+            const activeCount = pat.parts[p].steps.filter(s => s.active).length;
+            totalActiveSteps += activeCount;
+            if (activeCount > 0) foundActiveSteps = true;
+          }
+        }
+        if (foundActiveSteps) break;
+      }
+      expect(foundActiveSteps).toBe(true);
+      expect(totalActiveSteps).toBeGreaterThan(0);
+    });
+
+    it("identifiziert plausible Drum-Patterns (mind. 1 Part mit 1..16 aktiven Steps)", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let plausibleCount = 0;
+      for (const f of files.slice(0, 5)) {
+        const bank = tryParseFile(path.join(REAL_FILES_DIR, f));
+        if (!bank) continue;
+        for (const pat of bank.patterns.slice(0, 10)) {
+          // Plausible: mindestens 1 Part hat 1-16 aktive Steps (kein "alles aus", aber nicht > 16)
+          let hasPlausiblePart = false;
+          for (let p = 0; p < 10; p++) {
+            const cnt = pat.parts[p].steps.filter(s => s.active).length;
+            if (cnt >= 1 && cnt <= 16) {
+              hasPlausiblePart = true;
+              break;
+            }
+          }
+          if (hasPlausiblePart) plausibleCount++;
+        }
+      }
+      expect(plausibleCount).toBeGreaterThan(0);
+    });
+  }
+);
 
 // ─── v3.23.0: Step-Byte Accent-Flag (bit-4) ──────────────────────────────────
 
@@ -820,7 +882,7 @@ function setDrumStepByteRaw(
   block: Uint8Array,
   p: number,
   s: number,
-  value: number,
+  value: number
 ): void {
   const partOff = 24 + p * 34;
   block[partOff + 18 + s] = value & 0xff;
@@ -831,7 +893,7 @@ function setShortStepByteRaw(
   block: Uint8Array,
   shortIndex: number,
   s: number,
-  value: number,
+  value: number
 ): void {
   const SHORT_OFFSETS = [0x36e, 0x38e, 0x3ae, 0x3ce];
   const partOff = SHORT_OFFSETS[shortIndex];
@@ -839,7 +901,7 @@ function setShortStepByteRaw(
 }
 
 describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
-  it("0x01 (bit-0 only) → active=true, accent=false, velocity=100", () => {
+  it.skip("0x01 (bit-0 only) → active=true, accent=false, velocity=100", () => {
     const block = buildPatternBlockWithSteps("A", 120, 0, 0);
     setDrumStepByteRaw(block, 0, 0, 0x01);
     const pat = parseEsxPattern(block, 0);
@@ -849,7 +911,7 @@ describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
     expect(step.velocity).toBe(100);
   });
 
-  it("0x11 (bit-0 + bit-4) → active=true, accent=true, velocity=127", () => {
+  it.skip("0x11 (bit-0 + bit-4) → active=true, accent=true, velocity=127", () => {
     const block = buildPatternBlockWithSteps("A", 120, 0, 0);
     setDrumStepByteRaw(block, 0, 0, 0x11);
     const pat = parseEsxPattern(block, 0);
@@ -859,7 +921,7 @@ describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
     expect(step.velocity).toBe(127);
   });
 
-  it("0x55 (bits 0+2+4+6) → active=true, accent=true (bit-4 set)", () => {
+  it.skip("0x55 (bits 0+2+4+6) → active=true, accent=true (bit-4 set)", () => {
     const block = buildPatternBlockWithSteps("A", 120, 0, 0);
     setDrumStepByteRaw(block, 0, 0, 0x55);
     const pat = parseEsxPattern(block, 0);
@@ -869,7 +931,7 @@ describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
     expect(step.velocity).toBe(127);
   });
 
-  it("0x15 (bits 0+2+4) → active+accent (bit-4 set, bit-2 ignored)", () => {
+  it.skip("0x15 (bits 0+2+4) → active+accent (bit-4 set, bit-2 ignored)", () => {
     const block = buildPatternBlockWithSteps("A", 120, 0, 0);
     setDrumStepByteRaw(block, 0, 0, 0x15);
     const pat = parseEsxPattern(block, 0);
@@ -899,7 +961,7 @@ describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
     expect(step.accent).toBeUndefined();
   });
 
-  it("mischt accent + non-accent steps korrekt in einem Pattern", () => {
+  it.skip("mischt accent + non-accent steps korrekt in einem Pattern", () => {
     // BOTTROP-style: '01 11 00 11 01 11 00 11 ...' alternierend
     const block = buildPatternBlockWithSteps("MIX", 120, 2, 0);
     setDrumStepByteRaw(block, 2, 0, 0x01); // no accent
@@ -919,7 +981,7 @@ describe("korg/esxParser — v3.23 Accent (Drum-Parts)", () => {
 });
 
 describe("korg/esxParser — v3.23 Accent (Short-Parts 11..14)", () => {
-  it("Short-Part-Steps haben dieselbe accent-Decoding-Logik", () => {
+  it.skip("Short-Part-Steps haben dieselbe accent-Decoding-Logik", () => {
     const block = buildPatternBlock({ name: "S", bpm: 120 });
     setShortStepByteRaw(block, 0, 0, 0x01); // part 11 step 0: active, no accent
     setShortStepByteRaw(block, 0, 4, 0x11); // part 11 step 4: active + accent
@@ -943,7 +1005,7 @@ describe("korg/esxParser — v3.23 Synth-Note-Encoding NICHT exportiert", () => 
     expect(step.note).toBeUndefined();
   });
 
-  it("Drum-Parts und Short-Parts liefern KEINEN note-Wert (konservativ)", () => {
+  it.skip("Drum-Parts und Short-Parts liefern KEINEN note-Wert (konservativ)", () => {
     const block = buildPatternBlock({ name: "X", bpm: 120 });
     setDrumStepByteRaw(block, 5, 0, 0x11);
     setShortStepByteRaw(block, 2, 0, 0x55);
@@ -956,70 +1018,77 @@ describe("korg/esxParser — v3.23 Synth-Note-Encoding NICHT exportiert", () => 
   });
 });
 
-describe.skipIf(!hasRealFiles)("korg/esxParser — v3.23 Real-File Accent-Stats", () => {
-  it("findet active steps mit accent=true in mindestens einem Real-File", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let foundAccent = false;
-    let accentCount = 0;
-    let activeCount = 0;
-    for (const f of files.slice(0, 5)) {
-      try {
-        const bytes = fs.readFileSync(path.join(REAL_FILES_DIR, f));
-        const bank = parseEsxBank(
-          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-          f,
-        );
-        for (const pat of bank.patterns.slice(0, 20)) {
-          for (let p = 0; p < 15; p++) {
-            for (const step of pat.parts[p].steps) {
-              if (step.active) {
-                activeCount++;
-                if (step.accent === true) {
-                  accentCount++;
-                  foundAccent = true;
+describe.skipIf(!hasRealFiles)(
+  "korg/esxParser — v3.23 Real-File Accent-Stats",
+  () => {
+    it.skip("findet active steps mit accent=true in mindestens einem Real-File", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let foundAccent = false;
+      let accentCount = 0;
+      let activeCount = 0;
+      for (const f of files.slice(0, 5)) {
+        try {
+          const bytes = fs.readFileSync(path.join(REAL_FILES_DIR, f));
+          const bank = parseEsxBank(
+            new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+            f
+          );
+          for (const pat of bank.patterns.slice(0, 20)) {
+            for (let p = 0; p < 15; p++) {
+              for (const step of pat.parts[p].steps) {
+                if (step.active) {
+                  activeCount++;
+                  if (step.accent === true) {
+                    accentCount++;
+                    foundAccent = true;
+                  }
                 }
               }
             }
           }
+          if (foundAccent && accentCount > 10) break;
+        } catch {
+          // ignore corrupt files
         }
-        if (foundAccent && accentCount > 10) break;
-      } catch {
-        // ignore corrupt files
       }
-    }
-    expect(activeCount).toBeGreaterThan(0);
-    expect(foundAccent).toBe(true);
-    // Aus Hex-Diff-Analyse: ~70% Drum + ~38% Short → mind. 25% gesamt erwartet.
-    expect(accentCount / activeCount).toBeGreaterThan(0.2);
-  });
+      expect(activeCount).toBeGreaterThan(0);
+      expect(foundAccent).toBe(true);
+      // Aus Hex-Diff-Analyse: ~70% Drum + ~38% Short → mind. 25% gesamt erwartet.
+      expect(accentCount / activeCount).toBeGreaterThan(0.2);
+    });
 
-  it("alle accent=true Steps haben velocity=127 (TR-style boost)", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) => f.toLowerCase().endsWith(".esx"));
-    let checked = 0;
-    let mismatched = 0;
-    outer: for (const f of files.slice(0, 3)) {
-      try {
-        const bytes = fs.readFileSync(path.join(REAL_FILES_DIR, f));
-        const bank = parseEsxBank(
-          new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-          f,
-        );
-        for (const pat of bank.patterns.slice(0, 10)) {
-          for (let p = 0; p < 15; p++) {
-            for (const step of pat.parts[p].steps) {
-              if (step.active && step.accent === true) {
-                checked++;
-                if (step.velocity !== 127) mismatched++;
-                if (checked >= 200) break outer;
+    it.skip("alle accent=true Steps haben velocity=127 (TR-style boost)", () => {
+      const files = fs
+        .readdirSync(REAL_FILES_DIR)
+        .filter(f => f.toLowerCase().endsWith(".esx"));
+      let checked = 0;
+      let mismatched = 0;
+      outer: for (const f of files.slice(0, 3)) {
+        try {
+          const bytes = fs.readFileSync(path.join(REAL_FILES_DIR, f));
+          const bank = parseEsxBank(
+            new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+            f
+          );
+          for (const pat of bank.patterns.slice(0, 10)) {
+            for (let p = 0; p < 15; p++) {
+              for (const step of pat.parts[p].steps) {
+                if (step.active && step.accent === true) {
+                  checked++;
+                  if (step.velocity !== 127) mismatched++;
+                  if (checked >= 200) break outer;
+                }
               }
             }
           }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
-    }
-    expect(checked).toBeGreaterThan(0);
-    expect(mismatched).toBe(0);
-  });
-});
+      expect(checked).toBeGreaterThan(0);
+      expect(mismatched).toBe(0);
+    });
+  }
+);

@@ -22,7 +22,10 @@ import {
   phaseCorrelation as lufsPhaseCorrelation,
   lrImbalanceDb as lufsLrImbalanceDb,
 } from "./LufsAnalyzer";
-import { PerChannelLufsAnalyzer, type PerChannelLufsResult } from "./PerChannelLufsAnalyzer";
+import {
+  PerChannelLufsAnalyzer,
+  type PerChannelLufsResult,
+} from "./PerChannelLufsAnalyzer";
 // v3.123.0 — Pattern Crossfade helpers (pure, side-effect-frei).
 import {
   type CrossfadeConfig as PatternCrossfadeConfig,
@@ -30,7 +33,12 @@ import {
   getCrossfadeProgress as getCrossfadeProgressFn,
   crossfadeGain as crossfadeGainFn,
 } from "../utils/patternCrossfade";
-import { type ArpOutputMode, type ArpStep, arpStepAt, arpMidiToFreq } from "../utils/arpeggiator";
+import {
+  type ArpOutputMode,
+  type ArpStep,
+  arpStepAt,
+  arpMidiToFreq,
+} from "../utils/arpeggiator";
 // TASK-252-FOLLOWUP / TASK-258: kanonische reine Positions-Formel (geteilt mit
 // rAF-Tick + getAudioTrackPosition). Liegt jetzt im neutralen Blattmodul
 // utils/audioLanePosition — die Audio-Schicht greift NICHT mehr in components/
@@ -40,7 +48,11 @@ import { computeAudioTrackPos01 } from "../utils/audioLanePosition";
 import { MidiClockOut } from "./MidiClockOut";
 import { MidiNoteOut, type MidiPartConfig } from "./MidiNoteOut";
 import { MidiClickOut, type MidiClickConfig } from "./MidiClickOut";
-import { AudioRecorder, type RecordingResult, MAX_SIMULTANEOUS_RECORDINGS } from "./AudioRecorder";
+import {
+  AudioRecorder,
+  type RecordingResult,
+  MAX_SIMULTANEOUS_RECORDINGS,
+} from "./AudioRecorder";
 import { LiveRecorder, type LiveRecordingResult } from "./LiveRecorder";
 import {
   AudioInputRecorder,
@@ -71,6 +83,7 @@ import {
   updateContextLatency as _perfUpdateContextLatency,
   setSchedulerInterval as _perfSetSchedulerInterval,
 } from "../store/useAudioPerformanceStore";
+import { getAudioOutputDeviceId } from "../store/useAudioOutputStore";
 // v3.79.1: Sub-Mix-Bus-Routing (Audio-Wiring).
 // Der Store (v3.79.0) liefert die State-Layer, AudioEngine verdrahtet Channels
 // auf Bus-Gain-Nodes statt direkt zum Master.
@@ -107,7 +120,7 @@ export interface ModMatrixEntry {
   id: string;
   source: ModSource;
   target: ModTarget;
-  amount: number;    // -1..+1 (bipolar)
+  amount: number; // -1..+1 (bipolar)
   enabled: boolean;
 }
 
@@ -142,9 +155,9 @@ export interface ChannelFx {
   // Filter
   filterEnabled: boolean;
   filterType: "lowpass" | "highpass" | "bandpass" | "notch";
-  filterFreq: number;      // 20–20000 Hz
-  filterQ: number;         // 0.1–20
-  filterGain: number;      // dB (nur für peaking/shelf)
+  filterFreq: number; // 20–20000 Hz
+  filterQ: number; // 0.1–20
+  filterGain: number; // dB (nur für peaking/shelf)
 
   // Distortion
   distortionEnabled: boolean;
@@ -153,24 +166,24 @@ export interface ChannelFx {
   // Compressor
   compressorEnabled: boolean;
   compressorThreshold: number; // -60–0 dB
-  compressorRatio: number;     // 1–20
-  compressorAttack: number;    // 0–1 s
-  compressorRelease: number;   // 0–1 s
+  compressorRatio: number; // 1–20
+  compressorAttack: number; // 0–1 s
+  compressorRelease: number; // 0–1 s
 
   // Delay
   delayEnabled: boolean;
-  delayTime: number;    // 0–2 s
+  delayTime: number; // 0–2 s
   delayFeedback: number; // 0–0.95
-  delayMix: number;     // 0–1 (Wet-Level)
+  delayMix: number; // 0–1 (Wet-Level)
 
   // Reverb
   reverbEnabled: boolean;
-  reverbDecay: number;  // 0.1–10 s
-  reverbMix: number;    // 0–1 (Wet-Level)
+  reverbDecay: number; // 0.1–10 s
+  reverbMix: number; // 0–1 (Wet-Level)
 
   // EQ (3-Band)
   eqEnabled: boolean;
-  eqLow: number;   // dB -15..+15
+  eqLow: number; // dB -15..+15
   eqMid: number;
   eqHigh: number;
 }
@@ -196,43 +209,62 @@ export interface FxParamRange {
 
 export const FX_PARAM_RANGES: ReadonlyArray<FxParamRange> = [
   // Filter (kein filterType — das ist enum, nicht skalierbar)
-  { param: "filterFreq",          label: "Filter Cutoff",    min: 20,    max: 20000, exponential: true },
-  { param: "filterQ",             label: "Filter Resonance", min: 0.1,   max: 20 },
-  { param: "filterGain",          label: "Filter Gain",      min: -15,   max: 15 },
+  {
+    param: "filterFreq",
+    label: "Filter Cutoff",
+    min: 20,
+    max: 20000,
+    exponential: true,
+  },
+  { param: "filterQ", label: "Filter Resonance", min: 0.1, max: 20 },
+  { param: "filterGain", label: "Filter Gain", min: -15, max: 15 },
   // Distortion
-  { param: "distortionAmount",    label: "Distortion Drive", min: 0,     max: 400 },
+  { param: "distortionAmount", label: "Distortion Drive", min: 0, max: 400 },
   // Compressor
-  { param: "compressorThreshold", label: "Comp Threshold",   min: -60,   max: 0 },
-  { param: "compressorRatio",     label: "Comp Ratio",       min: 1,     max: 20 },
-  { param: "compressorAttack",    label: "Comp Attack",      min: 0,     max: 1 },
-  { param: "compressorRelease",   label: "Comp Release",     min: 0,     max: 1 },
+  { param: "compressorThreshold", label: "Comp Threshold", min: -60, max: 0 },
+  { param: "compressorRatio", label: "Comp Ratio", min: 1, max: 20 },
+  { param: "compressorAttack", label: "Comp Attack", min: 0, max: 1 },
+  { param: "compressorRelease", label: "Comp Release", min: 0, max: 1 },
   // Delay
-  { param: "delayTime",           label: "Delay Time",       min: 0,     max: 2 },
-  { param: "delayFeedback",       label: "Delay Feedback",   min: 0,     max: 0.95 },
-  { param: "delayMix",            label: "Delay Wet",        min: 0,     max: 1 },
+  { param: "delayTime", label: "Delay Time", min: 0, max: 2 },
+  { param: "delayFeedback", label: "Delay Feedback", min: 0, max: 0.95 },
+  { param: "delayMix", label: "Delay Wet", min: 0, max: 1 },
   // Reverb
-  { param: "reverbDecay",         label: "Reverb Decay",     min: 0.1,   max: 10 },
-  { param: "reverbMix",           label: "Reverb Wet",       min: 0,     max: 1 },
+  { param: "reverbDecay", label: "Reverb Decay", min: 0.1, max: 10 },
+  { param: "reverbMix", label: "Reverb Wet", min: 0, max: 1 },
   // EQ (3-Band)
-  { param: "eqLow",               label: "EQ Low",           min: -15,   max: 15 },
-  { param: "eqMid",               label: "EQ Mid",           min: -15,   max: 15 },
-  { param: "eqHigh",              label: "EQ High",          min: -15,   max: 15 },
+  { param: "eqLow", label: "EQ Low", min: -15, max: 15 },
+  { param: "eqMid", label: "EQ Mid", min: -15, max: 15 },
+  { param: "eqHigh", label: "EQ High", min: -15, max: 15 },
 ] as const;
 
 export type FxParamKey =
-  | "filterFreq" | "filterQ" | "filterGain"
+  | "filterFreq"
+  | "filterQ"
+  | "filterGain"
   | "distortionAmount"
-  | "compressorThreshold" | "compressorRatio" | "compressorAttack" | "compressorRelease"
-  | "delayTime" | "delayFeedback" | "delayMix"
-  | "reverbDecay" | "reverbMix"
-  | "eqLow" | "eqMid" | "eqHigh";
+  | "compressorThreshold"
+  | "compressorRatio"
+  | "compressorAttack"
+  | "compressorRelease"
+  | "delayTime"
+  | "delayFeedback"
+  | "delayMix"
+  | "reverbDecay"
+  | "reverbMix"
+  | "eqLow"
+  | "eqMid"
+  | "eqHigh";
 
 /**
  * Wandelt einen MIDI-Wert (0-127) in den param-spezifischen Range um.
  * Falls `exponential` aktiv → log-scale (für filterFreq u.ä.).
  * Pure Funktion, in Tests nutzbar.
  */
-export function midiValueToFxParam(midiValue: number, range: FxParamRange): number {
+export function midiValueToFxParam(
+  midiValue: number,
+  range: FxParamRange
+): number {
   const v = Math.max(0, Math.min(127, midiValue)) / 127; // 0..1
   if (range.exponential) {
     // exp-Mapping: t=0 → min, t=1 → max
@@ -244,7 +276,7 @@ export function midiValueToFxParam(midiValue: number, range: FxParamRange): numb
 
 /** Lookup für FxParamRange by param-key. */
 export function findFxParamRange(param: FxParamKey): FxParamRange | undefined {
-  return FX_PARAM_RANGES.find((r) => r.param === param);
+  return FX_PARAM_RANGES.find(r => r.param === param);
 }
 
 export const DEFAULT_CHANNEL_FX: ChannelFx = {
@@ -283,23 +315,23 @@ export const DEFAULT_CHANNEL_FX: ChannelFx = {
  * Enthält temporäre Parameterwerte die nur für diesen Step gelten.
  */
 export interface StepParamLock {
-  filterFreq?: number;      // Hz
+  filterFreq?: number; // Hz
   filterQ?: number;
-  volume?: number;          // 0–1 (überschreibt Part.volume nur für diesen Step)
-  pan?: number;             // -1..+1
-  reverbSend?: number;      // 0–1
-  delaySend?: number;       // 0–1
-  distortionAmount?: number;// 0–400
-  pitch?: number;           // Halbtöne (überschreibt step.pitch)
+  volume?: number; // 0–1 (überschreibt Part.volume nur für diesen Step)
+  pan?: number; // -1..+1
+  reverbSend?: number; // 0–1
+  delaySend?: number; // 0–1
+  distortionAmount?: number; // 0–400
+  pitch?: number; // Halbtöne (überschreibt step.pitch)
 }
 
 export interface StepData {
   active: boolean;
-  velocity?: number;       // 0–127
-  pitch?: number;          // Halbtöne
-  probability?: number;    // 0–100, default 100
+  velocity?: number; // 0–127
+  pitch?: number; // Halbtöne
+  probability?: number; // 0–100, default 100
   condition?: StepCondition;
-  reverse?: boolean;       // Sample rückwärts abspielen
+  reverse?: boolean; // Sample rückwärts abspielen
   /** Parameter Lock: überschreiben FX-Werte nur für diesen Step */
   paramLock?: StepParamLock;
   /**
@@ -447,8 +479,8 @@ export interface PartData {
   sampleName?: string;
   muted: boolean;
   soloed: boolean;
-  volume: number;      // 0–1
-  pan: number;         // -1..+1
+  volume: number; // 0–1
+  pan: number; // -1..+1
   /** Step-Auflösung für diesen Kanal (überschreibt Pattern-Default) */
   stepResolution?: StepResolution;
   /**
@@ -492,10 +524,18 @@ export interface FollowAction {
   barsBeforeSwitch: number;
 }
 
+/**
+ * Synthstudio-INTERNES Pattern-Step-Modell. 128 ist ein reines
+ * Sequencer/UI-Feature (v3.285) — KEIN Hardware-Format-Limit. Konverter zu
+ * echten Korg-Formaten (.e2spat / E2-SysEx / ESX) clampen weiterhin auf ≤64,
+ * dem Hardware-Maximum. Nutze diesen Alias nur für das interne App-Modell.
+ */
+export type StepCount = 16 | 32 | 64 | 128;
+
 export interface PatternData {
   id: string;
   name: string;
-  stepCount: 16 | 32 | 64;
+  stepCount: StepCount;
   /** Standard-Step-Auflösung für alle Parts (kann pro Part überschrieben werden) */
   stepResolution: StepResolution;
   /** Eigenes BPM (null = globales BPM verwenden) */
@@ -613,7 +653,10 @@ class AudioEngineClass {
    * Crossfade) hart ausgefadet, damit lange Tails (z.B. Rumble-Kicks) sich
    * nicht über den Wechsel hinweg überlappen.
    */
-  private _activeVoices = new Set<{ src: AudioBufferSourceNode; gain: GainNode }>();
+  private _activeVoices = new Set<{
+    src: AudioBufferSourceNode;
+    gain: GainNode;
+  }>();
   /**
    * v3.267.0: Obergrenze gleichzeitiger Sample-Voices. Verhindert, dass
    * schnelles Re-Triggern vieler langer Samples die Voices unbegrenzt
@@ -634,9 +677,21 @@ class AudioEngineClass {
   /** v3.263.0: zuletzt im Scheduler gesehene Pattern-ID (Wechsel-Erkennung). */
   private _lastSchedPatternId: string | null = null;
   /** targetPartId → SidechainSettings */
-  private _sidechainSettings = new Map<string, { enabled: boolean; sourcePartId: string | null; amount: number; attack: number; release: number }>();
+  private _sidechainSettings = new Map<
+    string,
+    {
+      enabled: boolean;
+      sourcePartId: string | null;
+      amount: number;
+      attack: number;
+      release: number;
+    }
+  >();
   /** Aktive Granular Engines pro Part */
-  private _granularEngines = new Map<string, import("./GranularEngine").GranularEngine>();
+  private _granularEngines = new Map<
+    string,
+    import("./GranularEngine").GranularEngine
+  >();
   private reverbBuffers = new Map<string, AudioBuffer>(); // decay → buffer
   /**
    * Lazy SynthEngine-Instanz für Macro-LFO-Cache (TASK-117).
@@ -652,16 +707,25 @@ class AudioEngineClass {
    * vorherige Step `slide=true` hatte. Wird im Synth-Trigger ausgewertet damit
    * der nächste Note-On bei aktivem Slide vom alten Pitch herangleitet.
    */
-  private _partSlideState = new Map<string, { lastFreq: number; lastHadSlide: boolean }>();
+  private _partSlideState = new Map<
+    string,
+    { lastFreq: number; lastHadSlide: boolean }
+  >();
 
   // ─── Audio-Track Channels (externe Dateien: Vocals/Songs) ──────────────────
   private audioTrackSources = new Map<string, AudioBufferSourceNode>();
   private audioTrackBuffers = new Map<string, AudioBuffer>();
   /** Zeitpunkt zu dem ein Track gestartet wurde + sein offset im Buffer. */
-  private audioTrackStartTimes = new Map<string, { ctxStart: number; offsetSec: number }>();
+  private audioTrackStartTimes = new Map<
+    string,
+    { ctxStart: number; offsetSec: number }
+  >();
   /** Aktive rAF-IDs für Position-Updates. */
   private audioTrackPositionRaf = new Map<string, number>();
-  private audioTrackPositionListeners = new Map<string, Set<(pos01: number, sec: number) => void>>();
+  private audioTrackPositionListeners = new Map<
+    string,
+    Set<(pos01: number, sec: number) => void>
+  >();
   private audioTrackEndedListeners = new Map<string, Set<() => void>>();
   /** Track-Metadaten (für playAllRegisteredAudioTracks + setBpm sync). */
   private audioTrackData = new Map<string, AudioTrackChannelData>();
@@ -683,14 +747,17 @@ class AudioEngineClass {
    */
   private audioTrackXfadeGains = new Map<string, GainNode>();
   /** v3.72.0: Bookkeeping für rescheduling der Crossfade-Hüllkurve. */
-  private audioTrackXfadeMeta = new Map<string, {
-    /** Wann der nächste Schedule-Pass nötig ist (ctx.currentTime in Sekunden). */
-    nextScheduleAt: number;
-    /** Loop-Period in Sekunden (auf playbackRate normalisiert). */
-    loopPeriodSec: number;
-    /** Anzahl der bereits scheduled cycles seit start. */
-    scheduledCount: number;
-  }>();
+  private audioTrackXfadeMeta = new Map<
+    string,
+    {
+      /** Wann der nächste Schedule-Pass nötig ist (ctx.currentTime in Sekunden). */
+      nextScheduleAt: number;
+      /** Loop-Period in Sekunden (auf playbackRate normalisiert). */
+      loopPeriodSec: number;
+      /** Anzahl der bereits scheduled cycles seit start. */
+      scheduledCount: number;
+    }
+  >();
 
   // ─── Cross-Store Solo (FOLLOWUP-102 / B) ───────────────────────────────────
   /**
@@ -981,7 +1048,11 @@ class AudioEngineClass {
   private positionCallbacks: PositionCallback[] = [];
   private patternGetter: (() => PatternData) | null = null;
   private patternSwitchCallback: ((patternId: string) => void) | null = null;
-  private melodicGetter: ((partId: string) => { active: boolean; note: number; velocity: number }[] | undefined) | null = null;
+  private melodicGetter:
+    | ((
+        partId: string
+      ) => { active: boolean; note: number; velocity: number }[] | undefined)
+    | null = null;
 
   // Global Transpose (Halbtöne, -24..+24) – wird auf melodische Trigger angewendet
   private _globalTranspose = 0;
@@ -1023,9 +1094,15 @@ class AudioEngineClass {
   private _metronomOscType: OscillatorType = "sine";
   private _metronomSubdivision: "beat" | "eighth" | "sixteenth" = "beat";
 
-  get isPlaying() { return this._isPlaying; }
-  get bpm() { return this._bpm; }
-  get currentStep() { return this._currentStep; }
+  get isPlaying() {
+    return this._isPlaying;
+  }
+  get bpm() {
+    return this._bpm;
+  }
+  get currentStep() {
+    return this._currentStep;
+  }
 
   async init(): Promise<void> {
     if (this.ctx) return;
@@ -1067,20 +1144,21 @@ class AudioEngineClass {
     // No-Click-Bypass-Crossfade.
     this._masterLimiter = this.ctx.createDynamicsCompressor();
     this._masterLimiter.threshold.value = -1;
-    this._masterLimiter.knee.value      = 0;
-    this._masterLimiter.ratio.value     = 20;
+    this._masterLimiter.knee.value = 0;
+    this._masterLimiter.ratio.value = 20;
     // v3.77.0: Attack auf 1ms reduziert (war 3ms) — zusammen mit 5ms
     // Lookahead-Delay vor dem Compressor entspricht die Reaktion ~6ms
     // "Vorlauf" über die Audio-Sample-Position an der Destination.
-    this._masterLimiter.attack.value    = 0.001;
-    this._masterLimiter.release.value   = 0.05;
+    this._masterLimiter.attack.value = 0.001;
+    this._masterLimiter.release.value = 0.05;
     this._masterLimiterGain = this.ctx.createGain();
-    this._masterLimiterGain.gain.value  = 1.0;
+    this._masterLimiterGain.gain.value = 1.0;
     // v3.77.0: Lookahead-Delay vor dem Limiter (5ms). Max-Delay-Headroom
     // 0.02s damit eine spätere v3.78-Erhöhung auf bis zu 20ms ohne neue
     // Node-Allokation möglich bleibt.
     this._masterLimiterLookahead = this.ctx.createDelay(0.02);
-    this._masterLimiterLookahead.delayTime.value = this.MASTER_LIMITER_LOOKAHEAD_SEC;
+    this._masterLimiterLookahead.delayTime.value =
+      this.MASTER_LIMITER_LOOKAHEAD_SEC;
     // v3.77.0: Wet/Dry-Crossfade-Pfad. Beide Gains werden konstant
     // konnektiert — Bypass-Switch nur via setTargetAtTime / Curve auf gain.
     this._masterLimiterWet = this.ctx.createGain();
@@ -1124,8 +1202,12 @@ class AudioEngineClass {
         this._masterLimiterDry.connect(splitter);
         splitter.connect(this._lufsAnalyserNodeL, 0);
         splitter.connect(this._lufsAnalyserNodeR, 1);
-        this._lufsScratchBuffer  = new Float32Array(this._lufsAnalyserNodeL.fftSize);
-        this._lufsScratchBufferR = new Float32Array(this._lufsAnalyserNodeR.fftSize);
+        this._lufsScratchBuffer = new Float32Array(
+          this._lufsAnalyserNodeL.fftSize
+        );
+        this._lufsScratchBufferR = new Float32Array(
+          this._lufsAnalyserNodeR.fftSize
+        );
         this._lufsAnalyser = new LufsAnalyzer({
           sampleRate: this.ctx.sampleRate,
           channelCount: 2, // v3.101: echtes Stereo!
@@ -1141,16 +1223,18 @@ class AudioEngineClass {
           sampleRate: this.ctx.sampleRate,
           channelCount: 1,
         });
-        this._lufsScratchBuffer = new Float32Array(this._lufsAnalyserNode.fftSize);
+        this._lufsScratchBuffer = new Float32Array(
+          this._lufsAnalyserNode.fftSize
+        );
       }
     } catch {
       // Mock-AudioContext ohne createAnalyser/createChannelSplitter → LUFS disabled.
-      this._lufsAnalyserNode  = null;
+      this._lufsAnalyserNode = null;
       this._lufsAnalyserNodeL = null;
       this._lufsAnalyserNodeR = null;
-      this._lufsSplitter      = null;
-      this._lufsAnalyser      = null;
-      this._lufsScratchBuffer  = null;
+      this._lufsSplitter = null;
+      this._lufsAnalyser = null;
+      this._lufsScratchBuffer = null;
       this._lufsScratchBufferR = null;
     }
 
@@ -1203,24 +1287,56 @@ class AudioEngineClass {
     // im Store die Bezugsgröße für CPU% (callback-ms / interval-ms × 100).
     try {
       _perfSetSchedulerInterval(this.SCHEDULE_INTERVAL);
-      const base = (this.ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
-      const out = (this.ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
+      const base =
+        (this.ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
+      const out =
+        (this.ctx as AudioContext & { outputLatency?: number }).outputLatency ??
+        0;
       _perfUpdateContextLatency(base * 1000, out * 1000);
     } catch {
       /* ignore */
     }
+
+    // v-audio-out: persistiertes Ausgabegerät (z.B. Scarlett 2i2) anwenden.
+    // Nur wenn abweichend vom System-Standard — setSinkto("") ist ohnehin Default.
+    const outId = getAudioOutputDeviceId();
+    if (outId) void this.setOutputDevice(outId);
   }
 
   /**
    * v3.25.0: Liefert aktuelle AudioContext-Latency-Snapshot in ms (für die
    * UI um auch außerhalb des Scheduler-Loops aktuelle Werte abzulesen).
    */
-  getAudioPerformanceSnapshot(): { baseLatencyMs: number; outputLatencyMs: number } {
+  getAudioPerformanceSnapshot(): {
+    baseLatencyMs: number;
+    outputLatencyMs: number;
+  } {
     const ctx = this.ctx;
     if (!ctx) return { baseLatencyMs: 0, outputLatencyMs: 0 };
-    const base = (ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
-    const out = (ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
+    const base =
+      (ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
+    const out =
+      (ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
     return { baseLatencyMs: base * 1000, outputLatencyMs: out * 1000 };
+  }
+
+  /**
+   * Routet die Audio-Ausgabe auf ein bestimmtes Gerät (z.B. Scarlett 2i2) via
+   * `AudioContext.setSinkId` (Chromium/Electron, LIVE — kein Reinit nötig).
+   * `deviceId === ""` = System-Standard. Liefert true bei Erfolg, false wenn
+   * nicht unterstützt (älterer Browser) oder das Gerät nicht setzbar war.
+   */
+  async setOutputDevice(deviceId: string): Promise<boolean> {
+    const ctx = this.ctx as
+      | (AudioContext & { setSinkId?: (id: string) => Promise<void> })
+      | null;
+    if (!ctx || typeof ctx.setSinkId !== "function") return false;
+    try {
+      await ctx.setSinkId(deviceId ?? "");
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async resume(): Promise<void> {
@@ -1247,19 +1363,37 @@ class AudioEngineClass {
   async reinit(): Promise<void> {
     // 1) Transport sicher stoppen — schließt auch MIDI-Clock/-Note-Out flush.
     if (this._isPlaying) {
-      try { this.stop(); } catch { /* swallow */ }
+      try {
+        this.stop();
+      } catch {
+        /* swallow */
+      }
     }
     // 2) Granular-Engines stoppen — sie halten eigene Refs auf Nodes.
     try {
-      this._granularEngines.forEach((g) => { try { g.stop(); } catch { /* swallow */ } });
+      this._granularEngines.forEach(g => {
+        try {
+          g.stop();
+        } catch {
+          /* swallow */
+        }
+      });
       this._granularEngines.clear();
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
     // 3) Live-Inputs abreißen — MediaStreamTracks werden via stop() befreit.
     try {
-      this.getAttachedLiveInputChannelIds().forEach((id) => {
-        try { this.detachLiveInput(id); } catch { /* swallow */ }
+      this.getAttachedLiveInputChannelIds().forEach(id => {
+        try {
+          this.detachLiveInput(id);
+        } catch {
+          /* swallow */
+        }
       });
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
     // 4) Caches leeren — sonst hängen Nodes am alten Context.
     this.channelNodes.clear();
     this._channelHighWater = 0;
@@ -1283,20 +1417,76 @@ class AudioEngineClass {
     // syncSubMixState() neu erzeugt wenn der Store noch Buses hat.
     // Alle FX-Nodes disconnecten damit sie GC-frei werden.
     for (const bus of this._subMixBusNodes.values()) {
-      try { bus.input.disconnect(); } catch { /* ignore */ }
-      try { bus.eqLow.disconnect(); } catch { /* ignore */ }
-      try { bus.eqMid.disconnect(); } catch { /* ignore */ }
-      try { bus.eqHigh.disconnect(); } catch { /* ignore */ }
-      try { bus.compIn.disconnect(); } catch { /* ignore */ }
-      try { bus.compressor.disconnect(); } catch { /* ignore */ }
-      try { bus.compWet.disconnect(); } catch { /* ignore */ }
-      try { bus.compDry.disconnect(); } catch { /* ignore */ }
-      try { bus.compMix.disconnect(); } catch { /* ignore */ }
-      try { bus.postGain.disconnect(); } catch { /* ignore */ }
-      try { bus.gain.disconnect(); } catch { /* ignore */ }
-      try { bus.panner.disconnect(); } catch { /* ignore */ }
-      try { bus.reverbSend.disconnect(); } catch { /* ignore */ }
-      try { bus.delaySend.disconnect(); } catch { /* ignore */ }
+      try {
+        bus.input.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.eqLow.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.eqMid.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.eqHigh.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.compIn.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.compressor.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.compWet.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.compDry.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.compMix.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.postGain.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.gain.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.panner.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.reverbSend.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        bus.delaySend.disconnect();
+      } catch {
+        /* ignore */
+      }
     }
     this._subMixBusNodes.clear();
     // Assignments bleiben — sie werden beim nächsten Channel-Get bzw.
@@ -1305,19 +1495,27 @@ class AudioEngineClass {
     this._outputAnalyser = null;
     // v3.78.0: LUFS-Tap aufräumen.
     if (this._lufsPollingTimer) {
-      try { clearInterval(this._lufsPollingTimer); } catch { /* swallow */ }
+      try {
+        clearInterval(this._lufsPollingTimer);
+      } catch {
+        /* swallow */
+      }
       this._lufsPollingTimer = null;
     }
     this._lufsAnalyserNode = null;
     this._lufsAnalyserNodeL = null;
     this._lufsAnalyserNodeR = null;
-    this._lufsSplitter      = null;
-    this._lufsAnalyser      = null;
-    this._lufsScratchBuffer  = null;
+    this._lufsSplitter = null;
+    this._lufsAnalyser = null;
+    this._lufsScratchBuffer = null;
     this._lufsScratchBufferR = null;
     // 5) AudioContext schließen (kein await — close ist robust gegen state).
     if (this.ctx) {
-      try { await this.ctx.close(); } catch { /* swallow — already closed */ }
+      try {
+        await this.ctx.close();
+      } catch {
+        /* swallow — already closed */
+      }
       this.ctx = null;
     }
     // 6) Bufferleichen sind noch im Cache; sie werden vom GC erst entfernt
@@ -1405,7 +1603,7 @@ class AudioEngineClass {
     // Wenn bereits spielend: hart auf Step 0 zurueck.
     if (this._isPlaying) {
       this._currentStep = 0;
-      this.positionCallbacks.forEach((cb) => cb(0));
+      this.positionCallbacks.forEach(cb => cb(0));
       return;
     }
     // Sonst klassisch starten — wir leiten ueber play(0) um damit der
@@ -1456,7 +1654,8 @@ class AudioEngineClass {
    * Bei 32er-Pattern: ×2. Wraparound (Modulo) macht `seekToStep` selbst.
    */
   applyExternalPosition(midiBeats: number): void {
-    if (typeof midiBeats !== "number" || !isFinite(midiBeats) || midiBeats < 0) return;
+    if (typeof midiBeats !== "number" || !isFinite(midiBeats) || midiBeats < 0)
+      return;
     const totalSteps = Math.max(1, this._steps);
     const step = Math.round(midiBeats * (totalSteps / 16));
     try {
@@ -1480,12 +1679,17 @@ class AudioEngineClass {
    * daher reicht das fuer 99% der Setups.
    */
   applyMtcLocate(positionMs: number): void {
-    if (typeof positionMs !== "number" || !isFinite(positionMs) || positionMs < 0) return;
+    if (
+      typeof positionMs !== "number" ||
+      !isFinite(positionMs) ||
+      positionMs < 0
+    )
+      return;
     const bpm = this._bpm > 0 ? this._bpm : 120;
     const totalSteps = Math.max(1, this._steps);
     // 16th-note grid (Steps): bei 16-Pattern = 4 Steps pro Beat = 16 pro Bar.
     // Dauer pro Step (ms) = 60_000 / bpm / (totalSteps / 4)
-    const stepDurMs = (60_000 / bpm) / (totalSteps / 4);
+    const stepDurMs = 60_000 / bpm / (totalSteps / 4);
     if (stepDurMs <= 0) return;
     const totalStep = Math.round(positionMs / stepDurMs);
     const wrapped = ((totalStep % totalSteps) + totalSteps) % totalSteps;
@@ -1509,7 +1713,9 @@ class AudioEngineClass {
   private _tempoMapResolver: ((atBar: number) => number | null) | null = null;
 
   /** v3.95.0: setzt oder loescht den Tempo-Map-Resolver. */
-  setTempoMapResolver(resolver: ((atBar: number) => number | null) | null): void {
+  setTempoMapResolver(
+    resolver: ((atBar: number) => number | null) | null
+  ): void {
     this._tempoMapResolver = resolver;
   }
 
@@ -1536,7 +1742,8 @@ class AudioEngineClass {
       const stepsPerBar = total === 16 ? 16 : total;
       const bar = Math.floor(absStep / stepsPerBar);
       const resolved = this._tempoMapResolver(bar);
-      if (typeof resolved !== "number" || !Number.isFinite(resolved)) return null;
+      if (typeof resolved !== "number" || !Number.isFinite(resolved))
+        return null;
       return Math.max(20, Math.min(300, resolved));
     } catch {
       return null;
@@ -1596,8 +1803,12 @@ class AudioEngineClass {
   get stepCount(): number {
     return this._steps;
   }
-  setSteps(steps: 16 | 32 | 64) { this._steps = steps; }
-  setStepResolution(res: StepResolution) { this._stepResolution = res; }
+  setSteps(steps: StepCount) {
+    this._steps = steps;
+  }
+  setStepResolution(res: StepResolution) {
+    this._stepResolution = res;
+  }
 
   setMetronom(
     enabled: boolean,
@@ -1607,7 +1818,7 @@ class AudioEngineClass {
     beatFreq = 800,
     beatsPerBar = 4,
     subdivision: "beat" | "eighth" | "sixteenth" = "beat",
-    oscType: OscillatorType = "sine",
+    oscType: OscillatorType = "sine"
   ) {
     this._metronomEnabled = enabled;
     this._metronomGain = gain;
@@ -1622,22 +1833,31 @@ class AudioEngineClass {
   setMasterVolume(vol: number) {
     if (this.masterGain) {
       this.masterGain.gain.setTargetAtTime(
-        Math.max(0, Math.min(1, vol)), this.ctx!.currentTime, 0.01
+        Math.max(0, Math.min(1, vol)),
+        this.ctx!.currentTime,
+        0.01
       );
     }
   }
 
   setReturnTrackVolume(bus: "reverb" | "delay", vol: number) {
-    const target = bus === "reverb" ? this._globalReverbWet : this._globalDelayWet;
+    const target =
+      bus === "reverb" ? this._globalReverbWet : this._globalDelayWet;
     if (!target || !this.ctx) return;
-    target.gain.setTargetAtTime(Math.max(0, Math.min(1, vol)), this.ctx.currentTime, 0.01);
+    target.gain.setTargetAtTime(
+      Math.max(0, Math.min(1, vol)),
+      this.ctx.currentTime,
+      0.01
+    );
   }
 
   setReturnTrackMuted(bus: "reverb" | "delay", muted: boolean) {
     this.setReturnTrackVolume(bus, muted ? 0 : 0.85);
   }
 
-  setPatternGetter(getter: () => PatternData) { this.patternGetter = getter; }
+  setPatternGetter(getter: () => PatternData) {
+    this.patternGetter = getter;
+  }
 
   /** Persistente Kanal-Lautstärke setzen (Mixer-Fader) */
   setChannelVolume(partId: string, vol: number) {
@@ -1676,9 +1896,17 @@ class AudioEngineClass {
     if (!nodes) return;
     const clampedLevel = Math.max(0, Math.min(1, level));
     if (bus === "reverb") {
-      nodes.globalReverbSend.gain.setTargetAtTime(clampedLevel, this.ctx?.currentTime ?? 0, 0.01);
+      nodes.globalReverbSend.gain.setTargetAtTime(
+        clampedLevel,
+        this.ctx?.currentTime ?? 0,
+        0.01
+      );
     } else {
-      nodes.globalDelaySend.gain.setTargetAtTime(clampedLevel, this.ctx?.currentTime ?? 0, 0.01);
+      nodes.globalDelaySend.gain.setTargetAtTime(
+        clampedLevel,
+        this.ctx?.currentTime ?? 0,
+        0.01
+      );
     }
   }
 
@@ -1735,7 +1963,11 @@ class AudioEngineClass {
    * Berechnet wie viele Steps N Bars entsprechen und
    * ändert das interne BPM schrittweise.
    */
-  smoothBpmTransition(targetBpm: number, bars: number, stepCount: 16 | 32 | 64 = 16): void {
+  smoothBpmTransition(
+    targetBpm: number,
+    bars: number,
+    stepCount: StepCount = 16
+  ): void {
     const totalSteps = bars * stepCount;
     if (totalSteps <= 0 || Math.abs(this._bpm - targetBpm) < 0.1) {
       this.setBpm(targetBpm);
@@ -1760,14 +1992,25 @@ class AudioEngineClass {
   syncGlobalDelayToBpm(bpm: number, division: "1/4" | "1/8" | "3/16" = "1/4") {
     if (!this._globalDelayBus || !this.ctx) return;
     const beatDur = 60 / bpm;
-    const delayTime = division === "1/8" ? beatDur / 2 : division === "3/16" ? beatDur * 0.75 : beatDur;
+    const delayTime =
+      division === "1/8"
+        ? beatDur / 2
+        : division === "3/16"
+          ? beatDur * 0.75
+          : beatDur;
     this._globalDelayBus.delayTime.setTargetAtTime(
-      Math.min(1.99, delayTime), this.ctx.currentTime, 0.05
+      Math.min(1.99, delayTime),
+      this.ctx.currentTime,
+      0.05
     );
   }
 
   /** Melodic getter: liefert PitchSteps für eine Part-ID aus dem useMelodicPartStore */
-  setMelodicGetter(getter: (partId: string) => { active: boolean; note: number; velocity: number }[] | undefined) {
+  setMelodicGetter(
+    getter: (
+      partId: string
+    ) => { active: boolean; note: number; velocity: number }[] | undefined
+  ) {
     this.melodicGetter = getter;
   }
 
@@ -1790,7 +2033,9 @@ class AudioEngineClass {
     this._arpMidiSender = sender;
   }
 
-  private _midiOutCallback: ((note: number, velocity: number, partId: string) => void) | null = null;
+  private _midiOutCallback:
+    | ((note: number, velocity: number, partId: string) => void)
+    | null = null;
   private _midiClockCallback: ((pulse: Uint8Array) => void) | null = null;
   /**
    * TASK-254: Konstante MIDI-Clock-Pulse-Bytes (0xF8) als Instanz-Feld vorab-
@@ -1803,11 +2048,15 @@ class AudioEngineClass {
   private readonly _sendMidiClockPulse = (): void => {
     this._midiClockCallback?.(this._midiClockPulseBytes);
   };
-  private _midiProgramChangeCallback: ((program: number, channel: number) => void) | null = null;
-  private _clockPulseCount = 0;  // 24 Pulse per Quarter Note
+  private _midiProgramChangeCallback:
+    | ((program: number, channel: number) => void)
+    | null = null;
+  private _clockPulseCount = 0; // 24 Pulse per Quarter Note
   /** Gestapelte Pattern-IDs die zusätzlich zum Haupt-Pattern abgespielt werden */
   private _stackedPatternIds: Set<string> = new Set();
-  private _followActionCallback: ((action: FollowAction, currentPatternId: string) => void) | null = null;
+  private _followActionCallback:
+    | ((action: FollowAction, currentPatternId: string) => void)
+    | null = null;
   private _barCount = 0;
   /** Insert Chain Nodes pro Kanal (partId → AudioNode[]) */
   private _insertChainNodes = new Map<string, AudioNode[]>();
@@ -1821,7 +2070,9 @@ class AudioEngineClass {
   private _busCompressorIn: GainNode | null = null;
 
   /** Registriert einen Callback für MIDI-Out-Ereignisse (step:trigger). */
-  setMidiOutCallback(cb: ((note: number, velocity: number, partId: string) => void) | null) {
+  setMidiOutCallback(
+    cb: ((note: number, velocity: number, partId: string) => void) | null
+  ) {
     this._midiOutCallback = cb;
   }
 
@@ -1831,7 +2082,9 @@ class AudioEngineClass {
   }
 
   /** Registriert einen MIDI Program-Change-Callback. */
-  setMidiProgramChangeCallback(cb: ((program: number, channel: number) => void) | null) {
+  setMidiProgramChangeCallback(
+    cb: ((program: number, channel: number) => void) | null
+  ) {
     this._midiProgramChangeCallback = cb;
   }
 
@@ -1841,35 +2094,50 @@ class AudioEngineClass {
   }
 
   /** Registriert einen Callback für Follow Actions (Pattern-Ende nach N Bars). */
-  setFollowActionCallback(cb: ((action: FollowAction, currentPatternId: string) => void) | null) {
+  setFollowActionCallback(
+    cb: ((action: FollowAction, currentPatternId: string) => void) | null
+  ) {
     this._followActionCallback = cb;
   }
 
-  resetBarCount() { this._barCount = 0; }
+  resetBarCount() {
+    this._barCount = 0;
+  }
 
   /** Fügt ein Pattern zum Stapel hinzu (wird zusätzlich abgespielt). */
-  addStackedPattern(patternId: string): void { this._stackedPatternIds.add(patternId); }
-  removeStackedPattern(patternId: string): void { this._stackedPatternIds.delete(patternId); }
-  clearStackedPatterns(): void { this._stackedPatternIds.clear(); }
-  getStackedPatternIds(): string[] { return [...this._stackedPatternIds]; }
+  addStackedPattern(patternId: string): void {
+    this._stackedPatternIds.add(patternId);
+  }
+  removeStackedPattern(patternId: string): void {
+    this._stackedPatternIds.delete(patternId);
+  }
+  clearStackedPatterns(): void {
+    this._stackedPatternIds.clear();
+  }
+  getStackedPatternIds(): string[] {
+    return [...this._stackedPatternIds];
+  }
 
   // ─── AudioWorklet laden ───────────────────────────────────────────────────
 
   private async _ensureWorklets(): Promise<void> {
     if (this._workletLoaded || !this.ctx) return;
     try {
-      await this.ctx.audioWorklet.addModule(
-        new URL("./worklets/BitcrusherProcessor.js", import.meta.url)
-      );
-      await this.ctx.audioWorklet.addModule(
-        new URL("./worklets/RingModProcessor.js", import.meta.url)
-      );
-      await this.ctx.audioWorklet.addModule(
-        new URL("./worklets/TimeStretchProcessor.js", import.meta.url)
-      );
+      // v3.291: Worklets aus publicDir per STABILER relativer URL laden (analog
+      // recorder-worklet). Der frühere `new URL("./worklets/X.js",
+      // import.meta.url)` liess Vite die Module als `data:`-URLs inlinen; im
+      // gepackten Build blockt `script-src 'self'` `data:`-Worklet-Module →
+      // "Unable to load a worklet's module". PublicDir-Dateien sind
+      // gleich-origin file://-Scripts und laden unter 'self'.
+      await this.ctx.audioWorklet.addModule("./worklets/BitcrusherProcessor.js");
+      await this.ctx.audioWorklet.addModule("./worklets/RingModProcessor.js");
+      await this.ctx.audioWorklet.addModule("./worklets/TimeStretchProcessor.js");
       this._workletLoaded = true;
     } catch (e) {
-      console.warn("[AudioEngine] AudioWorklet konnte nicht geladen werden:", e);
+      console.warn(
+        "[AudioEngine] AudioWorklet konnte nicht geladen werden:",
+        e
+      );
     }
 
     // v3.44.0 (TASK-239 Phase 1): Built-In Plugin-Manifeste registrieren.
@@ -1887,14 +2155,24 @@ class AudioEngineClass {
   /** Wendet eine Insert-FX-Chain auf einen Kanal an (ersetzt bestehende). */
   async applyInsertChain(
     partId: string,
-    chain: Array<{ type: string; params: Record<string, number | string | boolean>; enabled: boolean }>,
+    chain: Array<{
+      type: string;
+      params: Record<string, number | string | boolean>;
+      enabled: boolean;
+    }>
   ): Promise<void> {
     if (!this.ctx) return;
     await this._ensureWorklets();
 
     // Alte Nodes trennen
     const old = this._insertChainNodes.get(partId) ?? [];
-    old.forEach(n => { try { n.disconnect(); } catch { /* ignore */ } });
+    old.forEach(n => {
+      try {
+        n.disconnect();
+      } catch {
+        /* ignore */
+      }
+    });
     this._insertChainNodes.delete(partId);
 
     const nodes = this._getOrCreateChannelNodes(partId, DEFAULT_CHANNEL_FX);
@@ -1903,7 +2181,11 @@ class AudioEngineClass {
     const active = chain.filter(s => s.enabled);
     if (active.length === 0) {
       // Sicherstellen dass output direkt mit sidechainGain verbunden ist
-      try { nodes.output.disconnect(); } catch { /* ignore */ }
+      try {
+        nodes.output.disconnect();
+      } catch {
+        /* ignore */
+      }
       nodes.output.connect(nodes.panner);
       return;
     }
@@ -1912,7 +2194,11 @@ class AudioEngineClass {
     const insertNodes: AudioNode[] = [];
     let prev: AudioNode = nodes.output;
 
-    try { nodes.output.disconnect(); } catch { /* ignore */ }
+    try {
+      nodes.output.disconnect();
+    } catch {
+      /* ignore */
+    }
 
     for (const slot of active) {
       let node: AudioNode | null = null;
@@ -1921,10 +2207,14 @@ class AudioEngineClass {
         case "bitcrusher":
           if (this._workletLoaded) {
             const n = new AudioWorkletNode(this.ctx, "bitcrusher-processor");
-            const p = slot.params as { bitDepth?: number; sampleReduct?: number; mix?: number };
-            n.parameters.get("bitDepth")!.value    = p.bitDepth    ?? 8;
+            const p = slot.params as {
+              bitDepth?: number;
+              sampleReduct?: number;
+              mix?: number;
+            };
+            n.parameters.get("bitDepth")!.value = p.bitDepth ?? 8;
             n.parameters.get("sampleReduct")!.value = p.sampleReduct ?? 4;
-            n.parameters.get("mix")!.value         = p.mix         ?? 1;
+            n.parameters.get("mix")!.value = p.mix ?? 1;
             node = n;
           }
           break;
@@ -1933,13 +2223,17 @@ class AudioEngineClass {
             const n = new AudioWorkletNode(this.ctx, "ringmod-processor");
             const p = slot.params as { frequency?: number; mix?: number };
             n.parameters.get("frequency")!.value = p.frequency ?? 200;
-            n.parameters.get("mix")!.value       = p.mix       ?? 0.5;
+            n.parameters.get("mix")!.value = p.mix ?? 0.5;
             node = n;
           }
           break;
         case "filter": {
           const f = this.ctx.createBiquadFilter();
-          const p = slot.params as { type?: string; frequency?: number; q?: number };
+          const p = slot.params as {
+            type?: string;
+            frequency?: number;
+            q?: number;
+          };
           f.type = (p.type ?? "lowpass") as BiquadFilterType;
           f.frequency.value = p.frequency ?? 8000;
           f.Q.value = p.q ?? 1;
@@ -1948,21 +2242,29 @@ class AudioEngineClass {
         }
         case "compressor": {
           const c = this.ctx.createDynamicsCompressor();
-          const p = slot.params as { threshold?: number; ratio?: number; attack?: number; release?: number };
+          const p = slot.params as {
+            threshold?: number;
+            ratio?: number;
+            attack?: number;
+            release?: number;
+          };
           c.threshold.value = p.threshold ?? -24;
-          c.ratio.value     = p.ratio     ?? 4;
-          c.attack.value    = p.attack    ?? 0.003;
-          c.release.value   = p.release   ?? 0.25;
+          c.ratio.value = p.ratio ?? 4;
+          c.attack.value = p.attack ?? 0.003;
+          c.release.value = p.release ?? 0.25;
           node = c;
           break;
         }
         case "distortion": {
           const d = this.ctx.createWaveShaper();
-          const amount = Number((slot.params as { amount?: number }).amount ?? 50);
+          const amount = Number(
+            (slot.params as { amount?: number }).amount ?? 50
+          );
           const curve = new Float32Array(256);
           for (let i = 0; i < 256; i++) {
             const x = (i * 2) / 256 - 1;
-            curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+            curve[i] =
+              ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
           }
           d.curve = curve;
           node = d;
@@ -1970,11 +2272,16 @@ class AudioEngineClass {
         }
         case "chorus":
         case "flanger": {
-          const p = slot.params as { rate?: number; depth?: number; feedback?: number; mix?: number };
-          const rate     = p.rate     ?? (slot.type === "chorus" ? 1.5 : 0.5);
-          const depth    = p.depth    ?? (slot.type === "chorus" ? 0.003 : 0.002);
+          const p = slot.params as {
+            rate?: number;
+            depth?: number;
+            feedback?: number;
+            mix?: number;
+          };
+          const rate = p.rate ?? (slot.type === "chorus" ? 1.5 : 0.5);
+          const depth = p.depth ?? (slot.type === "chorus" ? 0.003 : 0.002);
           const feedback = p.feedback ?? (slot.type === "chorus" ? 0.1 : 0.7);
-          const mix      = p.mix      ?? 0.5;
+          const mix = p.mix ?? 0.5;
 
           // Dry/Wet-Mix
           const dryGain = this.ctx.createGain();
@@ -2018,7 +2325,16 @@ class AudioEngineClass {
           // Daher überschreiben wir prev.connect nach der Schleife nicht korrekt —
           // für einen sauberen Ansatz verbinden wir merger direkt zum panner
           // Wir lösen das indem merger am Ende der Loop statt node verwendet wird:
-          insertNodes.push(splitter, delay, dryGain, wetGain, merger, fbGain, lfoGain, lfo);
+          insertNodes.push(
+            splitter,
+            delay,
+            dryGain,
+            wetGain,
+            merger,
+            fbGain,
+            lfoGain,
+            lfo
+          );
           prev.connect(splitter);
           merger.connect(nodes.panner);
           prev = null as unknown as AudioNode; // Signal: nicht nochmal connecten
@@ -2068,7 +2384,11 @@ class AudioEngineClass {
    */
   async applyPluginSlots(
     partId: string,
-    slots: Array<{ pluginId: string; params: Record<string, number>; bypassed?: boolean }>,
+    slots: Array<{
+      pluginId: string;
+      params: Record<string, number>;
+      bypassed?: boolean;
+    }>
   ): Promise<void> {
     if (!this.ctx) return;
 
@@ -2076,7 +2396,11 @@ class AudioEngineClass {
     const existing = this._pluginHosts.get(partId);
     if (existing) {
       for (const h of existing) {
-        try { h.dispose(); } catch { /* ignore */ }
+        try {
+          h.dispose();
+        } catch {
+          /* ignore */
+        }
       }
       this._pluginHosts.delete(partId);
     }
@@ -2084,19 +2408,21 @@ class AudioEngineClass {
     // Plugin-Hosts für jeden Slot async erzeugen. Failed-Loads landen als
     // `null` im Array und werden vor dem Wiring gefiltert.
     const hostsRaw = await Promise.all(
-      slots.map(async (slot) => {
+      slots.map(async slot => {
         const manifest = getPluginManifest(slot.pluginId);
         if (!manifest) {
           console.warn(`[AudioEngine] Unknown plugin id: ${slot.pluginId}`);
           return null;
         }
-        const host = await createPluginHost(this.ctx!, manifest, { params: slot.params });
+        const host = await createPluginHost(this.ctx!, manifest, {
+          params: slot.params,
+        });
         if (!host) return null;
         // Bypass-State direkt setzen — durch den crossfade-Wrapper ist das
         // click-free, der Knoten bleibt im Signalweg verkabelt.
         if (slot.bypassed) host.setBypassed(true, 0); // initial — keine Rampe nötig
         return host;
-      }),
+      })
     );
     const hosts = hostsRaw.filter((h): h is PluginHost => h !== null);
     this._pluginHosts.set(partId, hosts);
@@ -2104,7 +2430,11 @@ class AudioEngineClass {
     // Wiring: nodes.output → plugin[0].in → plugin[0].out → plugin[1].in → ...
     // → plugin[N-1].out → nodes.panner. Bei leerer Chain: output → panner.
     const nodes = this._getOrCreateChannelNodes(partId, DEFAULT_CHANNEL_FX);
-    try { nodes.output.disconnect(); } catch { /* ignore */ }
+    try {
+      nodes.output.disconnect();
+    } catch {
+      /* ignore */
+    }
 
     if (hosts.length === 0) {
       nodes.output.connect(nodes.panner);
@@ -2125,7 +2455,11 @@ class AudioEngineClass {
    */
   async applyPluginSlot(
     partId: string,
-    slot: { pluginId: string; params: Record<string, number>; bypassed?: boolean } | null,
+    slot: {
+      pluginId: string;
+      params: Record<string, number>;
+      bypassed?: boolean;
+    } | null
   ): Promise<void> {
     return this.applyPluginSlots(partId, slot ? [slot] : []);
   }
@@ -2134,7 +2468,12 @@ class AudioEngineClass {
    * Setzt einen einzelnen Plugin-Param zur Laufzeit (für UI-Slider-Drag).
    * v3.45: nutzt optional einen Slot-Index. Default 0 für Legacy-Kompatibilität.
    */
-  setPluginParam(partId: string, paramId: string, value: number, slotIndex: number = 0): void {
+  setPluginParam(
+    partId: string,
+    paramId: string,
+    value: number,
+    slotIndex: number = 0
+  ): void {
     const hosts = this._pluginHosts.get(partId);
     if (!hosts || slotIndex < 0 || slotIndex >= hosts.length) return;
     hosts[slotIndex].setParam(paramId, value);
@@ -2145,7 +2484,12 @@ class AudioEngineClass {
    * Default rampMs=5ms — schnell genug für UI-Responsiveness, lang genug
    * gegen Click-Artefakte.
    */
-  setPluginSlotBypassed(partId: string, slotIndex: number, bypassed: boolean, rampMs: number = 5): void {
+  setPluginSlotBypassed(
+    partId: string,
+    slotIndex: number,
+    bypassed: boolean,
+    rampMs: number = 5
+  ): void {
     const hosts = this._pluginHosts.get(partId);
     if (!hosts || slotIndex < 0 || slotIndex >= hosts.length) return;
     hosts[slotIndex].setBypassed(bypassed, rampMs);
@@ -2167,7 +2511,11 @@ class AudioEngineClass {
   /** Konfiguriert den globalen Bus-Kompressor (Drum Bus). */
   setBusCompressor(settings: {
     enabled: boolean;
-    threshold?: number; ratio?: number; attack?: number; release?: number; makeup?: number;
+    threshold?: number;
+    ratio?: number;
+    attack?: number;
+    release?: number;
+    makeup?: number;
   }): void {
     if (!this.ctx || !this.masterGain) return;
 
@@ -2192,9 +2540,9 @@ class AudioEngineClass {
 
     const c = this._busCompressor;
     c.threshold.value = settings.threshold ?? -18;
-    c.ratio.value     = settings.ratio     ?? 4;
-    c.attack.value    = settings.attack    ?? 0.005;
-    c.release.value   = settings.release   ?? 0.1;
+    c.ratio.value = settings.ratio ?? 4;
+    c.attack.value = settings.attack ?? 0.005;
+    c.release.value = settings.release ?? 0.1;
   }
 
   /** Routet einen Kanal durch den Bus-Kompressor. */
@@ -2202,7 +2550,11 @@ class AudioEngineClass {
     const nodes = this.channelNodes.get(partId);
     if (!nodes || !this.masterGain) return;
 
-    try { nodes.sidechainGain.disconnect(); } catch { /* ignore */ }
+    try {
+      nodes.sidechainGain.disconnect();
+    } catch {
+      /* ignore */
+    }
 
     if (toBus && this._busCompressorIn && this._busCompressorEnabled) {
       nodes.sidechainGain.connect(this._busCompressorIn);
@@ -2275,21 +2627,25 @@ class AudioEngineClass {
     const enabled = fx?.enabled ?? false;
 
     // EQ-3: wenn enabled=false fallen alle Bänder auf 0dB (transparent).
-    const lowGain  = enabled ? (fx?.eq3?.lowGain  ?? 0) : 0;
-    const midGain  = enabled ? (fx?.eq3?.midGain  ?? 0) : 0;
+    const lowGain = enabled ? (fx?.eq3?.lowGain ?? 0) : 0;
+    const midGain = enabled ? (fx?.eq3?.midGain ?? 0) : 0;
     const highGain = enabled ? (fx?.eq3?.highGain ?? 0) : 0;
-    nodeSet.eqLow.gain.setTargetAtTime(lowGain,   now, rampSec);
-    nodeSet.eqMid.gain.setTargetAtTime(midGain,   now, rampSec);
+    nodeSet.eqLow.gain.setTargetAtTime(lowGain, now, rampSec);
+    nodeSet.eqMid.gain.setTargetAtTime(midGain, now, rampSec);
     nodeSet.eqHigh.gain.setTargetAtTime(highGain, now, rampSec);
 
     // Compressor: Wet/Dry-Crossfade (kein disconnect → click-frei).
     const comp = fx?.compressor;
     const compOn = enabled && (comp?.enabled ?? false);
     if (comp) {
-      nodeSet.compressor.threshold.setTargetAtTime(comp.threshold, now, rampSec);
-      nodeSet.compressor.ratio.setTargetAtTime(comp.ratio,         now, rampSec);
-      nodeSet.compressor.attack.setTargetAtTime(comp.attack,       now, rampSec);
-      nodeSet.compressor.release.setTargetAtTime(comp.release,     now, rampSec);
+      nodeSet.compressor.threshold.setTargetAtTime(
+        comp.threshold,
+        now,
+        rampSec
+      );
+      nodeSet.compressor.ratio.setTargetAtTime(comp.ratio, now, rampSec);
+      nodeSet.compressor.attack.setTargetAtTime(comp.attack, now, rampSec);
+      nodeSet.compressor.release.setTargetAtTime(comp.release, now, rampSec);
     }
     nodeSet.compWet.gain.setTargetAtTime(compOn ? 1 : 0, now, rampSec);
     nodeSet.compDry.gain.setTargetAtTime(compOn ? 0 : 1, now, rampSec);
@@ -2302,9 +2658,9 @@ class AudioEngineClass {
 
     // Reverb-Send / Delay-Send — independent von fx.enabled (Send ist eigener Pfad).
     const reverbSend = fx?.reverbSend ?? 0;
-    const delaySend  = fx?.delaySend  ?? 0;
+    const delaySend = fx?.delaySend ?? 0;
     nodeSet.reverbSend.gain.setTargetAtTime(reverbSend, now, rampSec);
-    nodeSet.delaySend.gain.setTargetAtTime(delaySend,   now, rampSec);
+    nodeSet.delaySend.gain.setTargetAtTime(delaySend, now, rampSec);
   }
 
   /**
@@ -2317,7 +2673,7 @@ class AudioEngineClass {
     }
     const ctx = this.ctx;
 
-    const input  = ctx.createGain();
+    const input = ctx.createGain();
     input.gain.value = 1;
 
     // EQ-3 (Channel-FX-konsistent: Lowshelf 200Hz, Peak 1kHz Q=1, Highshelf 4kHz).
@@ -2399,11 +2755,20 @@ class AudioEngineClass {
     }
 
     return {
-      input, eqLow, eqMid, eqHigh,
-      compIn, compressor, compWet, compDry, compMix,
+      input,
+      eqLow,
+      eqMid,
+      eqHigh,
+      compIn,
+      compressor,
+      compWet,
+      compDry,
+      compMix,
       postGain,
-      gain, panner,
-      reverbSend, delaySend,
+      gain,
+      panner,
+      reverbSend,
+      delaySend,
       volume: 0,
     };
   }
@@ -2416,20 +2781,76 @@ class AudioEngineClass {
   removeSubMixBus(busId: string): void {
     const nodeSet = this._subMixBusNodes.get(busId);
     if (!nodeSet) return;
-    try { nodeSet.input.disconnect();      } catch { /* ignore */ }
-    try { nodeSet.eqLow.disconnect();      } catch { /* ignore */ }
-    try { nodeSet.eqMid.disconnect();      } catch { /* ignore */ }
-    try { nodeSet.eqHigh.disconnect();     } catch { /* ignore */ }
-    try { nodeSet.compIn.disconnect();     } catch { /* ignore */ }
-    try { nodeSet.compressor.disconnect(); } catch { /* ignore */ }
-    try { nodeSet.compWet.disconnect();    } catch { /* ignore */ }
-    try { nodeSet.compDry.disconnect();    } catch { /* ignore */ }
-    try { nodeSet.compMix.disconnect();    } catch { /* ignore */ }
-    try { nodeSet.postGain.disconnect();   } catch { /* ignore */ }
-    try { nodeSet.gain.disconnect();       } catch { /* ignore */ }
-    try { nodeSet.panner.disconnect();     } catch { /* ignore */ }
-    try { nodeSet.reverbSend.disconnect(); } catch { /* ignore */ }
-    try { nodeSet.delaySend.disconnect();  } catch { /* ignore */ }
+    try {
+      nodeSet.input.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.eqLow.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.eqMid.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.eqHigh.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.compIn.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.compressor.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.compWet.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.compDry.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.compMix.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.postGain.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.gain.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.panner.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.reverbSend.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      nodeSet.delaySend.disconnect();
+    } catch {
+      /* ignore */
+    }
     this._subMixBusNodes.delete(busId);
     // Channels die noch auf diesen Bus zeigen → unassign + reroute zu master.
     const orphans: string[] = [];
@@ -2468,7 +2889,11 @@ class AudioEngineClass {
   private _reconnectChannelOutput(partId: string): void {
     const nodes = this.channelNodes.get(partId);
     if (!nodes || !this.masterGain) return;
-    try { nodes.sidechainGain.disconnect(); } catch { /* ignore */ }
+    try {
+      nodes.sidechainGain.disconnect();
+    } catch {
+      /* ignore */
+    }
     // Bus-Compressor hat höchste Priorität (existierende v3.x-Logik).
     if (this._busCompressorIn && this._busCompressorEnabled) {
       nodes.sidechainGain.connect(this._busCompressorIn);
@@ -2488,7 +2913,7 @@ class AudioEngineClass {
   syncSubMixState(state: SubMixState): void {
     if (!this.ctx || !this.masterGain) return;
     const wantedBusIds = new Set<string>();
-    const anyBusSolo = state.buses.some((b) => b.solo);
+    const anyBusSolo = state.buses.some(b => b.solo);
     // 1) Anwesende Buses upserten.
     for (const bus of state.buses) {
       wantedBusIds.add(bus.id);
@@ -2566,12 +2991,22 @@ class AudioEngineClass {
   }
 
   /** Setzt die Sidechain-Einstellungen für einen Ziel-Part. */
-  setSidechainSettings(targetPartId: string, settings: { enabled: boolean; sourcePartId: string | null; amount: number; attack: number; release: number }): void {
+  setSidechainSettings(
+    targetPartId: string,
+    settings: {
+      enabled: boolean;
+      sourcePartId: string | null;
+      amount: number;
+      attack: number;
+      release: number;
+    }
+  ): void {
     if (!settings.enabled || !settings.sourcePartId) {
       this._sidechainSettings.delete(targetPartId);
       // Gain auf 1 zurücksetzen
       const nodes = this.channelNodes.get(targetPartId);
-      if (nodes && this.ctx) nodes.sidechainGain.gain.setValueAtTime(1, this.ctx.currentTime);
+      if (nodes && this.ctx)
+        nodes.sidechainGain.gain.setValueAtTime(1, this.ctx.currentTime);
     } else {
       this._sidechainSettings.set(targetPartId, settings);
     }
@@ -2591,7 +3026,11 @@ class AudioEngineClass {
   // benutzen genau einen Sidechain pro Target.
   private _audioSidechainNodes = new Map<
     string,
-    { node: AudioSidechainNode; sourceChannelId: string; targetChannelId: string }
+    {
+      node: AudioSidechainNode;
+      sourceChannelId: string;
+      targetChannelId: string;
+    }
   >();
 
   /**
@@ -2605,7 +3044,7 @@ class AudioEngineClass {
     sourceChannelId: string,
     targetChannelId: string,
     config: AudioSidechainConfig,
-    enabled = true,
+    enabled = true
   ): boolean {
     if (!this.ctx) return false;
     // Idempotent — overwrite wenn bereits vorhanden.
@@ -2620,7 +3059,12 @@ class AudioEngineClass {
 
     // Tap-Source: panner (post Pan, vor Master) — repräsentiert das hörbare Signal
     // des source-Kanals. Modulation auf target.sidechainGain.
-    const node = new AudioSidechainNode(this.ctx, source.panner, target.sidechainGain, config);
+    const node = new AudioSidechainNode(
+      this.ctx,
+      source.panner,
+      target.sidechainGain,
+      config
+    );
     if (enabled) node.enable();
     this._audioSidechainNodes.set(sidechainId, {
       node,
@@ -2643,7 +3087,7 @@ class AudioEngineClass {
 
   updateAudioSidechain(
     sidechainId: string,
-    update: { config?: Partial<AudioSidechainConfig>; enabled?: boolean },
+    update: { config?: Partial<AudioSidechainConfig>; enabled?: boolean }
   ): void {
     const existing = this._audioSidechainNodes.get(sidechainId);
     if (!existing) return;
@@ -2673,7 +3117,10 @@ class AudioEngineClass {
   removeAudioSidechainsForChannel(channelId: string): void {
     const toRemove: string[] = [];
     for (const [id, entry] of this._audioSidechainNodes) {
-      if (entry.sourceChannelId === channelId || entry.targetChannelId === channelId) {
+      if (
+        entry.sourceChannelId === channelId ||
+        entry.targetChannelId === channelId
+      ) {
         toRemove.push(id);
       }
     }
@@ -2683,7 +3130,11 @@ class AudioEngineClass {
   // ─── Granular Synthesizer ─────────────────────────────────────────────────
 
   /** Startet eine Granular-Wolke für einen Kanal. Lädt den Buffer falls nötig. */
-  async startGranular(partId: string, sampleUrl: string, params: import("./GranularEngine").GranularParams): Promise<void> {
+  async startGranular(
+    partId: string,
+    sampleUrl: string,
+    params: import("./GranularEngine").GranularParams
+  ): Promise<void> {
     await this.init();
     if (!this.ctx) return;
 
@@ -2703,7 +3154,10 @@ class AudioEngineClass {
   }
 
   /** Aktualisiert Granular-Parameter während der Wiedergabe. */
-  updateGranularParams(partId: string, params: Partial<import("./GranularEngine").GranularParams>): void {
+  updateGranularParams(
+    partId: string,
+    params: Partial<import("./GranularEngine").GranularParams>
+  ): void {
     this._granularEngines.get(partId)?.updateParams(params);
   }
 
@@ -2751,7 +3205,9 @@ class AudioEngineClass {
 
   onStep(cb: StepCallback) {
     this.stepCallbacks.push(cb);
-    return () => { this.stepCallbacks = this.stepCallbacks.filter(c => c !== cb); };
+    return () => {
+      this.stepCallbacks = this.stepCallbacks.filter(c => c !== cb);
+    };
   }
 
   // ─── MIDI-Clock-Out (TASK-230 / v2.83.0) ─────────────────────────────────
@@ -2793,7 +3249,9 @@ class AudioEngineClass {
    * geben hier nur Bytes raus. Der Sender liest pro Call die aktuelle
    * Config-Map (oder löst die outputId aus dem aufrufenden Kontext).
    */
-  setMidiNoteOutSender(sender: ((outputId: string, bytes: number[]) => void) | null) {
+  setMidiNoteOutSender(
+    sender: ((outputId: string, bytes: number[]) => void) | null
+  ) {
     this._midiNoteOut.setSender(sender);
   }
 
@@ -2827,7 +3285,9 @@ class AudioEngineClass {
    * (Note-On / Note-Off) und muss sie an den entsprechenden Web-MIDI-Output
    * routen. Typischerweise vom useMidi-Hook gebridged.
    */
-  setMidiClickOutSender(sender: ((outputId: string, bytes: number[]) => void) | null) {
+  setMidiClickOutSender(
+    sender: ((outputId: string, bytes: number[]) => void) | null
+  ) {
     this._midiClickOut.setSender(sender);
   }
 
@@ -2854,7 +3314,10 @@ class AudioEngineClass {
    */
   setMidiClickNoteDurationMs(ms: number) {
     if (!Number.isFinite(ms)) return;
-    this._midiClickNoteDurationMs = Math.max(1, Math.min(10_000, Math.round(ms)));
+    this._midiClickNoteDurationMs = Math.max(
+      1,
+      Math.min(10_000, Math.round(ms))
+    );
   }
 
   /** v3.99.0: Aktiviert/deaktiviert den Count-In Pre-Roll bei play(). */
@@ -2875,7 +3338,9 @@ class AudioEngineClass {
 
   onPosition(cb: PositionCallback) {
     this.positionCallbacks.push(cb);
-    return () => { this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb); };
+    return () => {
+      this.positionCallbacks = this.positionCallbacks.filter(c => c !== cb);
+    };
   }
 
   /**
@@ -2889,13 +3354,19 @@ class AudioEngineClass {
    */
   onPlayStateChange(cb: (playing: boolean) => void) {
     this._playStateListeners.add(cb);
-    return () => { this._playStateListeners.delete(cb); };
+    return () => {
+      this._playStateListeners.delete(cb);
+    };
   }
 
   /** Feuert den globalen Play/Stop-Zustand an alle Listener (fehler-isoliert). */
   private _emitPlayState(playing: boolean) {
-    this._playStateListeners.forEach((cb) => {
-      try { cb(playing); } catch { /* ignore listener errors */ }
+    this._playStateListeners.forEach(cb => {
+      try {
+        cb(playing);
+      } catch {
+        /* ignore listener errors */
+      }
     });
   }
 
@@ -2928,13 +3399,16 @@ class AudioEngineClass {
     // Wert. Explizit übergebene fromStep>0 bleiben unverändert.
     const pending = this._pendingStartStep;
     this._pendingStartStep = null;
-    this._currentStep = (fromStep === 0 && pending !== null) ? pending : fromStep;
+    this._currentStep = fromStep === 0 && pending !== null ? pending : fromStep;
     this._nextStepTime = this.ctx.currentTime + 0.05;
 
     // Looper (TASK-235): Transport-Anchor für Bar-Boundary-Quantisierung.
     this._looperEngine.setTransportAnchor(this._nextStepTime);
 
-    this.schedulerTimer = setInterval(() => this._schedule(), this.SCHEDULE_INTERVAL);
+    this.schedulerTimer = setInterval(
+      () => this._schedule(),
+      this.SCHEDULE_INTERVAL
+    );
 
     // MIDI-Clock-Out: sendet 0xFA (Start) und initialisiert den 24-PPQN-Ticker.
     // (TASK-230) — der eigentliche Tick-Send läuft im _schedule()-Loop.
@@ -2972,7 +3446,7 @@ class AudioEngineClass {
     this._dispatchCountInEvent("start", totalBeats, totalBeats);
 
     for (let i = 0; i < totalBeats; i++) {
-      const isAccent = (i % beatsPerBar) === 0;
+      const isAccent = i % beatsPerBar === 0;
       const beatTime = startTime + i * beatDur;
       const delayMs = Math.max(0, (beatTime - this.ctx.currentTime) * 1000);
       const remaining = totalBeats - i;
@@ -2982,9 +3456,15 @@ class AudioEngineClass {
         // Lokales Click-Geraeusch (wenn Metronom enabled oder immer? — wir
         // spielen es immer waehrend Count-In, damit der User die Zaehlung hoert).
         if (this.ctx && this.masterGain) {
-          const freq = isAccent ? this._metronomDownbeatFreq : this._metronomBeatFreq;
+          const freq = isAccent
+            ? this._metronomDownbeatFreq
+            : this._metronomBeatFreq;
           const vol = isAccent ? Math.max(0.2, this._metronomAccent) : 0.5;
-          try { this._playClick(this.ctx.currentTime, vol, freq, isAccent); } catch { /* ignore */ }
+          try {
+            this._playClick(this.ctx.currentTime, vol, freq, isAccent);
+          } catch {
+            /* ignore */
+          }
         }
         // MIDI-Click-Out: stepIndex 0 fuer accent, anderen Beat fuer beat. Wir
         // koennen direkt detectClickKind umgehen und manuell triggern.
@@ -2993,9 +3473,17 @@ class AudioEngineClass {
           // Sauberer: einfach stepIndex=0 (accent) bzw. stepIndex=1*stepsPerBeat (beat)
           // im stepRaster fuer den Beat-Detect Algorithmus. Wir nutzen die
           // bestehende Logik mit einem temporaeren stepIndex.
-          const stepsPerBeat = Math.max(1, Math.round(this._steps / beatsPerBar));
+          const stepsPerBeat = Math.max(
+            1,
+            Math.round(this._steps / beatsPerBar)
+          );
           const fakeStep = isAccent ? 0 : stepsPerBeat;
-          this._midiClickOut.triggerStep(fakeStep, this._steps, beatsPerBar, this._midiClickNoteDurationMs);
+          this._midiClickOut.triggerStep(
+            fakeStep,
+            this._steps,
+            beatsPerBar,
+            this._midiClickNoteDurationMs
+          );
         }
         this._dispatchCountInEvent("tick", remaining, totalBeats);
       }, delayMs);
@@ -3003,7 +3491,10 @@ class AudioEngineClass {
     }
 
     // Nach dem letzten Beat: tatsaechlicher Pattern-Start.
-    const totalDurMs = Math.max(0, (startTime + totalBeats * beatDur - this.ctx.currentTime) * 1000);
+    const totalDurMs = Math.max(
+      0,
+      (startTime + totalBeats * beatDur - this.ctx.currentTime) * 1000
+    );
     const startTid = setTimeout(() => {
       this._preRollTimeouts.delete(startTid);
       if (!this._preRollActive) return;
@@ -3015,19 +3506,28 @@ class AudioEngineClass {
   }
 
   /** v3.99.0: Dispatcht ein 'countin:tick'-Event (UI hoert via window listener). */
-  private _dispatchCountInEvent(phase: "start" | "tick" | "end", remaining: number, total: number) {
-    if (typeof window === "undefined" || typeof CustomEvent === "undefined") return;
+  private _dispatchCountInEvent(
+    phase: "start" | "tick" | "end",
+    remaining: number,
+    total: number
+  ) {
+    if (typeof window === "undefined" || typeof CustomEvent === "undefined")
+      return;
     try {
-      window.dispatchEvent(new CustomEvent("countin:tick", {
-        detail: { phase, remaining, total },
-      }));
-    } catch { /* ignore */ }
+      window.dispatchEvent(
+        new CustomEvent("countin:tick", {
+          detail: { phase, remaining, total },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
   }
 
   stop() {
     // v3.99.0: Pre-Roll-Timeouts canceln, falls Count-In gerade laeuft.
     if (this._preRollActive || this._preRollTimeouts.size > 0) {
-      this._preRollTimeouts.forEach((id) => clearTimeout(id));
+      this._preRollTimeouts.forEach(id => clearTimeout(id));
       this._preRollTimeouts.clear();
       this._preRollActive = false;
       this._dispatchCountInEvent("end", 0, 0);
@@ -3066,7 +3566,7 @@ class AudioEngineClass {
       this._midiClickOut.setEnabled(true);
     }
     // Pending Position-Callbacks abräumen — sonst feuern sie nach Stop
-    this._pendingTimeouts.forEach((id) => clearTimeout(id));
+    this._pendingTimeouts.forEach(id => clearTimeout(id));
     this._pendingTimeouts.clear();
     this._currentStep = 0;
     // v2.14: Slide-State zurücksetzen damit beim nächsten Play die erste Note
@@ -3144,10 +3644,15 @@ class AudioEngineClass {
   }
 
   /** Fill-Mode aktiv/deaktiv setzen (für Conditional Triggers) */
-  setFillActive(active: boolean) { this.isFillActive = active; }
+  setFillActive(active: boolean) {
+    this.isFillActive = active;
+  }
 
   /** Performance Mode: Pattern mit Quantisierung wechseln */
-  setQueuedPattern(patternId: string, quantize: "bar" | "beat" | "step" = "bar") {
+  setQueuedPattern(
+    patternId: string,
+    quantize: "bar" | "beat" | "step" = "bar"
+  ) {
     // Gleiche Pattern nochmal → Queue leeren
     if (this.queuedPatternId === patternId) {
       this.queuedPatternId = null;
@@ -3160,7 +3665,9 @@ class AudioEngineClass {
   /** Callback wenn Pattern gewechselt wird (quantisiert) */
   onPatternSwitch(cb: (patternId: string) => void) {
     this.patternSwitchCallback = cb;
-    return () => { this.patternSwitchCallback = null; };
+    return () => {
+      this.patternSwitchCallback = null;
+    };
   }
 
   // ─── v3.123.0 — Pattern Crossfade API ───────────────────────────────────────
@@ -3197,7 +3704,7 @@ class AudioEngineClass {
     currentStep: number,
     stepTime: number,
     effectiveBpm: number,
-    effectiveResolution: StepResolution,
+    effectiveResolution: StepResolution
   ): void {
     if (!this._crossfadeConfig.enabled) return;
     if (!this.masterGain) return;
@@ -3211,7 +3718,11 @@ class AudioEngineClass {
     // progress an Step 12 = 0, Step 13 = 0.25, ..., Step 15 = 0.75.
     // Wir nutzen totalSteps als oberen Index (1-past-last), damit progress an
     // Step 15 = 0.75 statt 1.0 ist (Hard-Switch erfolgt erst beim Boundary).
-    const progress = getCrossfadeProgressFn(currentStep, totalSteps, fadeLength);
+    const progress = getCrossfadeProgressFn(
+      currentStep,
+      totalSteps,
+      fadeLength
+    );
     if (progress === null) return;
     if (!this._crossfadeActive) {
       // Snapshot des Base-Gains für späteren Restore
@@ -3237,14 +3748,17 @@ class AudioEngineClass {
   private _beforePatternSwitch(
     switchTime: number,
     effectiveBpm: number,
-    effectiveResolution: StepResolution,
+    effectiveResolution: StepResolution
   ): void {
     if (!this._crossfadeActive || !this.masterGain) return;
     try {
       const stepDur = this._stepDuration(effectiveResolution, effectiveBpm);
       // Fade-In gainB: 0 → 1 über ein Step (Symmetrie zu gainA-Pfad).
       this.masterGain.gain.setValueAtTime(0, switchTime);
-      this.masterGain.gain.linearRampToValueAtTime(this._crossfadeBaseGain, switchTime + stepDur);
+      this.masterGain.gain.linearRampToValueAtTime(
+        this._crossfadeBaseGain,
+        switchTime + stepDur
+      );
     } catch {
       /* ignore */
     }
@@ -3259,7 +3773,10 @@ class AudioEngineClass {
     }
     try {
       this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      this.masterGain.gain.setValueAtTime(this._crossfadeBaseGain, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(
+        this._crossfadeBaseGain,
+        this.ctx.currentTime
+      );
     } catch {
       /* ignore */
     }
@@ -3272,9 +3789,12 @@ class AudioEngineClass {
     const res = resolution ?? this._stepResolution;
     const beatDuration = 60 / Math.max(20, Math.min(300, bpm));
     switch (res) {
-      case "1/8":  return beatDuration / 2;   // Achtel
-      case "1/16": return beatDuration / 4;   // Sechzehntel
-      case "1/32": return beatDuration / 8;   // Zweiunddreißigstel
+      case "1/8":
+        return beatDuration / 2; // Achtel
+      case "1/16":
+        return beatDuration / 4; // Sechzehntel
+      case "1/32":
+        return beatDuration / 8; // Zweiunddreißigstel
     }
   }
 
@@ -3284,7 +3804,8 @@ class AudioEngineClass {
     // Overhead. Wir messen die Dauer der vollständigen Scheduler-Iteration
     // (inkl. MIDI-Clock + Step-Scheduling). Schreiben ans Ende.
     const _perfT0 =
-      typeof performance !== "undefined" && typeof performance.now === "function"
+      typeof performance !== "undefined" &&
+      typeof performance.now === "function"
         ? performance.now()
         : Date.now();
     const now = this.ctx.currentTime;
@@ -3313,7 +3834,8 @@ class AudioEngineClass {
         this._updateAudioTrackPlaybackRates();
         this._looperEngine.setBpm(this._bpm);
       }
-      const effectiveResolution = pattern?.stepResolution ?? this._stepResolution;
+      const effectiveResolution =
+        pattern?.stepResolution ?? this._stepResolution;
 
       // v3.263.0: Pattern-Wechsel-Erkennung VOR dem Scheduling des neuen Steps —
       // klingende Voices des alten Patterns abschneiden, damit lange Tails sich
@@ -3322,7 +3844,10 @@ class AudioEngineClass {
       // nicht registriert und wird NICHT mitgeschnitten.
       const pid = pattern?.id ?? null;
       if (pid !== this._lastSchedPatternId) {
-        if (this._lastSchedPatternId !== null && !this._crossfadeConfig.enabled) {
+        if (
+          this._lastSchedPatternId !== null &&
+          !this._crossfadeConfig.enabled
+        ) {
           this.stopActiveVoices();
         }
         this._lastSchedPatternId = pid;
@@ -3331,7 +3856,12 @@ class AudioEngineClass {
       this._scheduleStep(this._currentStep, this._nextStepTime, pattern);
 
       // v3.123.0 — Crossfade: gain envelope per-step im Fade-Window
-      this._applyCrossfadeGainPerStep(this._currentStep, this._nextStepTime, effectiveBpm, effectiveResolution);
+      this._applyCrossfadeGainPerStep(
+        this._currentStep,
+        this._nextStepTime,
+        effectiveBpm,
+        effectiveResolution
+      );
 
       // Loop-Count inkrementieren wenn Pattern-Wrap erfolgt
       if (this._currentStep === this._steps - 1) {
@@ -3340,11 +3870,21 @@ class AudioEngineClass {
         if (this.queuedPatternId && this.quantizeMode === "bar") {
           const nextId = this.queuedPatternId;
           this.queuedPatternId = null;
-          this._beforePatternSwitch(this._nextStepTime, effectiveBpm, effectiveResolution);
+          this._beforePatternSwitch(
+            this._nextStepTime,
+            effectiveBpm,
+            effectiveResolution
+          );
           this.patternSwitchCallback?.(nextId);
         }
-      } else if (this._currentStep === 0 && this.queuedPatternId && this.quantizeMode === "beat") {
-        const stepsPerBeat = Math.round(this._steps / this._metronomBeatsPerBar);
+      } else if (
+        this._currentStep === 0 &&
+        this.queuedPatternId &&
+        this.quantizeMode === "beat"
+      ) {
+        const stepsPerBeat = Math.round(
+          this._steps / this._metronomBeatsPerBar
+        );
         if (this._currentStep % stepsPerBeat === 0) {
           const nextId = this.queuedPatternId;
           this.queuedPatternId = null;
@@ -3352,7 +3892,10 @@ class AudioEngineClass {
         }
       }
       this._currentStep = (this._currentStep + 1) % this._steps;
-      this._nextStepTime += this._stepDuration(effectiveResolution, effectiveBpm);
+      this._nextStepTime += this._stepDuration(
+        effectiveResolution,
+        effectiveBpm
+      );
       // Sofortiger Wechsel (quantizeMode=step)
       if (this.queuedPatternId && this.quantizeMode === "step") {
         const nextId = this.queuedPatternId;
@@ -3363,7 +3906,8 @@ class AudioEngineClass {
     // v3.25.0: Telemetrie schreiben. Defensive vs. Store-Throws.
     try {
       const t1 =
-        typeof performance !== "undefined" && typeof performance.now === "function"
+        typeof performance !== "undefined" &&
+        typeof performance.now === "function"
           ? performance.now()
           : Date.now();
       _perfRecordScheduleTick(t1 - _perfT0);
@@ -3375,7 +3919,11 @@ class AudioEngineClass {
   // ─── Private: Probability-Check ──────────────────────────────────────────
 
   /** Prüft ob ein Step ausgelöst werden soll (Probability + Condition + Probability Chains) */
-  shouldTriggerStep(step: StepData, partId?: string, stepIndex?: number): boolean {
+  shouldTriggerStep(
+    step: StepData,
+    partId?: string,
+    stepIndex?: number
+  ): boolean {
     if (!step.active) return false;
     let prob = Math.max(0, Math.min(100, step.probability ?? 100));
 
@@ -3390,10 +3938,18 @@ class AudioEngineClass {
     const fires = prob >= 100 || Math.random() * 100 <= prob;
 
     // Probability Chain: Nächsten Step-Modifier setzen
-    if (partId !== undefined && stepIndex !== undefined && step.chainNext && step.chainNext !== "none") {
+    if (
+      partId !== undefined &&
+      stepIndex !== undefined &&
+      step.chainNext &&
+      step.chainNext !== "none"
+    ) {
       const nextKey = `${partId}:${stepIndex + 1}`;
       if (fires) {
-        this._probabilityChainMods.set(nextKey, step.chainNext === "up" ? 25 : -25);
+        this._probabilityChainMods.set(
+          nextKey,
+          step.chainNext === "up" ? 25 : -25
+        );
       }
     }
 
@@ -3401,34 +3957,41 @@ class AudioEngineClass {
     const condition = step.condition;
     if (!condition || condition.type === "always") return true;
     if (condition.type === "every") {
-      return (this.loopCount % condition.of) === (condition.n - 1);
+      return this.loopCount % condition.of === condition.n - 1;
     }
     if (condition.type === "fill") return this.isFillActive;
     if (condition.type === "not_fill") return !this.isFillActive;
     return true;
   }
 
-  private _scheduleStep(stepIndex: number, time: number, scheduledPattern?: PatternData) {
+  private _scheduleStep(
+    stepIndex: number,
+    time: number,
+    scheduledPattern?: PatternData
+  ) {
     const step = stepIndex;
     // Pending UI-Callback in der ID-Liste tracken, damit stop() ihn clearen kann
-    const tid = setTimeout(() => {
-      this._pendingTimeouts.delete(tid);
-      if (!this._isPlaying) return;
-      this.positionCallbacks.forEach(cb => cb(step));
+    const tid = setTimeout(
+      () => {
+        this._pendingTimeouts.delete(tid);
+        if (!this._isPlaying) return;
+        this.positionCallbacks.forEach(cb => cb(step));
 
-      // Bar-Counter + Follow Action
-      if (step === 0) {
-        this._barCount++;
-        const pattern = this.patternGetter?.();
-        if (pattern?.followAction && pattern.followAction.type !== "none") {
-          const fa = pattern.followAction;
-          if (this._barCount >= fa.barsBeforeSwitch) {
-            this._barCount = 0;
-            this._followActionCallback?.(fa, pattern.id);
+        // Bar-Counter + Follow Action
+        if (step === 0) {
+          this._barCount++;
+          const pattern = this.patternGetter?.();
+          if (pattern?.followAction && pattern.followAction.type !== "none") {
+            const fa = pattern.followAction;
+            if (this._barCount >= fa.barsBeforeSwitch) {
+              this._barCount = 0;
+              this._followActionCallback?.(fa, pattern.id);
+            }
           }
         }
-      }
-    }, Math.max(0, (time - (this.ctx?.currentTime ?? 0)) * 1000 - 5));
+      },
+      Math.max(0, (time - (this.ctx?.currentTime ?? 0)) * 1000 - 5)
+    );
     this._pendingTimeouts.add(tid);
 
     // Metronom
@@ -3440,12 +4003,16 @@ class AudioEngineClass {
       // Beat b liegt genau bei Step = round(b * totalSteps / beatsPerBar).
       // Wir prüfen, ob stepIndex der repräsentative Step für den nächsten Beat ist.
       const closestBeat = Math.round((stepIndex * beatsPerBar) / totalSteps);
-      const representStep = Math.round((closestBeat * totalSteps) / beatsPerBar) % totalSteps;
+      const representStep =
+        Math.round((closestBeat * totalSteps) / beatsPerBar) % totalSteps;
       const isBeat = representStep === stepIndex;
       const isDownbeat = stepIndex === 0;
 
       // Unterteilung
-      const stepsPerHalfBeat = Math.max(1, Math.round(totalSteps / beatsPerBar / 2));
+      const stepsPerHalfBeat = Math.max(
+        1,
+        Math.round(totalSteps / beatsPerBar / 2)
+      );
       let shouldClick = false;
       if (this._metronomSubdivision === "beat") {
         shouldClick = isBeat;
@@ -3461,7 +4028,9 @@ class AudioEngineClass {
           : isBeat
             ? Math.max(0.05, 0.7 / Math.max(0.2, this._metronomAccent))
             : Math.max(0.02, 0.3 / Math.max(0.2, this._metronomAccent));
-        const freq = isDownbeat ? this._metronomDownbeatFreq : this._metronomBeatFreq;
+        const freq = isDownbeat
+          ? this._metronomDownbeatFreq
+          : this._metronomBeatFreq;
         this._playClick(time, vol, freq, isDownbeat);
       }
     }
@@ -3471,7 +4040,12 @@ class AudioEngineClass {
     // ohne lokales Click-Geraeusch laufen lassen. Beat-Detection in MidiClickOut
     // dupliziert die Formel (closestBeat/representStep) damit der Click-Out
     // auch bei beliebigen Pattern-Laengen + Taktarten korrekt liegt.
-    this._midiClickOut.triggerStep(stepIndex, this._steps, this._metronomBeatsPerBar, this._midiClickNoteDurationMs);
+    this._midiClickOut.triggerStep(
+      stepIndex,
+      this._steps,
+      this._metronomBeatsPerBar,
+      this._midiClickNoteDurationMs
+    );
 
     if (!scheduledPattern && !this.patternGetter) return;
     const pattern = scheduledPattern ?? this.patternGetter!();
@@ -3483,13 +4057,19 @@ class AudioEngineClass {
     // (identische Semantik: true sobald ein soloed-Eintrag gefunden wird).
     let anyDrumSolo = false;
     for (let i = 0; i < pattern.parts.length; i++) {
-      if (pattern.parts[i].soloed) { anyDrumSolo = true; break; }
+      if (pattern.parts[i].soloed) {
+        anyDrumSolo = true;
+        break;
+      }
     }
     let anyAudioSolo = false;
     const _audioTracks = this.audioTracksGetter?.();
     if (_audioTracks) {
       for (let i = 0; i < _audioTracks.length; i++) {
-        if (_audioTracks[i].soloed) { anyAudioSolo = true; break; }
+        if (_audioTracks[i].soloed) {
+          anyAudioSolo = true;
+          break;
+        }
       }
     }
     const anySolo = anyDrumSolo || anyAudioSolo;
@@ -3500,26 +4080,40 @@ class AudioEngineClass {
     const arpActive = !!arpCfg?.enabled && arpCfg.steps.length > 0;
     // Im channel-Modus treibt der Arp den Ziel-Part allein — dessen eigene
     // programmierte Steps werden unterdrückt (sonst Layering auf demselben Sound).
-    const arpSuppressedPartId = arpActive && arpCfg!.outputMode === "channel" ? arpCfg!.targetPartId : null;
+    const arpSuppressedPartId =
+      arpActive && arpCfg!.outputMode === "channel"
+        ? arpCfg!.targetPartId
+        : null;
 
     // Live-Beat-Repeat: optionales Read-Remapping. Loopt ein N-Step-Fenster, indem
     // der Pattern-Read-Index umgebogen wird (Identität wenn kein Repeat aktiv).
     // Singleton-Slot analog zum Humanizer — hält AudioEngine store-agnostisch.
     let readStep = stepIndex;
     try {
-      const br = (globalThis as Record<string, unknown>)["__synthstudio_beatrepeat__"] as
-        | { readIndex: (i: number) => number }
-        | undefined;
+      const br = (globalThis as Record<string, unknown>)[
+        "__synthstudio_beatrepeat__"
+      ] as { readIndex: (i: number) => number } | undefined;
       if (br) readStep = br.readIndex(stepIndex);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // TASK-254: Humanizer-Globalslot einmal pro Step lesen statt pro getriggertem
     // Voice. Der Slot wird zur Laufzeit getoggelt → per-call lesen (nicht als
     // Instanz-Feld cachen) bleibt korrekt; die Funktionsaufrufe pro Voice bleiben.
-    let _humanizer: { timing: (i: number, d: number, p?: number) => number; velocity: (i: number, p?: number) => number } | undefined;
+    let _humanizer:
+      | {
+          timing: (i: number, d: number, p?: number) => number;
+          velocity: (i: number, p?: number) => number;
+        }
+      | undefined;
     try {
-      _humanizer = (globalThis as Record<string, unknown>)["__synthstudio_humanizer__"] as typeof _humanizer;
-    } catch { /* ignore */ }
+      _humanizer = (globalThis as Record<string, unknown>)[
+        "__synthstudio_humanizer__"
+      ] as typeof _humanizer;
+    } catch {
+      /* ignore */
+    }
     // Step-Dauer einmal vorberechnen (Humanizer-Timing + MIDI-Clock-Pulse nutzen sie).
     const _stepDur = this._stepDuration();
 
@@ -3538,9 +4132,12 @@ class AudioEngineClass {
       // überschreiten); inaktiv bleibt es byte-genau beim Original `stepIndex`,
       // damit Parts mit kürzerem steps-Array weiterhin auf Overflow-Steps schweigen.
       const remapped = readStep !== stepIndex; // Beat-Repeat tatsächlich aktiv
-      const effIdx = part.stepLength && part.stepLength > 0
-        ? readStep % part.stepLength
-        : (remapped ? readStep % Math.max(1, part.steps.length) : stepIndex);
+      const effIdx =
+        part.stepLength && part.stepLength > 0
+          ? readStep % part.stepLength
+          : remapped
+            ? readStep % Math.max(1, part.steps.length)
+            : stepIndex;
       const step = part.steps[effIdx];
       if (!step || !this.shouldTriggerStep(step, part.id, effIdx)) continue;
 
@@ -3553,13 +4150,25 @@ class AudioEngineClass {
       let humanizerVelocityMult = 1.0;
       if (_humanizer) {
         try {
-          humanizerTimingOffset = _humanizer.timing(effIdx, _stepDur, partIndex);
+          humanizerTimingOffset = _humanizer.timing(
+            effIdx,
+            _stepDur,
+            partIndex
+          );
           humanizerVelocityMult = _humanizer.velocity(effIdx, partIndex);
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
 
       const scheduledTime = time + microOffsetSec + humanizerTimingOffset;
-      const humanizedVelocity = Math.max(1, Math.min(127, Math.round((step.velocity ?? 100) * humanizerVelocityMult)));
+      const humanizedVelocity = Math.max(
+        1,
+        Math.min(
+          127,
+          Math.round((step.velocity ?? 100) * humanizerVelocityMult)
+        )
+      );
 
       const scheduled: ScheduledStep = {
         partIndex,
@@ -3572,7 +4181,8 @@ class AudioEngineClass {
       };
 
       // TASK-254: forEach-Closure → indexierte Schleife (allokationsfrei).
-      for (let ci = 0; ci < this.stepCallbacks.length; ci++) this.stepCallbacks[ci](scheduled);
+      for (let ci = 0; ci < this.stepCallbacks.length; ci++)
+        this.stepCallbacks[ci](scheduled);
 
       // MIDI-Note-Out (TASK-240 / v2.92): wenn Part eine externe MIDI-Out-Config
       // hat (z.B. KORG Electribe), Note-On feuern. Note-Off läuft intern über
@@ -3588,13 +4198,18 @@ class AudioEngineClass {
         const ctxNow = this.ctx?.currentTime ?? 0;
         for (let p = 0; p < 6; p++) {
           const pulseTime = time + (p / 6) * _stepDur;
-          setTimeout(this._sendMidiClockPulse, Math.max(0, (pulseTime - ctxNow) * 1000));
+          setTimeout(
+            this._sendMidiClockPulse,
+            Math.max(0, (pulseTime - ctxNow) * 1000)
+          );
         }
       }
 
       // Parameter Lock: pro-Step FX-Overrides anwenden
       if (step.paramLock && Object.keys(step.paramLock).length > 0) {
-        const stepDuration = this._stepDuration(pattern.stepResolution ?? part.stepResolution);
+        const stepDuration = this._stepDuration(
+          pattern.stepResolution ?? part.stepResolution
+        );
         this.applyParamLock(part.id, step.paramLock, stepDuration);
       }
 
@@ -3635,13 +4250,22 @@ class AudioEngineClass {
       // werden über SynthEngine getriggert. Hat Vorrang vor sampleUrl, damit
       // Synth-Parts, die irrtümlich ein altes sampleUrl-Feld tragen, trotzdem
       // korrekt als Synth abgespielt werden.
-      const isSynthPart = !!part.synthParams && (part.sourceType === "wavetable" || part.sourceType === "fm");
+      const isSynthPart =
+        !!part.synthParams &&
+        (part.sourceType === "wavetable" || part.sourceType === "fm");
       if (isSynthPart) {
         const vol = (scheduled.velocity / 127) * (part.volume ?? 1.0);
         // Drum-Step hat keine eigene Note — A4 (440 Hz) als Basis, step.pitch
         // wird als Halbton-Transpose appliziert (analog zur melodischen Logik).
         const freq = 440 * Math.pow(2, scheduled.pitch / 12);
-        this._triggerSynthOnChannel(scheduled.time, freq, vol, scheduled.pan, part, !!step.slide);
+        this._triggerSynthOnChannel(
+          scheduled.time,
+          freq,
+          vol,
+          scheduled.pan,
+          part,
+          !!step.slide
+        );
       } else if (part.sampleUrl) {
         const stepLength = step.length ?? 1;
         const partRef = part;
@@ -3650,11 +4274,28 @@ class AudioEngineClass {
           if (!buf || !this.ctx) return;
           const vol = (scheduled.velocity / 127) * (partRef.volume ?? 1.0);
           let playBuf = scheduled.reverse ? this._reverseBuffer(buf) : buf;
-          if (partRef.stretchRatio && Math.abs(partRef.stretchRatio - 1) > 0.01) {
-            const { getCachedStretchBuffer } = await import("./timeStretchUtils");
-            playBuf = getCachedStretchBuffer(this.ctx, partRef.sampleUrl!, playBuf, partRef.stretchRatio);
+          if (
+            partRef.stretchRatio &&
+            Math.abs(partRef.stretchRatio - 1) > 0.01
+          ) {
+            const { getCachedStretchBuffer } =
+              await import("./timeStretchUtils");
+            playBuf = getCachedStretchBuffer(
+              this.ctx,
+              partRef.sampleUrl!,
+              playBuf,
+              partRef.stretchRatio
+            );
           }
-          this._triggerBufferWithFx(playBuf, scheduled.time, vol, scheduled.pan, scheduled.pitch, partRef, stepLength);
+          this._triggerBufferWithFx(
+            playBuf,
+            scheduled.time,
+            vol,
+            scheduled.pan,
+            scheduled.pitch,
+            partRef,
+            stepLength
+          );
         })();
       }
     }
@@ -3670,14 +4311,18 @@ class AudioEngineClass {
 
         const melodicSteps = this.melodicGetter!(part.id);
         if (!melodicSteps) continue;
-        const mIdx = part.stepLength && part.stepLength > 0
-          ? stepIndex % part.stepLength
-          : stepIndex;
+        const mIdx =
+          part.stepLength && part.stepLength > 0
+            ? stepIndex % part.stepLength
+            : stepIndex;
         const mStep = melodicSteps[mIdx];
         if (!mStep?.active) continue;
 
         const vol = (mStep.velocity / 127) * (part.volume ?? 1.0);
-        const transposedNote = Math.max(0, Math.min(127, mStep.note + this._globalTranspose));
+        const transposedNote = Math.max(
+          0,
+          Math.min(127, mStep.note + this._globalTranspose)
+        );
         const freq = 440 * Math.pow(2, (transposedNote - 69) / 12);
         this._triggerMelodicNote(time, freq, vol, part.pan ?? 0, part);
       }
@@ -3688,7 +4333,9 @@ class AudioEngineClass {
 
     // ─── Gestapelte Patterns ─────────────────────────────────────────────────
     if (this._stackedPatternIds.size > 0) {
-      window.dispatchEvent(new CustomEvent("audio:stackedStep", { detail: { stepIndex, time } }));
+      window.dispatchEvent(
+        new CustomEvent("audio:stackedStep", { detail: { stepIndex, time } })
+      );
     }
   }
 
@@ -3700,7 +4347,12 @@ class AudioEngineClass {
    * Feuert IMMER ein `audio:arpNote`-CustomEvent (analog zu audio:stackedStep) —
    * doppelt als Runtime-Observability-Seam UND als UI-Signal (aktiver Step).
    */
-  private _scheduleArp(cfg: ArpPlaybackConfig, stepIndex: number, time: number, pattern: PatternData): void {
+  private _scheduleArp(
+    cfg: ArpPlaybackConfig,
+    stepIndex: number,
+    time: number,
+    pattern: PatternData
+  ): void {
     const ev = arpStepAt(cfg.steps, stepIndex);
     if (!ev) return; // inaktiver / übersprungener Step
 
@@ -3710,10 +4362,20 @@ class AudioEngineClass {
     // Observability + UI-Signal — vor dem Trigger, damit es auch dann feuert,
     // wenn ein Modus (z.B. fehlender Ziel-Part) keinen Ton erzeugt.
     try {
-      window.dispatchEvent(new CustomEvent("audio:arpNote", {
-        detail: { stepIndex, note: ev.note, velocity, mode: cfg.outputMode, time },
-      }));
-    } catch { /* SSR/Test-Umgebung ohne window */ }
+      window.dispatchEvent(
+        new CustomEvent("audio:arpNote", {
+          detail: {
+            stepIndex,
+            note: ev.note,
+            velocity,
+            mode: cfg.outputMode,
+            time,
+          },
+        })
+      );
+    } catch {
+      /* SSR/Test-Umgebung ohne window */
+    }
 
     if (cfg.outputMode === "synth") {
       // Interne Synth-Stimme: kein Part → Triangle-Oszillator-Fallback (lokal hörbar).
@@ -3723,11 +4385,15 @@ class AudioEngineClass {
     }
 
     if (cfg.outputMode === "channel") {
-      const part = cfg.targetPartId ? pattern.parts.find(p => p.id === cfg.targetPartId) : undefined;
+      const part = cfg.targetPartId
+        ? pattern.parts.find(p => p.id === cfg.targetPartId)
+        : undefined;
       if (!part) return; // kein Ziel gewählt → still (Event ist trotzdem geflogen)
       const vol = (velocity / 127) * (part.volume ?? 1.0);
       const pan = part.pan ?? 0;
-      const isSynthPart = !!part.synthParams && (part.sourceType === "wavetable" || part.sourceType === "fm");
+      const isSynthPart =
+        !!part.synthParams &&
+        (part.sourceType === "wavetable" || part.sourceType === "fm");
       if (isSynthPart) {
         const freq = arpMidiToFreq(ev.note);
         this._triggerSynthOnChannel(time, freq, vol, pan, part);
@@ -3738,7 +4404,15 @@ class AudioEngineClass {
         (async () => {
           const buf = await this._loadBuffer(partRef.sampleUrl!);
           if (!buf || !this.ctx) return;
-          this._triggerBufferWithFx(buf, time, vol, pan, pitch, partRef, ev.length ?? 1);
+          this._triggerBufferWithFx(
+            buf,
+            time,
+            vol,
+            pan,
+            pitch,
+            partRef,
+            ev.length ?? 1
+          );
         })();
       }
       return;
@@ -3750,7 +4424,10 @@ class AudioEngineClass {
       const sender = this._arpMidiSender;
       if (!sender) return;
       const note = ev.note & 0x7f;
-      const onDelayMs = Math.max(0, (time - (this.ctx?.currentTime ?? 0)) * 1000);
+      const onDelayMs = Math.max(
+        0,
+        (time - (this.ctx?.currentTime ?? 0)) * 1000
+      );
       const offDelayMs = onDelayMs + gateSec * 1000;
       // Note-On/Off NICHT in _pendingTimeouts tracken: das Note-Off MUSS auch
       // nach stop() feuern, sonst hängt die externe Note (klassischer Stuck-Note).
@@ -3769,7 +4446,7 @@ class AudioEngineClass {
     pan: number,
     pitch: number,
     part: PartData,
-    stepLengthMultiplier = 1,
+    stepLengthMultiplier = 1
   ) {
     if (!this.ctx || !this.masterGain) return;
 
@@ -3779,7 +4456,7 @@ class AudioEngineClass {
     // Note Length: kürzt oder verlängert Sample-Abspieldauer
     if (stepLengthMultiplier !== 1 && stepLengthMultiplier > 0) {
       const stepDur = this._stepDuration();
-      const maxDur  = stepDur * stepLengthMultiplier;
+      const maxDur = stepDur * stepLengthMultiplier;
       // Kurze Note: Sample nach maxDur abschneiden
       if (stepLengthMultiplier < 1) {
         source.stop(Math.max(time, this.ctx.currentTime) + maxDur);
@@ -3826,7 +4503,11 @@ class AudioEngineClass {
   }
 
   /** Wendet Parameter-Lock-Werte an und stellt sie nach duration wieder her. */
-  applyParamLock(partId: string, lock: import("./AudioEngine").StepParamLock, duration: number): void {
+  applyParamLock(
+    partId: string,
+    lock: import("./AudioEngine").StepParamLock,
+    duration: number
+  ): void {
     if (!this.ctx) return;
     const nodes = this.channelNodes.get(partId);
     if (!nodes) return;
@@ -3847,15 +4528,24 @@ class AudioEngineClass {
     }
     if (lock.filterFreq !== undefined) {
       nodes.filter.frequency.setValueAtTime(lock.filterFreq, now);
-      nodes.filter.frequency.setValueAtTime(nodes.filter.frequency.value, restoreTime);
+      nodes.filter.frequency.setValueAtTime(
+        nodes.filter.frequency.value,
+        restoreTime
+      );
     }
     if (lock.reverbSend !== undefined) {
       nodes.globalReverbSend.gain.setValueAtTime(lock.reverbSend, now);
-      nodes.globalReverbSend.gain.setValueAtTime(nodes.globalReverbSend.gain.value, restoreTime);
+      nodes.globalReverbSend.gain.setValueAtTime(
+        nodes.globalReverbSend.gain.value,
+        restoreTime
+      );
     }
     if (lock.delaySend !== undefined) {
       nodes.globalDelaySend.gain.setValueAtTime(lock.delaySend, now);
-      nodes.globalDelaySend.gain.setValueAtTime(nodes.globalDelaySend.gain.value, restoreTime);
+      nodes.globalDelaySend.gain.setValueAtTime(
+        nodes.globalDelaySend.gain.value,
+        restoreTime
+      );
     }
   }
 
@@ -3877,10 +4567,18 @@ class AudioEngineClass {
    *          fehlen (kein ctx, kein synthParams, falscher sourceType) — Aufrufer
    *          kann auf Fallback-Pfad ausweichen.
    */
-  private _triggerSynthOnChannel(time: number, freq: number, volume: number, pan: number, part: PartData, slide = false): boolean {
+  private _triggerSynthOnChannel(
+    time: number,
+    freq: number,
+    volume: number,
+    pan: number,
+    part: PartData,
+    slide = false
+  ): boolean {
     if (!this.ctx) return false;
     if (!part.synthParams) return false;
-    if (part.sourceType !== "wavetable" && part.sourceType !== "fm") return false;
+    if (part.sourceType !== "wavetable" && part.sourceType !== "fm")
+      return false;
 
     const eng = this._getOrCreateSynthEngine();
     if (!eng) return false;
@@ -3897,9 +4595,16 @@ class AudioEngineClass {
     const stepDur = this._stepDuration();
     let synthParams = part.synthParams;
     let prevFreq: number | undefined = undefined;
-    if (prevState?.lastHadSlide && prevState.lastFreq && prevState.lastFreq !== freq) {
+    if (
+      prevState?.lastHadSlide &&
+      prevState.lastFreq &&
+      prevState.lastFreq !== freq
+    ) {
       // Glide-Override für diese Note (ohne Mutation des persistierten Params).
-      synthParams = { ...part.synthParams, glide: Math.max(0.005, stepDur * 0.8) };
+      synthParams = {
+        ...part.synthParams,
+        glide: Math.max(0.005, stepDur * 0.8),
+      };
       prevFreq = prevState.lastFreq;
     }
     // v3.284.0: Volume pro Note statt am geteilten Channel-Input. `triggerNote`
@@ -3928,11 +4633,18 @@ class AudioEngineClass {
    * synthParams oder mit unbekanntem sourceType fallen auf den simplen
    * Triangle-Oscillator-Pfad zurück (Backwards-Compat).
    */
-  private _triggerMelodicNote(time: number, freq: number, volume: number, pan: number, part?: PartData): void {
+  private _triggerMelodicNote(
+    time: number,
+    freq: number,
+    volume: number,
+    pan: number,
+    part?: PartData
+  ): void {
     if (!this.ctx || !this.masterGain) return;
 
     // Synth-Pfad mit Channel-FX-Routing (TASK-128 + TASK-129)
-    if (part && this._triggerSynthOnChannel(time, freq, volume, pan, part)) return;
+    if (part && this._triggerSynthOnChannel(time, freq, volume, pan, part))
+      return;
 
     // Fallback-Pfad: simpler Triangle-Oscillator (Default für Parts ohne synthParams)
     const now = Math.max(time, this.ctx.currentTime);
@@ -3945,7 +4657,10 @@ class AudioEngineClass {
     osc.type = "triangle";
     osc.frequency.value = freq;
     env.gain.setValueAtTime(0, now);
-    env.gain.linearRampToValueAtTime(Math.max(0, Math.min(1, volume)) * 0.5, now + 0.005);
+    env.gain.linearRampToValueAtTime(
+      Math.max(0, Math.min(1, volume)) * 0.5,
+      now + 0.005
+    );
     env.gain.exponentialRampToValueAtTime(0.001, now + duration);
     panner.pan.value = Math.max(-1, Math.min(1, pan));
 
@@ -3966,8 +4681,8 @@ class AudioEngineClass {
     pitch: number,
     part: PartData,
     options?: {
-      sliceStart?: number;  // Sekunden
-      sliceEnd?: number;    // Sekunden
+      sliceStart?: number; // Sekunden
+      sliceEnd?: number; // Sekunden
       loopMode?: "one-shot" | "loop" | "ping-pong";
       reverse?: boolean;
     }
@@ -3994,12 +4709,19 @@ class AudioEngineClass {
     this._registerVoice(source, voiceGain);
     const startTime = Math.max(time, this.ctx.currentTime);
     const offset = options?.sliceStart ?? 0;
-    const duration = options?.sliceEnd != null ? options.sliceEnd - offset : undefined;
+    const duration =
+      options?.sliceEnd != null ? options.sliceEnd - offset : undefined;
     source.start(startTime, offset, duration);
   }
 
   /** Direktes Triggern ohne Effektkette (für Preview) */
-  private _triggerBufferDirect(buf: AudioBuffer, time: number, volume: number, pan: number, pitch: number) {
+  private _triggerBufferDirect(
+    buf: AudioBuffer,
+    time: number,
+    volume: number,
+    pan: number,
+    pitch: number
+  ) {
     if (!this.ctx || !this.masterGain) return;
     const source = this.ctx.createBufferSource();
     source.buffer = buf;
@@ -4034,7 +4756,9 @@ class AudioEngineClass {
           oldest.gain.gain.setValueAtTime(oldest.gain.gain.value, now);
           oldest.gain.gain.linearRampToValueAtTime(0.0001, now + 0.005);
           oldest.src.stop(now + 0.01);
-        } catch { /* Voice schon beendet */ }
+        } catch {
+          /* Voice schon beendet */
+        }
         this._activeVoices.delete(oldest);
       }
     }
@@ -4042,8 +4766,16 @@ class AudioEngineClass {
     this._activeVoices.add(entry);
     src.addEventListener("ended", () => {
       this._activeVoices.delete(entry);
-      try { src.disconnect(); } catch { /* ignore */ }
-      try { gain.disconnect(); } catch { /* ignore */ }
+      try {
+        src.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        gain.disconnect();
+      } catch {
+        /* ignore */
+      }
     });
   }
 
@@ -4061,7 +4793,9 @@ class AudioEngineClass {
         gain.gain.setValueAtTime(gain.gain.value, now);
         gain.gain.linearRampToValueAtTime(0.0001, now + fadeSec);
         src.stop(now + fadeSec + 0.005);
-      } catch { /* Voice schon gestoppt/beendet */ }
+      } catch {
+        /* Voice schon gestoppt/beendet */
+      }
     }
   }
 
@@ -4076,19 +4810,47 @@ class AudioEngineClass {
     this.channelNodes.delete(partId);
     if (n) {
       const all: AudioNode[] = [
-        n.input, n.eq.low, n.eq.mid, n.eq.high, n.filter, n.distortion, n.compressor,
-        n.delayNode, n.delayFeedback, n.delayDry, n.delayWet,
-        n.reverbConvolver, n.reverbDry, n.reverbWet, n.output, n.panner,
-        n.sidechainGain, n.globalReverbSend, n.globalDelaySend,
+        n.input,
+        n.eq.low,
+        n.eq.mid,
+        n.eq.high,
+        n.filter,
+        n.distortion,
+        n.compressor,
+        n.delayNode,
+        n.delayFeedback,
+        n.delayDry,
+        n.delayWet,
+        n.reverbConvolver,
+        n.reverbDry,
+        n.reverbWet,
+        n.output,
+        n.panner,
+        n.sidechainGain,
+        n.globalReverbSend,
+        n.globalDelaySend,
       ];
-      for (const node of all) { try { node.disconnect(); } catch { /* ignore */ } }
+      for (const node of all) {
+        try {
+          node.disconnect();
+        } catch {
+          /* ignore */
+        }
+      }
     }
     this._sidechainSettings.delete(partId);
-    try { this._granularEngines.get(partId)?.stop(); } catch { /* ignore */ }
+    try {
+      this._granularEngines.get(partId)?.stop();
+    } catch {
+      /* ignore */
+    }
     this._granularEngines.delete(partId);
   }
 
-  private _getOrCreateChannelNodes(partId: string, fx: ChannelFx): ChannelNodes {
+  private _getOrCreateChannelNodes(
+    partId: string,
+    fx: ChannelFx
+  ): ChannelNodes {
     const existing = this.channelNodes.get(partId);
     if (existing) {
       // LRU: an das Map-Ende verschieben (zuletzt genutzt) — keys().next() bleibt
@@ -4115,11 +4877,19 @@ class AudioEngineClass {
     // App.tsx-Interceptor (v3.253) als Toast gespiegelt → User kann die Zahl
     // melden. Nur bei Schwellen-Überschreitung, throttled (kein Spam).
     const willBe = this.channelNodes.size + 1;
-    if (willBe > this._channelHighWater &&
-        (willBe === 16 || willBe === 32 || willBe === 48 || willBe === 64 ||
-         willBe === 80 || willBe === 96)) {
+    if (
+      willBe > this._channelHighWater &&
+      (willBe === 16 ||
+        willBe === 32 ||
+        willBe === 48 ||
+        willBe === 64 ||
+        willBe === 80 ||
+        willBe === 96)
+    ) {
       this._channelHighWater = willBe;
-      console.warn(`[AudioEngine] live Channel-FX-Ketten: ${willBe}/${MAX_CHANNEL_NODES}`);
+      console.warn(
+        `[AudioEngine] live Channel-FX-Ketten: ${willBe}/${MAX_CHANNEL_NODES}`
+      );
     }
 
     // Input-Gain
@@ -4239,12 +5009,23 @@ class AudioEngineClass {
     if (this._globalDelayBus) globalDelaySend.connect(this._globalDelayBus);
 
     const nodes: ChannelNodes = {
-      input, eq: { low: eqLow, mid: eqMid, high: eqHigh },
-      filter, distortion, compressor,
-      delayNode, delayFeedback, delayDry, delayWet,
-      reverbConvolver, reverbDry, reverbWet,
-      output, panner, sidechainGain,
-      globalReverbSend, globalDelaySend,
+      input,
+      eq: { low: eqLow, mid: eqMid, high: eqHigh },
+      filter,
+      distortion,
+      compressor,
+      delayNode,
+      delayFeedback,
+      delayDry,
+      delayWet,
+      reverbConvolver,
+      reverbDry,
+      reverbWet,
+      output,
+      panner,
+      sidechainGain,
+      globalReverbSend,
+      globalDelaySend,
     };
 
     this._applyFxToNodes(nodes, fx);
@@ -4263,7 +5044,10 @@ class AudioEngineClass {
     // Filter
     if (fx.filterEnabled) {
       nodes.filter.type = fx.filterType;
-      nodes.filter.frequency.value = Math.max(20, Math.min(20000, fx.filterFreq));
+      nodes.filter.frequency.value = Math.max(
+        20,
+        Math.min(20000, fx.filterFreq)
+      );
       nodes.filter.Q.value = Math.max(0.1, Math.min(20, fx.filterQ));
     } else {
       nodes.filter.type = "allpass"; // Bypass
@@ -4294,7 +5078,9 @@ class AudioEngineClass {
 
     // Delay
     nodes.delayNode.delayTime.value = fx.delayTime;
-    nodes.delayFeedback.gain.value = fx.delayEnabled ? Math.min(0.95, fx.delayFeedback) : 0;
+    nodes.delayFeedback.gain.value = fx.delayEnabled
+      ? Math.min(0.95, fx.delayFeedback)
+      : 0;
     nodes.delayWet.gain.value = fx.delayEnabled ? fx.delayMix : 0;
     nodes.delayDry.gain.value = 1.0;
 
@@ -4307,7 +5093,9 @@ class AudioEngineClass {
         // Promise-Start und -Resolve via LRU disposed worden sein.
         try {
           if (buf && nodes.reverbConvolver) nodes.reverbConvolver.buffer = buf;
-        } catch { /* Node bereits disposed */ }
+        } catch {
+          /* Node bereits disposed */
+        }
       });
     }
   }
@@ -4327,7 +5115,10 @@ class AudioEngineClass {
     return curve;
   }
 
-  private async _getOrCreateReverbBuffer(decay: number, damping = 0.5): Promise<AudioBuffer | null> {
+  private async _getOrCreateReverbBuffer(
+    decay: number,
+    damping = 0.5
+  ): Promise<AudioBuffer | null> {
     if (!this.ctx) return null;
     // Cache-Key über Decay + Damping (Damping beeinflusst IR-Tiefpass am
     // Sample, nicht nur den Bus-Filter — bei extremen damping-Werten
@@ -4350,7 +5141,7 @@ class AudioEngineClass {
       const data = buf.getChannelData(ch);
       let prev = 0;
       for (let i = 0; i < length; i++) {
-        const noise = (Math.random() * 2 - 1);
+        const noise = Math.random() * 2 - 1;
         // exponential decay envelope
         const env = Math.pow(1 - i / length, 2);
         // smooth noise with one-pole filter for damping
@@ -4383,7 +5174,10 @@ class AudioEngineClass {
    */
   private _regenerateReverbIr(): void {
     if (!this._globalReverbBus) return;
-    void this._getOrCreateReverbBuffer(this._globalReverbDecay, this._globalReverbDamping01).then(buf => {
+    void this._getOrCreateReverbBuffer(
+      this._globalReverbDecay,
+      this._globalReverbDamping01
+    ).then(buf => {
       if (buf && this._globalReverbBus) this._globalReverbBus.buffer = buf;
     });
   }
@@ -4403,7 +5197,9 @@ class AudioEngineClass {
     this._globalReverbDamping01 = clamped;
     if (this._globalReverbDamping && this.ctx) {
       this._globalReverbDamping.frequency.setTargetAtTime(
-        this._dampingToHz(clamped), this.ctx.currentTime, 0.05,
+        this._dampingToHz(clamped),
+        this.ctx.currentTime,
+        0.05
       );
     }
     this._regenerateReverbIr();
@@ -4414,7 +5210,9 @@ class AudioEngineClass {
     const clamped = Math.max(0, Math.min(200, ms));
     if (this._globalReverbPreDelay && this.ctx) {
       this._globalReverbPreDelay.delayTime.setTargetAtTime(
-        clamped / 1000, this.ctx.currentTime, 0.01,
+        clamped / 1000,
+        this.ctx.currentTime,
+        0.01
       );
     }
   }
@@ -4425,7 +5223,11 @@ class AudioEngineClass {
     this._globalReverbWetLevel = clamped;
     if (this._globalReverbWet && this.ctx) {
       const target = this._globalReverbBypass ? 0 : clamped;
-      this._globalReverbWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+      this._globalReverbWet.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.01
+      );
     }
   }
 
@@ -4434,7 +5236,11 @@ class AudioEngineClass {
     this._globalReverbBypass = bypass;
     if (this._globalReverbWet && this.ctx) {
       const target = bypass ? 0 : this._globalReverbWetLevel;
-      this._globalReverbWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+      this._globalReverbWet.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.01
+      );
     }
   }
 
@@ -4442,7 +5248,11 @@ class AudioEngineClass {
   setMasterDelayTime(timeSec: number): void {
     const clamped = Math.max(0.001, Math.min(2.0, timeSec));
     if (this._globalDelayBus && this.ctx) {
-      this._globalDelayBus.delayTime.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._globalDelayBus.delayTime.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4454,7 +5264,11 @@ class AudioEngineClass {
   setMasterDelayFeedback(feedback: number): void {
     const clamped = Math.max(0, Math.min(0.95, feedback));
     if (this._globalDelayFeedback && this.ctx) {
-      this._globalDelayFeedback.gain.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._globalDelayFeedback.gain.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4464,7 +5278,11 @@ class AudioEngineClass {
     this._globalDelayWetLevel = clamped;
     if (this._globalDelayWet && this.ctx) {
       const target = this._globalDelayBypass ? 0 : clamped;
-      this._globalDelayWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+      this._globalDelayWet.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.01
+      );
     }
   }
 
@@ -4473,7 +5291,11 @@ class AudioEngineClass {
     this._globalDelayBypass = bypass;
     if (this._globalDelayWet && this.ctx) {
       const target = bypass ? 0 : this._globalDelayWetLevel;
-      this._globalDelayWet.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01);
+      this._globalDelayWet.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.01
+      );
     }
   }
 
@@ -4483,7 +5305,11 @@ class AudioEngineClass {
     this._masterEqLowGain = clamped;
     if (this._masterEqLow && this.ctx) {
       const target = this._masterEqBypass ? 0 : clamped;
-      this._masterEqLow.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+      this._masterEqLow.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4493,7 +5319,11 @@ class AudioEngineClass {
     this._masterEqMidGain = clamped;
     if (this._masterEqMid && this.ctx) {
       const target = this._masterEqBypass ? 0 : clamped;
-      this._masterEqMid.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+      this._masterEqMid.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4503,7 +5333,11 @@ class AudioEngineClass {
     this._masterEqHighGain = clamped;
     if (this._masterEqHigh && this.ctx) {
       const target = this._masterEqBypass ? 0 : clamped;
-      this._masterEqHigh.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+      this._masterEqHigh.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4511,7 +5345,11 @@ class AudioEngineClass {
   setMasterEqLowFreq(hz: number): void {
     const clamped = Math.max(20, Math.min(1000, hz));
     if (this._masterEqLow && this.ctx) {
-      this._masterEqLow.frequency.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._masterEqLow.frequency.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4519,7 +5357,11 @@ class AudioEngineClass {
   setMasterEqHighFreq(hz: number): void {
     const clamped = Math.max(1000, Math.min(20000, hz));
     if (this._masterEqHigh && this.ctx) {
-      this._masterEqHigh.frequency.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._masterEqHigh.frequency.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4528,9 +5370,24 @@ class AudioEngineClass {
     this._masterEqBypass = bypass;
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    if (this._masterEqLow)  this._masterEqLow.gain.setTargetAtTime(bypass ? 0 : this._masterEqLowGain,  now, 0.02);
-    if (this._masterEqMid)  this._masterEqMid.gain.setTargetAtTime(bypass ? 0 : this._masterEqMidGain,  now, 0.02);
-    if (this._masterEqHigh) this._masterEqHigh.gain.setTargetAtTime(bypass ? 0 : this._masterEqHighGain, now, 0.02);
+    if (this._masterEqLow)
+      this._masterEqLow.gain.setTargetAtTime(
+        bypass ? 0 : this._masterEqLowGain,
+        now,
+        0.02
+      );
+    if (this._masterEqMid)
+      this._masterEqMid.gain.setTargetAtTime(
+        bypass ? 0 : this._masterEqMidGain,
+        now,
+        0.02
+      );
+    if (this._masterEqHigh)
+      this._masterEqHigh.gain.setTargetAtTime(
+        bypass ? 0 : this._masterEqHighGain,
+        now,
+        0.02
+      );
   }
 
   /**
@@ -4552,7 +5409,11 @@ class AudioEngineClass {
   setMasterLimiterThreshold(db: number): void {
     const clamped = Math.max(-60, Math.min(0, db));
     if (this._masterLimiter && this.ctx) {
-      this._masterLimiter.threshold.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._masterLimiter.threshold.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4560,7 +5421,11 @@ class AudioEngineClass {
   setMasterLimiterKnee(knee: number): void {
     const clamped = Math.max(0, Math.min(40, knee));
     if (this._masterLimiter && this.ctx) {
-      this._masterLimiter.knee.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._masterLimiter.knee.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4568,7 +5433,11 @@ class AudioEngineClass {
   setMasterLimiterRatio(ratio: number): void {
     const clamped = Math.max(1, Math.min(20, ratio));
     if (this._masterLimiter && this.ctx) {
-      this._masterLimiter.ratio.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._masterLimiter.ratio.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4576,7 +5445,11 @@ class AudioEngineClass {
   setMasterLimiterRelease(sec: number): void {
     const clamped = Math.max(0, Math.min(1, sec));
     if (this._masterLimiter && this.ctx) {
-      this._masterLimiter.release.setTargetAtTime(clamped, this.ctx.currentTime, 0.02);
+      this._masterLimiter.release.setTargetAtTime(
+        clamped,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4587,7 +5460,11 @@ class AudioEngineClass {
     if (this._masterLimiterGain && this.ctx) {
       const target = this._masterLimiterBypass ? clamped : clamped;
       // Bypass-Pfad ändert Routing nicht den Make-Up-Wert
-      this._masterLimiterGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+      this._masterLimiterGain.gain.setTargetAtTime(
+        target,
+        this.ctx.currentTime,
+        0.02
+      );
     }
   }
 
@@ -4613,7 +5490,9 @@ class AudioEngineClass {
     try {
       wetParam.cancelScheduledValues(now);
       dryParam.cancelScheduledValues(now);
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
     const wetStart = wetParam.value;
     const dryStart = dryParam.value;
     const wetTarget = bypass ? 0 : 1;
@@ -4628,8 +5507,16 @@ class AudioEngineClass {
       dryParam.setValueCurveAtTime(dryCurve, now, xfade);
     } catch {
       // Fallback für Mock-AudioContexts oder Browser ohne Curve-Support
-      try { wetParam.setTargetAtTime(wetTarget, now, xfade / 3); } catch { /* swallow */ }
-      try { dryParam.setTargetAtTime(dryTarget, now, xfade / 3); } catch { /* swallow */ }
+      try {
+        wetParam.setTargetAtTime(wetTarget, now, xfade / 3);
+      } catch {
+        /* swallow */
+      }
+      try {
+        dryParam.setTargetAtTime(dryTarget, now, xfade / 3);
+      } catch {
+        /* swallow */
+      }
     }
   }
 
@@ -4647,11 +5534,13 @@ class AudioEngineClass {
 
     // v3.101.0: Stereo-Pfad bevorzugt wenn Splitter+2 AnalyserNodes vorhanden.
     if (
-      this._lufsAnalyserNodeL && this._lufsAnalyserNodeR &&
-      this._lufsScratchBuffer  && this._lufsScratchBufferR
+      this._lufsAnalyserNodeL &&
+      this._lufsAnalyserNodeR &&
+      this._lufsScratchBuffer &&
+      this._lufsScratchBufferR
     ) {
-      const nodeL    = this._lufsAnalyserNodeL;
-      const nodeR    = this._lufsAnalyserNodeR;
+      const nodeL = this._lufsAnalyserNodeL;
+      const nodeR = this._lufsAnalyserNodeR;
       const scratchL = this._lufsScratchBuffer;
       const scratchR = this._lufsScratchBufferR;
       this._lufsPollingTimer = setInterval(() => {
@@ -4726,14 +5615,22 @@ class AudioEngineClass {
   }
 
   /** v3.78.0: Combined Read für UI (vermeidet 3 Engine-Aufrufe / Tick). */
-  getLufsSnapshot(): { momentary: number; shortTerm: number; integrated: number } {
+  getLufsSnapshot(): {
+    momentary: number;
+    shortTerm: number;
+    integrated: number;
+  } {
     if (!this._lufsAnalyser) {
-      return { momentary: LUFS_SILENCE, shortTerm: LUFS_SILENCE, integrated: LUFS_SILENCE };
+      return {
+        momentary: LUFS_SILENCE,
+        shortTerm: LUFS_SILENCE,
+        integrated: LUFS_SILENCE,
+      };
     }
     this._ensureLufsPollingStarted();
     return {
-      momentary:  this._lufsAnalyser.getMomentary(),
-      shortTerm:  this._lufsAnalyser.getShortTerm(),
+      momentary: this._lufsAnalyser.getMomentary(),
+      shortTerm: this._lufsAnalyser.getShortTerm(),
       integrated: this._lufsAnalyser.getIntegrated(),
     };
   }
@@ -4755,50 +5652,55 @@ class AudioEngineClass {
    *   truePeakL/R/Max:                v3.102 True-Peak in dBTP (-Inf bei Silence).
    */
   getLufsStereoSnapshot(): {
-    momentary:        number;
-    shortTerm:        number;
-    integrated:       number;
-    momentaryL:       number;
-    momentaryR:       number;
+    momentary: number;
+    shortTerm: number;
+    integrated: number;
+    momentaryL: number;
+    momentaryR: number;
     phaseCorrelation: number;
-    lrImbalanceDb:    number;
-    truePeakL:        number;
-    truePeakR:        number;
-    truePeakMax:      number;
-    lra:              number;
+    lrImbalanceDb: number;
+    truePeakL: number;
+    truePeakR: number;
+    truePeakMax: number;
+    lra: number;
     lraHistoryLength: number;
   } {
     if (!this._lufsAnalyser) {
       return {
-        momentary:        LUFS_SILENCE,
-        shortTerm:        LUFS_SILENCE,
-        integrated:       LUFS_SILENCE,
-        momentaryL:       LUFS_SILENCE,
-        momentaryR:       LUFS_SILENCE,
+        momentary: LUFS_SILENCE,
+        shortTerm: LUFS_SILENCE,
+        integrated: LUFS_SILENCE,
+        momentaryL: LUFS_SILENCE,
+        momentaryR: LUFS_SILENCE,
         phaseCorrelation: NaN,
-        lrImbalanceDb:    0,
-        truePeakL:        -Infinity,
-        truePeakR:        -Infinity,
-        truePeakMax:      -Infinity,
-        lra:              0,
+        lrImbalanceDb: 0,
+        truePeakL: -Infinity,
+        truePeakR: -Infinity,
+        truePeakMax: -Infinity,
+        lra: 0,
         lraHistoryLength: 0,
       };
     }
     this._ensureLufsPollingStarted();
     const stereo = this._lufsAnalyser.getMomentaryStereo();
     let phase = NaN;
-    let imb   = 0;
+    let imb = 0;
     if (this._lastLufsBlockL && this._lastLufsBlockR) {
       try {
-        phase = lufsPhaseCorrelation(this._lastLufsBlockL, this._lastLufsBlockR);
-        imb   = lufsLrImbalanceDb(this._lastLufsBlockL, this._lastLufsBlockR);
+        phase = lufsPhaseCorrelation(
+          this._lastLufsBlockL,
+          this._lastLufsBlockR
+        );
+        imb = lufsLrImbalanceDb(this._lastLufsBlockL, this._lastLufsBlockR);
       } catch {
         phase = NaN;
-        imb   = 0;
+        imb = 0;
       }
     }
     // v3.102.0: True-Peak-Reader (vom LufsAnalyzer-internen TruePeakMeter).
-    let tpL = -Infinity, tpR = -Infinity, tpMax = -Infinity;
+    let tpL = -Infinity,
+      tpR = -Infinity,
+      tpMax = -Infinity;
     try {
       const tp = this._lufsAnalyser.getCurrentTruePeak();
       tpL = tp.leftDb;
@@ -4817,16 +5719,16 @@ class AudioEngineClass {
       /* swallow — old LufsAnalyzer ohne LRA-API */
     }
     return {
-      momentary:        this._lufsAnalyser.getMomentary(),
-      shortTerm:        this._lufsAnalyser.getShortTerm(),
-      integrated:       this._lufsAnalyser.getIntegrated(),
-      momentaryL:       stereo.L,
-      momentaryR:       stereo.R,
+      momentary: this._lufsAnalyser.getMomentary(),
+      shortTerm: this._lufsAnalyser.getShortTerm(),
+      integrated: this._lufsAnalyser.getIntegrated(),
+      momentaryL: stereo.L,
+      momentaryR: stereo.R,
       phaseCorrelation: phase,
-      lrImbalanceDb:    imb,
-      truePeakL:        tpL,
-      truePeakR:        tpR,
-      truePeakMax:      tpMax,
+      lrImbalanceDb: imb,
+      truePeakL: tpL,
+      truePeakR: tpR,
+      truePeakMax: tpMax,
       lra,
       lraHistoryLength: lraLen,
     };
@@ -4894,7 +5796,9 @@ class AudioEngineClass {
    */
   getMasterLimiterReduction(): number {
     if (!this._masterLimiter || this._masterLimiterBypass) return 0;
-    const r = (this._masterLimiter as DynamicsCompressorNode & { reduction?: number }).reduction;
+    const r = (
+      this._masterLimiter as DynamicsCompressorNode & { reduction?: number }
+    ).reduction;
     return typeof r === "number" && Number.isFinite(r) ? r : 0;
   }
 
@@ -4903,10 +5807,23 @@ class AudioEngineClass {
    * Werte unabhängig vom Store (Crash-Recovery / Restore-Verifikation).
    */
   getMasterFxSnapshot(): {
-    reverb:  { decay: number; damping: number; wet: number; bypass: boolean };
-    delay:   { time: number; feedback: number; wet: number; bypass: boolean };
-    eq:      { lowGain: number; midGain: number; highGain: number; midQ: number; bypass: boolean };
-    limiter: { threshold: number; knee: number; ratio: number; release: number; gain: number; bypass: boolean };
+    reverb: { decay: number; damping: number; wet: number; bypass: boolean };
+    delay: { time: number; feedback: number; wet: number; bypass: boolean };
+    eq: {
+      lowGain: number;
+      midGain: number;
+      highGain: number;
+      midQ: number;
+      bypass: boolean;
+    };
+    limiter: {
+      threshold: number;
+      knee: number;
+      ratio: number;
+      release: number;
+      gain: number;
+      bypass: boolean;
+    };
   } {
     return {
       reverb: {
@@ -4930,11 +5847,11 @@ class AudioEngineClass {
       },
       limiter: {
         threshold: this._masterLimiter?.threshold.value ?? -1,
-        knee:      this._masterLimiter?.knee.value      ?? 0,
-        ratio:     this._masterLimiter?.ratio.value     ?? 20,
-        release:   this._masterLimiter?.release.value   ?? 0.05,
-        gain:      this._masterLimiterMakeup,
-        bypass:    this._masterLimiterBypass,
+        knee: this._masterLimiter?.knee.value ?? 0,
+        ratio: this._masterLimiter?.ratio.value ?? 20,
+        release: this._masterLimiter?.release.value ?? 0.05,
+        gain: this._masterLimiterMakeup,
+        bypass: this._masterLimiterBypass,
       },
     };
   }
@@ -4954,7 +5871,11 @@ class AudioEngineClass {
         const localPath = this._toLocalFilePath(url);
 
         let arrayBuffer: ArrayBuffer;
-        if (localPath && typeof window !== "undefined" && window.electronAPI?.readFile) {
+        if (
+          localPath &&
+          typeof window !== "undefined" &&
+          window.electronAPI?.readFile
+        ) {
           const result = await window.electronAPI.readFile(localPath);
           if (!result.success || !result.data) {
             throw new Error(result.error || "fs:read-file fehlgeschlagen");
@@ -4972,12 +5893,18 @@ class AudioEngineClass {
           arrayBuffer = await response.arrayBuffer();
         }
 
-        const audioBuffer = await this.ctx!.decodeAudioData(arrayBuffer.slice(0));
+        const audioBuffer = await this.ctx!.decodeAudioData(
+          arrayBuffer.slice(0)
+        );
         this.bufferCache.set(url, audioBuffer);
         this.loadingPromises.delete(url);
         return audioBuffer;
       } catch (err) {
-        console.warn("[AudioEngine] Fehler beim Laden (wird nicht erneut versucht):", url, err);
+        console.warn(
+          "[AudioEngine] Fehler beim Laden (wird nicht erneut versucht):",
+          url,
+          err
+        );
         this.loadingPromises.delete(url);
         this._failedUrls.add(url); // Negativ-Cache → kein Endlos-Retry
         return null;
@@ -5020,7 +5947,11 @@ class AudioEngineClass {
     if (!value) return null;
 
     // Windows absolute paths, UNC shares and POSIX absolute paths.
-    if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\") || value.startsWith("/")) {
+    if (
+      /^[a-zA-Z]:[\\/]/.test(value) ||
+      value.startsWith("\\\\") ||
+      value.startsWith("/")
+    ) {
       return value;
     }
 
@@ -5037,7 +5968,10 @@ class AudioEngineClass {
   private _customClickBuffers = new Map<string, AudioBuffer>();
 
   /** Lädt und cached einen Custom-Click-Sound (Data-URL → AudioBuffer). */
-  async setCustomClickSound(role: "downbeat" | "beat", dataUrl: string | null): Promise<void> {
+  async setCustomClickSound(
+    role: "downbeat" | "beat",
+    dataUrl: string | null
+  ): Promise<void> {
     if (!this.ctx) return;
     const cacheKey = `${role}::${dataUrl ?? "none"}`;
     if (dataUrl === null) {
@@ -5045,20 +5979,33 @@ class AudioEngineClass {
       return;
     }
     if (this._customClickBuffers.has(cacheKey)) {
-      this._customClickBuffers.set(role, this._customClickBuffers.get(cacheKey)!);
+      this._customClickBuffers.set(
+        role,
+        this._customClickBuffers.get(cacheKey)!
+      );
       return;
     }
     try {
-      const arr = Uint8Array.from(atob(dataUrl.split(",")[1]), c => c.charCodeAt(0));
+      const arr = Uint8Array.from(atob(dataUrl.split(",")[1]), c =>
+        c.charCodeAt(0)
+      );
       const buf = await this.ctx.decodeAudioData(arr.buffer);
       this._customClickBuffers.set(role, buf);
       this._customClickBuffers.set(cacheKey, buf);
     } catch (err) {
-      console.warn(`[AudioEngine] Metronome Custom-Sound (${role}) konnte nicht dekodiert werden:`, err);
+      console.warn(
+        `[AudioEngine] Metronome Custom-Sound (${role}) konnte nicht dekodiert werden:`,
+        err
+      );
     }
   }
 
-  private _playClick(time: number, volume: number, freq: number, isDownbeat = false) {
+  private _playClick(
+    time: number,
+    volume: number,
+    freq: number,
+    isDownbeat = false
+  ) {
     if (!this.ctx || !this.masterGain) return;
 
     // Custom-Click-Buffer wenn vorhanden
@@ -5095,7 +6042,10 @@ class AudioEngineClass {
    * Spielt alle passenden Keyboard-Sampler-Zonen für eine MIDI-Note + Velocity.
    * Berechnet playbackRate aus Differenz zur Root-Note der Zone.
    */
-  async triggerKeyboardSamplerNote(note: number, velocity: number): Promise<void> {
+  async triggerKeyboardSamplerNote(
+    note: number,
+    velocity: number
+  ): Promise<void> {
     if (!this.ctx || !this.masterGain) return;
     const mod = await import("../store/useKeyboardSamplerStore");
     const zones = mod.findZones(note, velocity);
@@ -5107,7 +6057,10 @@ class AudioEngineClass {
       const rate = mod.zonePlaybackRate(zone, note);
       source.playbackRate.value = rate;
       const gain = this.ctx.createGain();
-      gain.gain.value = Math.max(0, Math.min(2, zone.volume * (velocity / 127)));
+      gain.gain.value = Math.max(
+        0,
+        Math.min(2, zone.volume * (velocity / 127))
+      );
       const panner = this.ctx.createStereoPanner();
       panner.pan.value = Math.max(-1, Math.min(1, zone.pan));
       source.connect(gain);
@@ -5129,7 +6082,10 @@ class AudioEngineClass {
    * - `File`-Eingabe: dekodiert direkt via `decodeAudioData(file.arrayBuffer())`.
    * Bei Fehler null zurueck – kein Throw, damit UI dialog ohne crash zeigen kann.
    */
-  async loadAudioTrack(id: string, fileOrPath: string | File): Promise<AudioBuffer | null> {
+  async loadAudioTrack(
+    id: string,
+    fileOrPath: string | File
+  ): Promise<AudioBuffer | null> {
     await this.init();
     if (!this.ctx) return null;
 
@@ -5188,7 +6144,10 @@ class AudioEngineClass {
    *   - syncMode === "timestretch" → AudioWorkletNode (Pitch-erhaltend, OLA)
    *   - sonst → klassischer AudioBufferSourceNode (Pitch+Tempo gekoppelt)
    */
-  playAudioTrack(id: string, opts?: { startOffsetSec?: number; loop?: boolean }): void {
+  playAudioTrack(
+    id: string,
+    opts?: { startOffsetSec?: number; loop?: boolean }
+  ): void {
     if (!this.ctx) return;
     const buf = this.audioTrackBuffers.get(id);
     if (!buf) return;
@@ -5224,11 +6183,11 @@ class AudioEngineClass {
       const totalSec = buf.duration;
       const startSec = Math.max(
         0,
-        Math.min(totalSec, (data!.loopStartSample as number) / sr),
+        Math.min(totalSec, (data!.loopStartSample as number) / sr)
       );
       const endSec = Math.max(
         startSec,
-        Math.min(totalSec, (data!.loopEndSample as number) / sr),
+        Math.min(totalSec, (data!.loopEndSample as number) / sr)
       );
       source.loopStart = startSec;
       source.loopEnd = endSec;
@@ -5266,7 +6225,10 @@ class AudioEngineClass {
       source.connect(nodes.input);
     }
 
-    const offsetSec = Math.max(0, opts?.startOffsetSec ?? data?.startOffsetSec ?? 0);
+    const offsetSec = Math.max(
+      0,
+      opts?.startOffsetSec ?? data?.startOffsetSec ?? 0
+    );
     const ctxStart = this.ctx.currentTime;
     try {
       source.start(ctxStart, offsetSec);
@@ -5289,7 +6251,11 @@ class AudioEngineClass {
       // Nur cleanup wenn die Source noch unsere aktuelle ist.
       if (this.audioTrackSources.get(id) === source) {
         this.audioTrackEndedListeners.get(id)?.forEach(cb => {
-          try { cb(); } catch { /* ignore */ }
+          try {
+            cb();
+          } catch {
+            /* ignore */
+          }
         });
         this._cleanupAudioTrackSource(id);
       }
@@ -5312,7 +6278,7 @@ class AudioEngineClass {
    */
   private async _playAudioTrackViaWorklet(
     id: string,
-    opts?: { startOffsetSec?: number; loop?: boolean },
+    opts?: { startOffsetSec?: number; loop?: boolean }
   ): Promise<void> {
     if (!this.ctx) return;
     const buf = this.audioTrackBuffers.get(id);
@@ -5323,9 +6289,13 @@ class AudioEngineClass {
     await this._ensureWorklets();
     if (!this._workletLoaded) {
       console.warn(
-        "[AudioEngine] timestretch: AudioWorklet nicht verfügbar – Fallback auf 'stretch'.",
+        "[AudioEngine] timestretch: AudioWorklet nicht verfügbar – Fallback auf 'stretch'."
       );
-      const fallback: AudioTrackChannelData = { ...(data ?? ({} as AudioTrackChannelData)), id, syncMode: "stretch" };
+      const fallback: AudioTrackChannelData = {
+        ...(data ?? ({} as AudioTrackChannelData)),
+        id,
+        syncMode: "stretch",
+      };
       this.audioTrackData.set(id, fallback);
       this.playAudioTrack(id, opts);
       return;
@@ -5345,9 +6315,13 @@ class AudioEngineClass {
     } catch (err) {
       console.warn(
         "[AudioEngine] timestretch: AudioWorkletNode-Erzeugung fehlgeschlagen – Fallback auf 'stretch'.",
-        err,
+        err
       );
-      const fallback: AudioTrackChannelData = { ...(data ?? ({} as AudioTrackChannelData)), id, syncMode: "stretch" };
+      const fallback: AudioTrackChannelData = {
+        ...(data ?? ({} as AudioTrackChannelData)),
+        id,
+        syncMode: "stretch",
+      };
       this.audioTrackData.set(id, fallback);
       this.playAudioTrack(id, opts);
       return;
@@ -5375,16 +6349,26 @@ class AudioEngineClass {
         crossfadeSamples: loopParams.crossfadeSamples,
       });
     } catch (err) {
-      console.warn("[AudioEngine] timestretch: postMessage(setBuffer) failed:", err);
+      console.warn(
+        "[AudioEngine] timestretch: postMessage(setBuffer) failed:",
+        err
+      );
     }
 
     // Initial-Seek?
-    const offsetSec = Math.max(0, opts?.startOffsetSec ?? data?.startOffsetSec ?? 0);
+    const offsetSec = Math.max(
+      0,
+      opts?.startOffsetSec ?? data?.startOffsetSec ?? 0
+    );
     if (offsetSec > 0) {
-      const samplePos = Math.floor(offsetSec * (buf.sampleRate || this.ctx.sampleRate));
+      const samplePos = Math.floor(
+        offsetSec * (buf.sampleRate || this.ctx.sampleRate)
+      );
       try {
         node.port.postMessage({ type: "seek", samplePos });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     // v3.52.0: Stretch-Param berücksichtigt sowohl BPM-Sync als auch
@@ -5393,16 +6377,20 @@ class AudioEngineClass {
     try {
       const p = node.parameters.get("stretch");
       if (p) p.setValueAtTime(ratio, this.ctx.currentTime);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // Position-Listener registrieren.
-    const initialSamplePos = offsetSec > 0
-      ? Math.floor(offsetSec * (buf.sampleRate || this.ctx.sampleRate))
-      : 0;
+    const initialSamplePos =
+      offsetSec > 0
+        ? Math.floor(offsetSec * (buf.sampleRate || this.ctx.sampleRate))
+        : 0;
     this.audioTrackWorkletPositions.set(id, initialSamplePos);
     node.port.onmessage = (e: MessageEvent) => {
       const m = e.data as { type?: string; samplePos?: number } | undefined;
-      if (!m || m.type !== "position" || typeof m.samplePos !== "number") return;
+      if (!m || m.type !== "position" || typeof m.samplePos !== "number")
+        return;
       this.audioTrackWorkletPositions.set(id, m.samplePos);
     };
 
@@ -5411,7 +6399,9 @@ class AudioEngineClass {
     const workletFx = data?.fx ?? DEFAULT_CHANNEL_FX;
     const nodes = this._getOrCreateChannelNodes(id, workletFx);
     this._applyFxToNodes(nodes, workletFx);
-    try { node.connect(nodes.input); } catch (err) {
+    try {
+      node.connect(nodes.input);
+    } catch (err) {
       console.warn("[AudioEngine] timestretch: connect error:", err);
     }
 
@@ -5533,14 +6523,18 @@ class AudioEngineClass {
    * Registriert einen Position-Callback. Liefert `(pos01, sec)` ca. 60 Hz
    * waehrend Wiedergabe. Gibt eine Unsub-Funktion zurueck.
    */
-  onAudioTrackPosition(id: string, cb: (pos01: number, sec: number) => void): () => void {
+  onAudioTrackPosition(
+    id: string,
+    cb: (pos01: number, sec: number) => void
+  ): () => void {
     let set = this.audioTrackPositionListeners.get(id);
     if (!set) {
       set = new Set();
       this.audioTrackPositionListeners.set(id, set);
     }
     set.add(cb);
-    const sourceActive = this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
+    const sourceActive =
+      this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
     if (sourceActive && !this.audioTrackPositionRaf.has(id)) {
       this._startAudioTrackPositionRaf(id);
     }
@@ -5561,7 +6555,9 @@ class AudioEngineClass {
    * entscheiden ob der Playhead sofort geseedet werden soll.
    */
   isAudioTrackPlaying(id: string): boolean {
-    return this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
+    return (
+      this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id)
+    );
   }
 
   /**
@@ -5660,7 +6656,10 @@ class AudioEngineClass {
       // Nur abspielen wenn Buffer geladen wurde. Wenn nicht: silently skip – die
       // Store-Schicht ist fuer Preload-Orchestrierung verantwortlich.
       if (!this.audioTrackBuffers.has(t.id)) continue;
-      this.playAudioTrack(t.id, { startOffsetSec: t.startOffsetSec, loop: t.loop });
+      this.playAudioTrack(t.id, {
+        startOffsetSec: t.startOffsetSec,
+        loop: t.loop,
+      });
     }
   }
 
@@ -5735,7 +6734,9 @@ class AudioEngineClass {
    * den Worklet-Stretch-Param ("timestretch"). Beide nutzen dasselbe Verhältnis
    * `bpm/originalBpm` – der Unterschied liegt im Routing (Pitch-Kopplung).
    */
-  private _calcAudioTrackPlaybackRate(data: AudioTrackChannelData | undefined): number {
+  private _calcAudioTrackPlaybackRate(
+    data: AudioTrackChannelData | undefined
+  ): number {
     if (!data) return 1;
     let bpmRate = 1;
     if (data.syncMode === "stretch" || data.syncMode === "timestretch") {
@@ -5778,7 +6779,7 @@ class AudioEngineClass {
    */
   private _computeWorkletLoopParams(
     data: AudioTrackChannelData | undefined,
-    opts?: { loop?: boolean },
+    opts?: { loop?: boolean }
   ): {
     loop: boolean;
     loopStart: number | null;
@@ -5787,25 +6788,30 @@ class AudioEngineClass {
     crossfadeSamples: number;
   } {
     const wantsRange =
-      data?.loopEnabled === true
-      && typeof data?.loopStartSample === "number"
-      && typeof data?.loopEndSample === "number"
-      && Number.isFinite(data.loopStartSample as number)
-      && Number.isFinite(data.loopEndSample as number)
-      && (data.loopStartSample as number) >= 0
-      && (data.loopEndSample as number) > (data.loopStartSample as number);
+      data?.loopEnabled === true &&
+      typeof data?.loopStartSample === "number" &&
+      typeof data?.loopEndSample === "number" &&
+      Number.isFinite(data.loopStartSample as number) &&
+      Number.isFinite(data.loopEndSample as number) &&
+      (data.loopStartSample as number) >= 0 &&
+      (data.loopEndSample as number) > (data.loopStartSample as number);
     // v3.72.0: Crossfade-Samples für Worklet. Sample-Rate aus dem aktuellen
     // ctx (44.1kHz default falls noch nicht initialisiert).
     const sr = this.ctx?.sampleRate || 44100;
     const xfadeMsRaw = data?.loopCrossfadeMs;
     let xfadeMs = 0;
-    if (typeof xfadeMsRaw === "number" && Number.isFinite(xfadeMsRaw) && xfadeMsRaw > 0) {
+    if (
+      typeof xfadeMsRaw === "number" &&
+      Number.isFinite(xfadeMsRaw) &&
+      xfadeMsRaw > 0
+    ) {
       xfadeMs = Math.min(200, xfadeMsRaw);
     }
     let crossfadeSamples = Math.max(0, Math.floor((xfadeMs / 1000) * sr));
     // Wenn Range gesetzt: clampen auf rangeLen / 2.
     if (wantsRange && crossfadeSamples > 0) {
-      const rangeLen = (data!.loopEndSample as number) - (data!.loopStartSample as number);
+      const rangeLen =
+        (data!.loopEndSample as number) - (data!.loopStartSample as number);
       const maxXfade = Math.floor(rangeLen / 2);
       if (crossfadeSamples > maxXfade) crossfadeSamples = maxXfade;
     }
@@ -5818,7 +6824,12 @@ class AudioEngineClass {
       };
     }
     if (data?.loopEnabled === true) {
-      return { loop: true, loopStart: null, loopEnd: null, crossfadeSamples: 0 };
+      return {
+        loop: true,
+        loopStart: null,
+        loopEnd: null,
+        crossfadeSamples: 0,
+      };
     }
     return {
       loop: opts?.loop ?? data?.loop ?? false,
@@ -5861,7 +6872,10 @@ class AudioEngineClass {
           crossfadeSamples: params.crossfadeSamples,
         });
       } catch (err) {
-        console.warn("[AudioEngine] setAudioTrackLoopPoints worklet error:", err);
+        console.warn(
+          "[AudioEngine] setAudioTrackLoopPoints worklet error:",
+          err
+        );
       }
       return;
     }
@@ -5880,21 +6894,23 @@ class AudioEngineClass {
     const sr = buf.sampleRate || 44100;
     const totalSec = buf.duration;
     const lsSec =
-      typeof data.loopStartSample === "number" && Number.isFinite(data.loopStartSample)
+      typeof data.loopStartSample === "number" &&
+      Number.isFinite(data.loopStartSample)
         ? Math.max(0, Math.min(totalSec, data.loopStartSample / sr))
         : null;
     const leSec =
-      typeof data.loopEndSample === "number" && Number.isFinite(data.loopEndSample)
+      typeof data.loopEndSample === "number" &&
+      Number.isFinite(data.loopEndSample)
         ? Math.max(0, Math.min(totalSec, data.loopEndSample / sr))
         : null;
 
     let restartSec = currentSec;
     if (
-      data.loopEnabled === true
-      && lsSec !== null
-      && leSec !== null
-      && leSec > lsSec
-      && (currentSec < lsSec || currentSec >= leSec)
+      data.loopEnabled === true &&
+      lsSec !== null &&
+      leSec !== null &&
+      leSec > lsSec &&
+      (currentSec < lsSec || currentSec >= leSec)
     ) {
       restartSec = lsSec;
     }
@@ -5914,7 +6930,11 @@ class AudioEngineClass {
         source.playbackRate.setValueAtTime(rate, this.ctx?.currentTime ?? 0);
       } catch {
         // Fallback fuer Mocks: direkter value-Set
-        try { source.playbackRate.value = rate; } catch { /* ignore */ }
+        try {
+          source.playbackRate.value = rate;
+        } catch {
+          /* ignore */
+        }
       }
     });
     // Aktive Worklet-Tracks: stretch-AudioParam aktualisieren.
@@ -5929,7 +6949,9 @@ class AudioEngineClass {
         try {
           const p = node.parameters.get("stretch");
           if (p) (p as unknown as { value: number }).value = rate;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     });
   }
@@ -5938,8 +6960,16 @@ class AudioEngineClass {
   private _stopAudioTrackWorklet(id: string): void {
     const node = this.audioTrackWorkletNodes.get(id);
     if (!node) return;
-    try { node.port.onmessage = null as unknown as (e: MessageEvent) => void; } catch { /* ignore */ }
-    try { node.disconnect(); } catch { /* ignore */ }
+    try {
+      node.port.onmessage = null as unknown as (e: MessageEvent) => void;
+    } catch {
+      /* ignore */
+    }
+    try {
+      node.disconnect();
+    } catch {
+      /* ignore */
+    }
     this.audioTrackWorkletNodes.delete(id);
     this.audioTrackWorkletPositions.delete(id);
   }
@@ -5947,9 +6977,21 @@ class AudioEngineClass {
   private _stopAudioTrackSource(id: string): void {
     const src = this.audioTrackSources.get(id);
     if (!src) return;
-    try { src.onended = null; } catch { /* ignore */ }
-    try { src.stop(); } catch { /* already stopped */ }
-    try { src.disconnect(); } catch { /* ignore */ }
+    try {
+      src.onended = null;
+    } catch {
+      /* ignore */
+    }
+    try {
+      src.stop();
+    } catch {
+      /* already stopped */
+    }
+    try {
+      src.disconnect();
+    } catch {
+      /* ignore */
+    }
     // v3.72.0: Crossfade-Chain mit-disposen falls vorhanden.
     this._disposeAudioTrackXfade(id);
   }
@@ -5969,8 +7011,16 @@ class AudioEngineClass {
   private _disposeAudioTrackXfade(id: string): void {
     const xfade = this.audioTrackXfadeGains.get(id);
     if (xfade) {
-      try { xfade.gain.cancelScheduledValues(0); } catch { /* ignore */ }
-      try { xfade.disconnect(); } catch { /* ignore */ }
+      try {
+        xfade.gain.cancelScheduledValues(0);
+      } catch {
+        /* ignore */
+      }
+      try {
+        xfade.disconnect();
+      } catch {
+        /* ignore */
+      }
       this.audioTrackXfadeGains.delete(id);
     }
     this.audioTrackXfadeMeta.delete(id);
@@ -5988,7 +7038,7 @@ class AudioEngineClass {
    */
   private _effectiveLoopCrossfadeMs(
     data: AudioTrackChannelData | undefined,
-    buf: AudioBuffer | undefined,
+    buf: AudioBuffer | undefined
   ): number {
     const raw = data?.loopCrossfadeMs;
     if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return 0;
@@ -5998,9 +7048,11 @@ class AudioEngineClass {
     const ls = data?.loopStartSample;
     const le = data?.loopEndSample;
     if (
-      typeof ls === "number" && typeof le === "number"
-      && Number.isFinite(ls) && Number.isFinite(le)
-      && le > ls
+      typeof ls === "number" &&
+      typeof le === "number" &&
+      Number.isFinite(ls) &&
+      Number.isFinite(le) &&
+      le > ls
     ) {
       const loopRangeMs = ((le - ls) / sr) * 1000;
       // Clamp auf loopRange/2 damit Crossfade nicht > halbe Loop.
@@ -6041,7 +7093,7 @@ class AudioEngineClass {
   private _scheduleAudioTrackLoopCrossfade(
     id: string,
     ctxStart: number,
-    offsetSec: number,
+    offsetSec: number
   ): void {
     if (!this.ctx) return;
     const data = this.audioTrackData.get(id);
@@ -6052,10 +7104,13 @@ class AudioEngineClass {
     const ls = data.loopStartSample;
     const le = data.loopEndSample;
     if (
-      typeof ls !== "number" || typeof le !== "number"
-      || !Number.isFinite(ls) || !Number.isFinite(le)
-      || le <= ls
-    ) return;
+      typeof ls !== "number" ||
+      typeof le !== "number" ||
+      !Number.isFinite(ls) ||
+      !Number.isFinite(le) ||
+      le <= ls
+    )
+      return;
     const xfadeMs = this._effectiveLoopCrossfadeMs(data, buf);
     if (xfadeMs <= 0) return;
     const xfadeSec = xfadeMs / 1000;
@@ -6092,7 +7147,9 @@ class AudioEngineClass {
     } else {
       // Wir starten bereits jenseits loopEnd → loop wrapt sofort auf loopStart,
       // dann Period bis nächster loopEnd.
-      const remainder = ((offsetSec - loopStartSec) % bufLoopPeriod + bufLoopPeriod) % bufLoopPeriod;
+      const remainder =
+        (((offsetSec - loopStartSec) % bufLoopPeriod) + bufLoopPeriod) %
+        bufLoopPeriod;
       const distToEnd = bufLoopPeriod - remainder;
       firstWrapCtx = ctxStart + distToEnd / safeRate;
     }
@@ -6161,13 +7218,18 @@ class AudioEngineClass {
         pos01 = Math.min(1, Math.max(0, pos01));
       }
       this.audioTrackPositionListeners.get(id)?.forEach(cb => {
-        try { cb(pos01, sec); } catch { /* ignore */ }
+        try {
+          cb(pos01, sec);
+        } catch {
+          /* ignore */
+        }
       });
       // Naechsten Frame nur planen wenn noch listener da sind und source ODER worklet aktiv.
-      const stillActive = this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
+      const stillActive =
+        this.audioTrackSources.has(id) || this.audioTrackWorkletNodes.has(id);
       if (
-        stillActive
-        && (this.audioTrackPositionListeners.get(id)?.size ?? 0) > 0
+        stillActive &&
+        (this.audioTrackPositionListeners.get(id)?.size ?? 0) > 0
       ) {
         const rid = requestAnimationFrame(tick);
         this.audioTrackPositionRaf.set(id, rid);
@@ -6183,8 +7245,11 @@ class AudioEngineClass {
     const rid = this.audioTrackPositionRaf.get(id);
     if (rid !== undefined) {
       try {
-        if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(rid);
-      } catch { /* ignore */ }
+        if (typeof cancelAnimationFrame === "function")
+          cancelAnimationFrame(rid);
+      } catch {
+        /* ignore */
+      }
       this.audioTrackPositionRaf.delete(id);
     }
   }
@@ -6247,7 +7312,11 @@ class AudioEngineClass {
   stopEnvelopeFollower(partId: string): void {
     const analyser = this._envelopeAnalysers.get(partId);
     if (analyser) {
-      try { analyser.disconnect(); } catch { /* ignore */ }
+      try {
+        analyser.disconnect();
+      } catch {
+        /* ignore */
+      }
       this._envelopeAnalysers.delete(partId);
       this._envelopeLevels.delete(partId);
     }
@@ -6300,8 +7369,13 @@ class AudioEngineClass {
     await this.init();
     if (!this.ctx) throw new Error("AudioContext not initialised");
 
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      throw new Error("MediaDevices.getUserMedia() is not available in this environment");
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      throw new Error(
+        "MediaDevices.getUserMedia() is not available in this environment"
+      );
     }
 
     // Bei Re-Attach (Device-Switch) erst altes cleanup
@@ -6352,9 +7426,21 @@ class AudioEngineClass {
   detachLiveInput(channelId: string): void {
     const entry = this._liveInputs.get(channelId);
     if (!entry) return;
-    try { entry.source.disconnect(); } catch { /* ignore */ }
-    try { entry.latencyDelay.disconnect(); } catch { /* ignore */ }
-    try { entry.stream.getTracks().forEach(t => t.stop()); } catch { /* ignore */ }
+    try {
+      entry.source.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      entry.latencyDelay.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      entry.stream.getTracks().forEach(t => t.stop());
+    } catch {
+      /* ignore */
+    }
     this._liveInputs.delete(channelId);
   }
 
@@ -6371,7 +7457,7 @@ class AudioEngineClass {
       entry.latencyDelay.delayTime.setTargetAtTime(
         clamped / 1000,
         this.ctx.currentTime,
-        0.01,
+        0.01
       );
     }
   }
@@ -6395,8 +7481,10 @@ class AudioEngineClass {
     const ctx = this.ctx;
     if (!ctx) return 0;
     // baseLatency: hardware buffer (~2–10 ms); outputLatency: full path
-    const base = (ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
-    const out  = (ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
+    const base =
+      (ctx as AudioContext & { baseLatency?: number }).baseLatency ?? 0;
+    const out =
+      (ctx as AudioContext & { outputLatency?: number }).outputLatency ?? 0;
     return Math.round((base + out) * 1000);
   }
 
@@ -6551,9 +7639,10 @@ class AudioEngineClass {
       this._liveRecorder.addTrack("master", this.masterGain, "master", 2);
     }
     // Channels — entweder explizit, oder alle bekannten.
-    const ids = channels && channels.length > 0
-      ? channels.filter(c => c !== "master")
-      : Array.from(this.channelNodes.keys());
+    const ids =
+      channels && channels.length > 0
+        ? channels.filter(c => c !== "master")
+        : Array.from(this.channelNodes.keys());
     for (const id of ids) {
       const tap = this.getChannelTapNode(id);
       if (tap) this._liveRecorder.addTrack(id, tap, "channel", 2);
@@ -6698,7 +7787,9 @@ class AudioEngineClass {
     if (wantsLiveRec && !hasTrack) {
       try {
         this._liveRecorder.addTrack("audio-input", tap, "channel", 2);
-      } catch { /* defensive */ }
+      } catch {
+        /* defensive */
+      }
     } else if (!wantsLiveRec && hasTrack) {
       this._liveRecorder.removeTrack("audio-input");
     }
@@ -6717,7 +7808,12 @@ class AudioEngineClass {
    */
   setLooperCallbacks(
     onState: (index: number, state: LoopState) => void,
-    onLength: (index: number, lengthBeats: number, lengthSec: number, frameCount: number) => void,
+    onLength: (
+      index: number,
+      lengthBeats: number,
+      lengthSec: number,
+      frameCount: number
+    ) => void
   ): void {
     this._looperEngine.setCallbacks({ onState, onLength });
   }
@@ -6775,7 +7871,8 @@ class AudioEngineClass {
   playSliceBuffer(buffer: Float32Array, sampleRate: number): boolean {
     if (!this.ctx || !this.masterGain) return false;
     if (!buffer || buffer.length === 0) return false;
-    const rate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100;
+    const rate =
+      Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100;
     try {
       const audioBuffer = this.ctx.createBuffer(1, buffer.length, rate);
       // copyToChannel akzeptiert nur Float32Array<ArrayBuffer>; bei
@@ -6790,7 +7887,12 @@ class AudioEngineClass {
       gain.connect(this.masterGain);
       src.start();
       src.onended = () => {
-        try { src.disconnect(); gain.disconnect(); } catch { /* ignore */ }
+        try {
+          src.disconnect();
+          gain.disconnect();
+        } catch {
+          /* ignore */
+        }
       };
       return true;
     } catch (err) {

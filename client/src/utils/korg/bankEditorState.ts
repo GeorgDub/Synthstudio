@@ -34,7 +34,7 @@ import {
 export interface OpenedSlot {
   /** Stable React key. */
   rowId: string;
-  /** Slot-Index 0..E2S_MAX_SLOTS-1 in the on-disk offset-table. */
+  /** Slot-Index 0..1019 (== OSC_0index) in der on-disk Offset-Tabelle. */
   slotIndex: number;
   /** Slot is empty in the source bank (offset=0). UI shows "Empty" placeholder. */
   empty: boolean;
@@ -46,8 +46,15 @@ export interface OpenedSlot {
   oneshot: boolean;
   /** +12dB Gain flag. */
   gain12db: boolean;
-  /** Sample-Tune in semitones (-99..+99 in the spec's i8 cents/semitone field). */
+  /** OSC_SampleTune (esli +0x55, i8): Coarse-Tune, Oe2sSLE-Range -63..+63. */
   sampleTune: number;
+  /** playVolume-Level 0..127 (esli +0x2c, u16 normalisiert). */
+  level: number;
+  /** Loop-Start in Frames (esli +0x34, relativ zu StartPoint). Nur bei
+   *  Forward-Loop (oneshot=false) relevant. */
+  loopStart: number;
+  /** Loop-/Sample-Ende in Frames (esli +0x38, letzter Frame inklusive). */
+  loopEnd: number;
 
   // — PCM + audio fields —
   pcmData?: Float32Array;
@@ -81,6 +88,9 @@ export interface OpenedSlotSnapshot {
   oneshot: boolean;
   gain12db: boolean;
   sampleTune: number;
+  level: number;
+  loopStart: number;
+  loopEnd: number;
   pcmData: Float32Array;
   sampleRate: number;
   channels: 1 | 2;
@@ -93,10 +103,10 @@ export interface OpenedSlotSnapshot {
 // ─── Bank → OpenedSlot[] ──────────────────────────────────────────────────────
 
 /**
- * Convert a parsed `E2sBank` into the editor's slot-list (E2S_MAX_SLOTS rows).
+ * Convert a parsed E2sBank into the editor slot-list (E2S_MAX_SLOTS rows).
  *
- * Every position 0..249 is represented — empty slots get `empty: true`
- * placeholders. All loaded slots start with `isDirty: false`.
+ * Every position 0..E2S_MAX_SLOTS-1 is represented — empty slots get
+ * `empty: true` placeholders. All loaded slots start with `isDirty: false`.
  *
  * @param bank Result von `parseE2sBank(buf, src, { preserveRawRiff: true })`.
  *             Wenn `bank.slots[i].rawRiff` undefined ist, kann der Slot bei
@@ -106,7 +116,7 @@ export interface OpenedSlotSnapshot {
  */
 export function bankToOpenedSlots(
   bank: E2sBank,
-  keyPrefix = "slot",
+  keyPrefix = "slot"
 ): OpenedSlot[] {
   const out: OpenedSlot[] = [];
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {
@@ -121,6 +131,9 @@ export function bankToOpenedSlots(
         oneshot: true,
         gain12db: false,
         sampleTune: 0,
+        level: 127,
+        loopStart: 0,
+        loopEnd: 0,
         slices: [],
         isDirty: false,
         original: null,
@@ -129,7 +142,7 @@ export function bankToOpenedSlots(
     }
     // Defensive: kopiere Slices in eigene Objekte (Builder mutiert sie nicht,
     // aber wir wollen Snapshot-Isolation für Revert garantieren).
-    const slicesCopy: E2sSlice[] = src.slices.map((s) => ({
+    const slicesCopy: E2sSlice[] = src.slices.map(s => ({
       start: s.start,
       length: s.length,
       attackLength: s.attackLength,
@@ -140,13 +153,16 @@ export function bankToOpenedSlots(
       category: src.category,
       oneshot: src.loopType === LOOP_TYPE_ONESHOT,
       gain12db: src.gain12db,
-      sampleTune: 0, // reader does not yet decode sampleTune i8 — keep 0
+      sampleTune: src.sampleTune ?? 0, // v3.284: Reader dekodiert +0x55 i8
+      level: src.level ?? 127, // v3.284: playVolume-Level durchreichen
+      loopStart: src.loopStart ?? 0, // v3.284: Loop-Punkte durchreichen
+      loopEnd: src.loopEnd ?? 0,
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
       frames: src.frames,
       rawRiff: src.rawRiff,
-      slices: slicesCopy.map((s) => ({ ...s })),
+      slices: slicesCopy.map(s => ({ ...s })),
     };
     out.push({
       rowId: `${keyPrefix}-${i}`,
@@ -156,7 +172,10 @@ export function bankToOpenedSlots(
       category: src.category,
       oneshot: src.loopType === LOOP_TYPE_ONESHOT,
       gain12db: src.gain12db,
-      sampleTune: 0,
+      sampleTune: src.sampleTune ?? 0,
+      level: src.level ?? 127,
+      loopStart: src.loopStart ?? 0,
+      loopEnd: src.loopEnd ?? 0,
       pcmData: src.pcmData,
       sampleRate: src.sampleRate,
       channels: src.channels,
@@ -185,9 +204,9 @@ export function bankToOpenedSlots(
 export function patchOpenedSlot(
   slots: OpenedSlot[],
   rowId: string,
-  patch: Partial<OpenedSlot>,
+  patch: Partial<OpenedSlot>
 ): OpenedSlot[] {
-  return slots.map((s) => {
+  return slots.map(s => {
     if (s.rowId !== rowId) return s;
     const editableTouched =
       (patch.name !== undefined && patch.name !== s.name) ||
@@ -195,6 +214,9 @@ export function patchOpenedSlot(
       (patch.oneshot !== undefined && patch.oneshot !== s.oneshot) ||
       (patch.gain12db !== undefined && patch.gain12db !== s.gain12db) ||
       (patch.sampleTune !== undefined && patch.sampleTune !== s.sampleTune) ||
+      (patch.level !== undefined && patch.level !== s.level) ||
+      (patch.loopStart !== undefined && patch.loopStart !== s.loopStart) ||
+      (patch.loopEnd !== undefined && patch.loopEnd !== s.loopEnd) ||
       patch.pcmData !== undefined ||
       patch.sampleRate !== undefined ||
       patch.channels !== undefined ||
@@ -214,12 +236,12 @@ export function patchOpenedSlot(
 export function setSlotSlices(
   slots: OpenedSlot[],
   rowId: string,
-  slices: E2sSlice[],
+  slices: E2sSlice[]
 ): OpenedSlot[] {
-  return slots.map((s) =>
+  return slots.map(s =>
     s.rowId === rowId
-      ? { ...s, slices: slices.map((sl) => ({ ...sl })), isDirty: true }
-      : s,
+      ? { ...s, slices: slices.map(sl => ({ ...sl })), isDirty: true }
+      : s
   );
 }
 
@@ -233,10 +255,10 @@ export function replaceSlotSample(
   rowId: string,
   pcmData: Float32Array,
   sampleRate: number,
-  channels: 1 | 2,
+  channels: 1 | 2
 ): OpenedSlot[] {
   const frames = Math.floor(pcmData.length / channels);
-  return slots.map((s) =>
+  return slots.map(s =>
     s.rowId === rowId
       ? {
           ...s,
@@ -251,7 +273,7 @@ export function replaceSlotSample(
           slices: [],
           isDirty: true,
         }
-      : s,
+      : s
   );
 }
 
@@ -264,7 +286,7 @@ export function replaceSlotSample(
  * This is the trade-off documented in the README caveat.
  */
 export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
-  return slots.map((s) =>
+  return slots.map(s =>
     s.rowId === rowId
       ? {
           ...s,
@@ -275,6 +297,9 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
           oneshot: true,
           gain12db: false,
           sampleTune: 0,
+          level: 127,
+          loopStart: 0,
+          loopEnd: 0,
           pcmData: undefined,
           sampleRate: undefined,
           channels: undefined,
@@ -283,7 +308,7 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
           slices: [],
           isDirty: true,
         }
-      : s,
+      : s
   );
 }
 
@@ -292,7 +317,7 @@ export function deleteSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
  * No-op if the slot has no original (it was empty when loaded).
  */
 export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
-  return slots.map((s) => {
+  return slots.map(s => {
     if (s.rowId !== rowId) return s;
     const o = s.original;
     if (!o) {
@@ -305,6 +330,9 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
         oneshot: true,
         gain12db: false,
         sampleTune: 0,
+        level: 127,
+        loopStart: 0,
+        loopEnd: 0,
         pcmData: undefined,
         sampleRate: undefined,
         channels: undefined,
@@ -322,15 +350,207 @@ export function revertSlot(slots: OpenedSlot[], rowId: string): OpenedSlot[] {
       oneshot: o.oneshot,
       gain12db: o.gain12db,
       sampleTune: o.sampleTune,
+      level: o.level,
+      loopStart: o.loopStart,
+      loopEnd: o.loopEnd,
       pcmData: o.pcmData,
       sampleRate: o.sampleRate,
       channels: o.channels,
       frames: o.frames,
       rawRiff: o.rawRiff,
-      slices: o.slices.map((sl) => ({ ...sl })),
+      slices: o.slices.map(sl => ({ ...sl })),
       isDirty: false,
     };
   });
+}
+
+// ─── Move / Swap slot numbers (v3.284, Oe2sSLE „Move/Exchange/#Num") ──────────
+
+/** Die inhaltlichen Felder eines Slots (alles außer Position/rowId/original). */
+interface SlotContent {
+  empty: boolean;
+  name: string;
+  category: number;
+  oneshot: boolean;
+  gain12db: boolean;
+  sampleTune: number;
+  level: number;
+  loopStart: number;
+  loopEnd: number;
+  pcmData?: Float32Array;
+  sampleRate?: number;
+  channels?: 1 | 2;
+  frames?: number;
+  slices: E2sSlice[];
+}
+
+function extractSlotContent(s: OpenedSlot): SlotContent {
+  return {
+    empty: s.empty,
+    name: s.name,
+    category: s.category,
+    oneshot: s.oneshot,
+    gain12db: s.gain12db,
+    sampleTune: s.sampleTune,
+    level: s.level,
+    loopStart: s.loopStart,
+    loopEnd: s.loopEnd,
+    pcmData: s.pcmData,
+    sampleRate: s.sampleRate,
+    channels: s.channels,
+    frames: s.frames,
+    slices: s.slices.map(sl => ({ ...sl })),
+  };
+}
+
+/**
+ * Wendet fremden Inhalt auf einen Slot an. Position (slotIndex/rowId/original)
+ * bleibt; `rawRiff` wird gelöscht + `isDirty=true` gesetzt, weil sich die
+ * Slot-/Geräte-Nummer (== slotIndex) ändert und die esli neu geschrieben werden
+ * MUSS (der Builder schreibt OSC_0index = slotIndex).
+ */
+function withSlotContent(row: OpenedSlot, c: SlotContent): OpenedSlot {
+  return {
+    ...row,
+    empty: c.empty,
+    name: c.name,
+    category: c.category,
+    oneshot: c.oneshot,
+    gain12db: c.gain12db,
+    sampleTune: c.sampleTune,
+    level: c.level,
+    loopStart: c.loopStart,
+    loopEnd: c.loopEnd,
+    pcmData: c.pcmData,
+    sampleRate: c.sampleRate,
+    channels: c.channels,
+    frames: c.frames,
+    rawRiff: undefined,
+    slices: c.slices.map(sl => ({ ...sl })),
+    isDirty: true,
+  };
+}
+
+/**
+ * Oe2sSLE „Move / Exchange / #Num ändern": verschiebt/tauscht den Inhalt eines
+ * Slots auf eine andere Slot-Nummer (== OSC_0index nach der Offset-Tabellen-
+ * Angleichung). Ziel frei → Verschieben (Quelle wird leer); Ziel belegt →
+ * Tauschen. Positionen (slotIndex) bleiben; nur der Inhalt wandert. Beide
+ * betroffenen Rows werden isDirty=true (Re-Encode mit neuer Nummer).
+ *
+ * No-op (gleiche Referenz) bei: unbekannter rowId, Ziel out-of-range, Ziel ==
+ * Quelle, oder beide leer.
+ *
+ * @param slots      Aktuelle Slot-Liste.
+ * @param fromRowId  Quell-Row.
+ * @param toIndex    Ziel-Slot-Index (== gewünschte OSC_0index).
+ */
+export function moveOrSwapSlot(
+  slots: OpenedSlot[],
+  fromRowId: string,
+  toIndex: number
+): OpenedSlot[] {
+  const from = slots.find(s => s.rowId === fromRowId);
+  if (!from) return slots;
+  if (
+    !Number.isInteger(toIndex) ||
+    toIndex < 0 ||
+    toIndex >= E2S_MAX_SLOTS ||
+    toIndex === from.slotIndex
+  ) {
+    return slots;
+  }
+  const to = slots.find(s => s.slotIndex === toIndex);
+  if (!to) return slots;
+  if (from.empty && to.empty) return slots;
+
+  const contentFrom = extractSlotContent(from);
+  const contentTo = extractSlotContent(to);
+  return slots.map(s => {
+    if (s.rowId === from.rowId) return withSlotContent(s, contentTo);
+    if (s.rowId === to.rowId) return withSlotContent(s, contentFrom);
+    return s;
+  });
+}
+
+// ─── Merge-Import einer zweiten .all-Bank (v3.284, Oe2sSLE „Import all") ───────
+
+/** E2sSlot (Reader-Output) → SlotContent (Editor-Inhalt). */
+function e2sSlotToContent(src: E2sSlot): SlotContent {
+  return {
+    empty: false,
+    name: src.name,
+    category: src.category,
+    oneshot: src.loopType === LOOP_TYPE_ONESHOT,
+    gain12db: src.gain12db,
+    sampleTune: src.sampleTune ?? 0,
+    level: src.level ?? 127,
+    loopStart: src.loopStart ?? 0,
+    loopEnd: src.loopEnd ?? 0,
+    pcmData: src.pcmData,
+    sampleRate: src.sampleRate,
+    channels: src.channels,
+    frames: src.frames,
+    slices: src.slices.map(sl => ({ ...sl })),
+  };
+}
+
+export interface E2sMergeResult {
+  slots: OpenedSlot[];
+  /** Wie viele importierte Samples platziert wurden. */
+  merged: number;
+  /** Wie viele mangels freier Slots übersprungen wurden. */
+  skipped: number;
+}
+
+/**
+ * Oe2sSLE „Import e2sSample.all": mergt die Samples einer ZWEITEN geparsten Bank
+ * in die aktuelle Editor-Slot-Liste. Belegte Slots der Quelle wandern der Reihe
+ * nach in die nächsten FREIEN Slot-Nummern ab `fromNumber` (renumbering).
+ * Positionen bleiben; jeder befüllte Ziel-Slot wird isDirty=true (Re-Encode mit
+ * der neuen Nummer). Reichen die freien Slots nicht, wird der Rest übersprungen.
+ *
+ * @param slots         Aktuelle Editor-Slots.
+ * @param importedSlots `parseE2sBank(otherFile).slots`.
+ * @param fromNumber    Start-Slot-Nummer für die Zuweisung (default 501).
+ */
+export function mergeE2sBankIntoOpenedSlots(
+  slots: OpenedSlot[],
+  importedSlots: ReadonlyArray<E2sSlot | null>,
+  fromNumber = 501
+): E2sMergeResult {
+  const start = Math.max(
+    0,
+    Math.min(E2S_MAX_SLOTS - 1, Math.floor(fromNumber))
+  );
+  const freeQueue = slots
+    .filter(s => s.empty && s.slotIndex >= start)
+    .map(s => s.slotIndex)
+    .sort((a, b) => a - b);
+
+  const sources = importedSlots.filter(
+    (s): s is E2sSlot => s != null && !!s.pcmData && s.pcmData.length > 0
+  );
+
+  const assignments = new Map<number, E2sSlot>();
+  let merged = 0;
+  let skipped = 0;
+  for (const src of sources) {
+    const target = freeQueue.shift();
+    if (target === undefined) {
+      skipped++;
+      continue;
+    }
+    assignments.set(target, src);
+    merged++;
+  }
+  if (merged === 0) return { slots, merged: 0, skipped };
+
+  const next = slots.map(row => {
+    const src = assignments.get(row.slotIndex);
+    return src ? withSlotContent(row, e2sSlotToContent(src)) : row;
+  });
+  return { slots: next, merged, skipped };
 }
 
 // ─── Save: OpenedSlot[] → E2sSlotInput[] ──────────────────────────────────────
@@ -357,7 +577,7 @@ export interface OpenedSlotBuildResult {
 }
 
 export function openedSlotsToBuildInputs(
-  slots: OpenedSlot[],
+  slots: OpenedSlot[]
 ): OpenedSlotBuildResult {
   const inputs: E2sSlotInput[] = [];
   let dirtyCount = 0;
@@ -370,6 +590,12 @@ export function openedSlotsToBuildInputs(
       droppedCount++;
       continue;
     }
+    // Loop-Punkte (Frames) → Bytes für den Builder. Konvention (round-trip-
+    // getestet, siehe e2s-sample-tune.test): loopStartBytes = startFrame*fB,
+    // loopEndBytes = (endFrame+1)*fB, weil der Builder End = loopEndBytes - fB
+    // schreibt (Oe2sSLE: End = letzter Frame). fB = frameBytes = channels*2.
+    const frameBytes = (s.channels === 2 ? 2 : 1) * 2;
+    const hasLoopPoints = s.loopEnd > 0;
     const input: E2sSlotInput = {
       slotIndex: s.slotIndex,
       name: s.name,
@@ -380,10 +606,17 @@ export function openedSlotsToBuildInputs(
       loopType: s.oneshot ? LOOP_TYPE_ONESHOT : LOOP_TYPE_FORWARD,
       gain12db: s.gain12db,
       sampleTune: s.sampleTune,
+      level: s.level,
+      loopStartBytes: hasLoopPoints
+        ? Math.max(0, Math.floor(s.loopStart)) * frameBytes
+        : undefined,
+      loopEndBytes: hasLoopPoints
+        ? (Math.floor(s.loopEnd) + 1) * frameBytes
+        : undefined,
       // v3.8.0 — Slices propagieren. Builder ignoriert sie für passthrough-Slots
       // (rawRiff bit-exact), aber bei dirty/re-encode werden sie korrekt
       // serialisiert (siehe e2sBankBuilder.ts:548).
-      slices: s.slices.length > 0 ? s.slices.map((sl) => ({ ...sl })) : undefined,
+      slices: s.slices.length > 0 ? s.slices.map(sl => ({ ...sl })) : undefined,
       rawRiff: s.rawRiff,
       isDirty: s.isDirty,
     };
@@ -410,7 +643,7 @@ export function countDirtySlots(slots: OpenedSlot[]): number {
 }
 
 export function hasUnsavedChanges(slots: OpenedSlot[]): boolean {
-  return slots.some((s) => s.isDirty);
+  return slots.some(s => s.isDirty);
 }
 
 /** UI-Helfer: name (oder fallback) für Slot-Browser. */

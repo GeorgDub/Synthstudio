@@ -47,7 +47,12 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function sineFloat(frames: number, freq = 440, sr = 44100, amp = 0.5): Float32Array {
+function sineFloat(
+  frames: number,
+  freq = 440,
+  sr = 44100,
+  amp = 0.5
+): Float32Array {
   const out = new Float32Array(frames);
   for (let i = 0; i < frames; i++) {
     out[i] = Math.sin((2 * Math.PI * freq * i) / sr) * amp;
@@ -79,20 +84,24 @@ function buildTestBank(n: number) {
 describe("bankEditorState — bankToOpenedSlots", () => {
   it("liefert exakt 250 Rows, davon N filled und 250-N empty", () => {
     const baseline = buildTestBank(3);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     expect(slots).toHaveLength(E2S_MAX_SLOTS);
     expect(countFilledSlots(slots)).toBe(3);
-    expect(slots.filter((s) => s.empty)).toHaveLength(E2S_MAX_SLOTS - 3);
+    expect(slots.filter(s => s.empty)).toHaveLength(E2S_MAX_SLOTS - 3);
   });
 
   it("loadBank: parseE2sBank result wird zu Editor-Slots mit isDirty=false", () => {
     const baseline = buildTestBank(2);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     expect(countDirtySlots(slots)).toBe(0);
     expect(hasUnsavedChanges(slots)).toBe(false);
-    const filled = slots.filter((s) => !s.empty);
+    const filled = slots.filter(s => !s.empty);
     for (const s of filled) {
       expect(s.isDirty).toBe(false);
     }
@@ -100,7 +109,9 @@ describe("bankEditorState — bankToOpenedSlots", () => {
 
   it("filled-Slots haben rawRiff (preserveRawRiff=true) und original-Snapshot", () => {
     const baseline = buildTestBank(2);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     const s0 = slots[0];
     expect(s0.empty).toBe(false);
@@ -113,7 +124,9 @@ describe("bankEditorState — bankToOpenedSlots", () => {
 
   it("empty-Slots haben original:null und keinen rawRiff", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     const empty = slots[100]; // beliebiger leerer Slot
     expect(empty.empty).toBe(true);
@@ -124,8 +137,22 @@ describe("bankEditorState — bankToOpenedSlots", () => {
   it("oneshot-Flag wird korrekt aus loopType abgeleitet", () => {
     // Build mit explizitem loopType pro Slot.
     const built = buildE2sBank([
-      { slotIndex: 0, name: "OneShot", pcmData: sineFloat(50), sampleRate: 44100, channels: 1, loopType: LOOP_TYPE_ONESHOT },
-      { slotIndex: 1, name: "Forward", pcmData: sineFloat(50), sampleRate: 44100, channels: 1, loopType: LOOP_TYPE_FORWARD },
+      {
+        slotIndex: 0,
+        name: "OneShot",
+        pcmData: sineFloat(50),
+        sampleRate: 44100,
+        channels: 1,
+        loopType: LOOP_TYPE_ONESHOT,
+      },
+      {
+        slotIndex: 1,
+        name: "Forward",
+        pcmData: sineFloat(50),
+        sampleRate: 44100,
+        channels: 1,
+        loopType: LOOP_TYPE_FORWARD,
+      },
     ]);
     const bank = parseE2sBank(built.buffer, "<t>", { preserveRawRiff: true });
     const slots = bankToOpenedSlots(bank);
@@ -139,7 +166,9 @@ describe("bankEditorState — bankToOpenedSlots", () => {
 describe("bankEditorState — patchOpenedSlot", () => {
   it("Edit Name → isDirty=true für diesen Slot", () => {
     const baseline = buildTestBank(2);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     const rowId = slots[0].rowId;
     slots = patchOpenedSlot(slots, rowId, { name: "Renamed" });
@@ -151,7 +180,9 @@ describe("bankEditorState — patchOpenedSlot", () => {
 
   it("Edit Category / Oneshot / gain12db / sampleTune → jeweils isDirty=true", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const base = bankToOpenedSlots(bank);
     const id = base[0].rowId;
 
@@ -170,7 +201,9 @@ describe("bankEditorState — patchOpenedSlot", () => {
 
   it("Patch ohne Änderung des Feldwerts → isDirty bleibt unverändert", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     const id = slots[0].rowId;
     // identisches Patch → kein editable-touched
@@ -180,7 +213,9 @@ describe("bankEditorState — patchOpenedSlot", () => {
 
   it("Strukturelle Felder (rowId/empty/original) flippen isDirty NICHT auto", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     const id = slots[0].rowId;
     // diese Felder sind strukturell — patch flippt nicht isDirty.
@@ -194,7 +229,9 @@ describe("bankEditorState — patchOpenedSlot", () => {
 describe("bankEditorState — replaceSlotSample", () => {
   it("Replace Sample → isDirty=true und neue PCM gespeichert", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     const id = slots[0].rowId;
     const newPcm = new Float32Array(2000);
@@ -208,11 +245,19 @@ describe("bankEditorState — replaceSlotSample", () => {
 
   it("Replace Sample auf empty-Slot fully fills it (empty:false)", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     const emptyRow = slots[50];
     expect(emptyRow.empty).toBe(true);
-    slots = replaceSlotSample(slots, emptyRow.rowId, new Float32Array(100), 44100, 1);
+    slots = replaceSlotSample(
+      slots,
+      emptyRow.rowId,
+      new Float32Array(100),
+      44100,
+      1
+    );
     expect(slots[50].empty).toBe(false);
     expect(slots[50].isDirty).toBe(true);
   });
@@ -223,7 +268,9 @@ describe("bankEditorState — replaceSlotSample", () => {
 describe("bankEditorState — deleteSlot", () => {
   it("Delete → empty:true + isDirty:true; rawRiff weg, aber original behalten", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     const id = slots[0].rowId;
     const origRaw = slots[0].rawRiff;
@@ -243,7 +290,9 @@ describe("bankEditorState — deleteSlot", () => {
 describe("bankEditorState — revertSlot", () => {
   it("Revert nach Edit → isDirty:false + Felder zurückgesetzt", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     const id = slots[0].rowId;
     const origName = slots[0].name;
@@ -256,7 +305,9 @@ describe("bankEditorState — revertSlot", () => {
 
   it("Revert nach Delete → Slot wieder filled + rawRiff zurück", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     const id = slots[0].rowId;
     const origRaw = slots[0].rawRiff;
@@ -270,12 +321,20 @@ describe("bankEditorState — revertSlot", () => {
 
   it("Revert auf urspr. empty Slot → bleibt empty", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots0 = bankToOpenedSlots(bank);
     const emptyRow = slots0[100];
     expect(emptyRow.empty).toBe(true);
     expect(emptyRow.original).toBeNull();
-    let slots = replaceSlotSample(slots0, emptyRow.rowId, new Float32Array(50), 44100, 1);
+    let slots = replaceSlotSample(
+      slots0,
+      emptyRow.rowId,
+      new Float32Array(50),
+      44100,
+      1
+    );
     expect(slots[100].empty).toBe(false);
     slots = revertSlot(slots, emptyRow.rowId);
     expect(slots[100].empty).toBe(true);
@@ -288,7 +347,9 @@ describe("bankEditorState — revertSlot", () => {
 describe("bankEditorState — openedSlotsToBuildInputs", () => {
   it("zählt dirty vs passthrough Slots korrekt", () => {
     const baseline = buildTestBank(3);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     // Slot 0 + 1 unverändert (rawRiff passthrough), Slot 2 wird editiert.
     slots = patchOpenedSlot(slots, slots[2].rowId, { name: "Edited" });
@@ -301,7 +362,9 @@ describe("bankEditorState — openedSlotsToBuildInputs", () => {
 
   it("empty Slots werden gedroppt (kein input → offset=0 im File)", () => {
     const baseline = buildTestBank(2);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     const out = openedSlotsToBuildInputs(slots);
     expect(out.inputs).toHaveLength(2);
@@ -309,7 +372,9 @@ describe("bankEditorState — openedSlotsToBuildInputs", () => {
 
   it("Save mit preserveRawRiff=true: unedited Slots passthrough, edited re-encoded", () => {
     const baseline = buildTestBank(3);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     slots = patchOpenedSlot(slots, slots[1].rowId, { name: "Edit1" });
     const out = openedSlotsToBuildInputs(slots);
@@ -331,7 +396,9 @@ describe("bankEditorState — openedSlotsToBuildInputs", () => {
       return h >>> 0;
     }
     const baseline = buildTestBank(2);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     const out = openedSlotsToBuildInputs(slots);
     const rebuilt = buildE2sBank(out.inputs, { preserveRawRiff: true });
@@ -346,7 +413,9 @@ describe("bankEditorState — openedSlotsToBuildInputs", () => {
 describe("bankEditorState — Display Helpers", () => {
   it("displayName + displayCategory liefern lesbare Strings", () => {
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     const slots = bankToOpenedSlots(bank);
     expect(displayName(slots[0])).toBe("Slot0");
     expect(displayCategory(slots[0])).toMatch(/^[A-Za-z. ]+$/);
@@ -356,7 +425,9 @@ describe("bankEditorState — Display Helpers", () => {
 
   it("hasUnsavedChanges flippt nach erster Edit auf true", () => {
     const baseline = buildTestBank(2);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     expect(hasUnsavedChanges(slots)).toBe(false);
     slots = patchOpenedSlot(slots, slots[0].rowId, { name: "Mod" });
@@ -373,7 +444,9 @@ describe("bankEditorState — Edit-Detection-Gate für UI", () => {
     // verschluckt NIE silent Änderungen — der UI-Code muss explizit confirm()
     // aufrufen und der User entscheidet.
     const baseline = buildTestBank(1);
-    const bank = parseE2sBank(baseline.buffer, "<t>", { preserveRawRiff: true });
+    const bank = parseE2sBank(baseline.buffer, "<t>", {
+      preserveRawRiff: true,
+    });
     let slots = bankToOpenedSlots(bank);
     expect(hasUnsavedChanges(slots)).toBe(false);
     slots = patchOpenedSlot(slots, slots[0].rowId, { sampleTune: 5 });
@@ -382,5 +455,42 @@ describe("bankEditorState — Edit-Detection-Gate für UI", () => {
     // Wenn nicht: slots[] bleibt unverändert mit isDirty:true. Der Test
     // verifiziert dass es keinen "silent reset" gibt.
     expect(slots[0].isDirty).toBe(true);
+  });
+});
+
+// ─── Loop-Punkt-Editing (v3.284, Oe2sSLE) ─────────────────────────────────────
+describe("loop-point edit round-trip (OpenedSlot pipeline)", () => {
+  it("liest Loop-Punkte, editiert sie und baut sie bit-genau zurück", () => {
+    const frameBytes = 2; // mono 16-bit
+    const startFrame = 4;
+    const endFrame = 30;
+    // 1) Bank mit definierten Loop-Punkten bauen.
+    const built = buildE2sBank([
+      {
+        slotIndex: 0,
+        name: "Loopy",
+        pcmData: sineFloat(64),
+        sampleRate: 44100,
+        channels: 1 as const,
+        loopType: LOOP_TYPE_FORWARD,
+        loopStartBytes: startFrame * frameBytes,
+        loopEndBytes: (endFrame + 1) * frameBytes,
+      },
+    ]);
+    // 2) Laden → OpenedSlot: Loop-Punkte müssen ankommen (kein Verlust).
+    const bank = parseE2sBank(built.buffer);
+    const slots = bankToOpenedSlots(bank);
+    const row = slots.find(s => !s.empty)!;
+    expect(row.loopStart).toBe(startFrame);
+    expect(row.loopEnd).toBe(endFrame);
+
+    // 3) Loop-Ende editieren → build → parse: neuer Wert überlebt.
+    const edited = patchOpenedSlot(slots, row.rowId, { loopEnd: 20 });
+    expect(edited.find(s => s.rowId === row.rowId)!.isDirty).toBe(true);
+    const { inputs } = openedSlotsToBuildInputs(edited);
+    const rebuilt = parseE2sBank(buildE2sBank(inputs).buffer);
+    const back = rebuilt.slots.find(s => s && s.name === "Loopy")!;
+    expect(back.loopStart).toBe(startFrame);
+    expect(back.loopEnd).toBe(20);
   });
 });

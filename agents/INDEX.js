@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.286.0",
+    version: "3.298.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,41 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "coordinator",
+      timestamp: "2026-07-27T05:40:00.000Z",
+      done: [
+        "v3.298.0 — die winbuild-Linie (89 Commits, Branch ...-8iepia, zuletzt winbuild-3.297.0) ist auf main zusammengefuehrt. Sie lief seit dem 21.07. parallel und war nie gemerged; der Nutzer hat auf ihr gearbeitet, waehrend main eine zweite Korg-Linie fuhr. 162 Dateien, +35453/-8365. Neu auf main u.a.: E2sDevice/E2sPresetPanel + E2sPresetEditor (IFX/Groove-Presets ueber hacktribe-RAM), utils/korg/e2Sysex.ts (native Korg-Sysex mit 7-in-8-Codec), useMidiInputsStore-Multi-Device, ESLI-Felder StartPoint/WavDataSize/ImportNum/SampleTune, Level+Loop-Punkte im Bank-Editor.",
+        "KORREKTUR EINER KORREKTUR — die wichtigste Zeile dieses Eintrags. E2S_ALL_OFFSET_TABLE_START ist 0x0010 mit 1020 Eintraegen, NICHT 0x0058/1002. Der Wert 0x0058, den ich gestern in v3.286.0 nach main gebracht habe, war ebenfalls falsch; er stand rund 15 Stunden auf main. Richtig ist Oe2sSLE (e2s_sample_all.py): load() liest 4080 B ab 0x0010, Pointer = read_u32(0x10 + i*4), und Index i == esli.OSC_0index.",
+        "WARUM MEIN BELEG NICHT TRUG: der Python-Editor (Korg_ESX_E2S_Editor TASK-029) hat 0x0058 gegen 14 Datei-Dumps geprueft — aber ausschliesslich GEGEN 0x07E0. scripts/verify_table_layout.py testet genau zwei Kandidaten, 0x0058 und 0x07E0; 0x0010 stand nie zur Wahl, und ein OSC_0index-Abgleich existiert dort nicht. Das ist entscheidend, weil ein um n Eintraege verschobener Tabellenstart DIESELBEN Offset-Werte liefert, nur unter falschen Indizes. Die verwendeten Kriterien (Offset >= 0x1000, in der Datei, Anzahl nicht-null) sind gegen eine Verschiebung prinzipiell blind. Die 14 Dumps haben also 0x07E0 widerlegt und sonst nichts.",
+        "Auch der Exact-Fit-Check aus v3.286 diskriminiert NICHT: 0x0010 + 1020*4 und 0x0058 + 1002*4 ergeben beide exakt 0x1000. Er schliesst nur 0x07E0/250 aus (0x0BC8). Ich habe ihn als Beweis praesentiert, er ist keiner — ein Test haelt das jetzt ausdruecklich fest.",
+        "Praktische Folge des 0x0058-Irrtums: Versatz um 18 Eintraege (0x48 B), jedes Sample 18 Slots neben seiner echten Nummer, und die Factory-Slots 0..17 lagen vor dem angenommenen Tabellenanfang und fehlten komplett.",
+        "NEUES PRUEFINSTRUMENT (e2sBankReader.parseE2sBank): Abgleich Tabellen-Index gegen esli.OSC_0index. Die Datei traegt die Sample-Nummer doppelt — das ist die einzige Redundanz, die eine falsche Startadresse ueberhaupt sichtbar macht. Bei konstantem Versatz UEBER ALLE belegten Slots (und mehr als einem) meldet der Reader 'offset-table geometry suspect' samt Byte-Zahl, um die die Startadresse danebenliegt; einzelne krumme Slots werden davon getrennt gemeldet. Die Unterscheidung kam nicht vom Konzept, sondern von einem Test: mit nur einem abweichenden Slot war der Versatz trivial 'konstant'.",
+        "Konfliktaufloesung (9 Dateien, 19 Hunks): Geometrie und Doku durchgaengig auf die 0x0010-Lesart. e2FxPreset.ts war add/add mit zwei verschiedenen Modulen gleichen Namens — der Schreib-Pfad der winbuild-Linie (decode/setIfxPresetParam/Device/Level/Name, Groove) behaelt den Namen, weil der laufende E2sPresetEditor daran haengt; unser Lese-Inspektor (21 IFX-/26 MFX-Geraetenamen, parseFxPreset) wurde zu e2FxPresetInspect.ts. useMidi hatte ZWEI Multi-Input-Implementierungen: die store-getriebene Opt-in-Variante (useMidiInputsStore, enabledInputNames) ist die Basis, unser listenAllInputs (Opt-out) laeuft jetzt als Sonderfall in derselben syncMultiInputs-Buchfuehrung — zwei konkurrierende Detach-Pfade haetten sich gegenseitig die Listener abgeraeumt. detachAllInputs auf multiInputsRef neu gebaut (disable() und Unmount brauchen es; Windows-MIDI-Inputs sind exklusiv).",
+        "Gates: pnpm check clean, volle Suite 500 Dateien / 11117 passed / 97 skipped."
+      ],
+      next: [
+        "AM GERAET PRUEFEN, jetzt mit Instrument: eine echte Hacktribe-.all im Bank-Editor oeffnen. Meldet der Reader 'offset-table geometry suspect', ist 0x0010 auch falsch und die Warnung nennt den Versatz. Schweigt er und die Slot-Nummern decken sich mit der Geraete-Anzeige, ist die Frage endgueltig beantwortet.",
+        "Timeout 'CPU RAM @0xc003efdc' im IFX/Groove-Panel: Global-Data (Korg 0x0E/0x51) liest sauber, also MIDI-Weg und Global-Channel ok — nur die hacktribe-Erweiterung 0x52 antwortet nicht. Trennender Test (rein lesend): 0xC00A80F0 Laenge 524. Antwortet der, ist nur IFX_COUNT_ADDR (geraten) falsch; schweigt er auch, spricht die Firmware kein 0x52.",
+        "Release: der Nutzer wollte ein GitHub-Release. Aus der Session nicht ausloesbar — workflow_dispatch 403 (Token ohne actions: write), Tag-Push 403 (git-Proxy laesst nur Branch-Refs). Muss er selbst anstossen: Actions -> Electron Release -> Run workflow -> main, oder Tag v3.298.0 pushen.",
+        "E2S_MAX_TOTAL_PCM_BYTES: weiter 224 MB, SoT fuehrt 24 MB (echtes Geraete-Limit). Offene Produktentscheidung.",
+        "Offen aus der Vorwelle: source_control-Kodierung (0x42 vs 0x02), C-Handler fuer OTP CMD 0x10 (GATE-001), Device->Parametername-Tabelle (ht_fx_preset_format.py, 403).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/korg/constants.ts",
+        "client/src/utils/korg/e2sBankReader.ts",
+        "client/src/utils/korg/e2sBankBuilder.ts",
+        "client/src/utils/korg/bankEditorState.ts",
+        "client/src/utils/korg/e2FxPreset.ts",
+        "client/src/utils/korg/e2FxPresetInspect.ts",
+        "client/src/hooks/useMidi.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/e2s-offset-table-layout.test.ts",
+        "tests/web/korg-bank-slot-filter.spec.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-26T15:05:00.000Z",

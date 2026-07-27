@@ -44,7 +44,11 @@
  * NICHT validiert (NUR Warnings):
  *  - partId aus noteMappings existiert nicht im aktuellen Projekt → User-Warning
  */
-import type { MidiMapping, MidiNoteMapping, MidiLearnTarget } from "@/hooks/useMidi";
+import type {
+  MidiMapping,
+  MidiNoteMapping,
+  MidiLearnTarget,
+} from "@/hooks/useMidi";
 
 export const MAX_LAYOUT_FILE_BYTES = 10 * 1024; // 10kB
 
@@ -62,13 +66,33 @@ export const PERF_PAD_COUNT = 16;
  * verworfen, obwohl sie in der Type-Union existieren.
  */
 export const VALID_TARGET_TYPES = new Set<string>([
-  "bpm", "playStop", "record", "tapTempo", "bpmUp", "bpmDown", "masterVolume",
-  "volume", "mute", "solo", "pan", "step", "partUp", "partDown",
-  "pattern", "patternNext", "patternPrev", "patternClear", "patternFill",
-  "patternRandomize", "patternDuplicate",
+  "bpm",
+  "playStop",
+  "record",
+  "tapTempo",
+  "bpmUp",
+  "bpmDown",
+  "masterVolume",
+  "volume",
+  "mute",
+  "solo",
+  "pan",
+  "step",
+  "partUp",
+  "partDown",
+  "pattern",
+  "patternNext",
+  "patternPrev",
+  "patternClear",
+  "patternFill",
+  "patternRandomize",
+  "patternDuplicate",
   "tab",
-  "toggleNoteRepeat", "toggleMorph",
-  "commitLiveEdit", "scenelaunch", "openSettings",
+  "toggleNoteRepeat",
+  "toggleMorph",
+  "commitLiveEdit",
+  "scenelaunch",
+  "openSettings",
   // v1.76: jeder numerische FX-Parameter pro Channel
   "fxParam",
   // v1.77: Function-Chain (mehrere Sub-Targets auf einer Taste)
@@ -80,15 +104,28 @@ export const VALID_TARGET_TYPES = new Set<string>([
   // v2.1: Send-Bus-Level
   "send",
   // v2.87 (TASK-235): Live-Looper Pad/Footswitch-Targets
-  "loopTrigger", "loopErase",
+  "loopTrigger",
+  "loopErase",
   // v2.91 (TASK-238-FOLLOWUP-1B): Sample-Slice-Pad-Trigger
   "playSlicePad",
   // v3.81.0: Sub-Mix-Bus-Controls (Bus-Volume/Pan/Mute/Solo)
-  "subMixBusVolume", "subMixBusPan", "subMixBusMute", "subMixBusSolo",
+  "subMixBusVolume",
+  "subMixBusPan",
+  "subMixBusMute",
+  "subMixBusSolo",
   // v3.87.0: Sub-Mix-Bus FX-Params
-  "subMixBusEqLowGain", "subMixBusEqMidGain", "subMixBusEqHighGain",
-  "subMixBusCompThreshold", "subMixBusCompRatio",
-  "subMixBusReverbSend", "subMixBusDelaySend",
+  "subMixBusEqLowGain",
+  "subMixBusEqMidGain",
+  "subMixBusEqHighGain",
+  "subMixBusCompThreshold",
+  "subMixBusCompRatio",
+  "subMixBusReverbSend",
+  "subMixBusDelaySend",
+  // Audio-Track / Loop-Sampler (Volume/Pan/Mute/Solo)
+  "audioTrackVolume",
+  "audioTrackPan",
+  "audioTrackMute",
+  "audioTrackSolo",
 ]);
 
 export interface ParsedMidiLayout {
@@ -108,7 +145,9 @@ export interface MidiLayoutParseResult {
   warnings?: string[];
 }
 
-interface AnyRecord { [key: string]: unknown }
+interface AnyRecord {
+  [key: string]: unknown;
+}
 
 function isObject(v: unknown): v is AnyRecord {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -136,10 +175,7 @@ function isTargetValid(v: unknown): v is MidiLearnTarget {
  */
 export function isPerformancePadIndexValid(v: unknown): v is number {
   return (
-    typeof v === "number" &&
-    Number.isInteger(v) &&
-    v >= 0 &&
-    v < PERF_PAD_COUNT
+    typeof v === "number" && Number.isInteger(v) && v >= 0 && v < PERF_PAD_COUNT
   );
 }
 
@@ -152,7 +188,10 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
     return { ok: false, error: "Datei ist leer." };
   }
   if (text.length > MAX_LAYOUT_FILE_BYTES) {
-    return { ok: false, error: `Datei zu groß: ${text.length} Bytes (max ${MAX_LAYOUT_FILE_BYTES}).` };
+    return {
+      ok: false,
+      error: `Datei zu groß: ${text.length} Bytes (max ${MAX_LAYOUT_FILE_BYTES}).`,
+    };
   }
 
   let raw: unknown;
@@ -168,7 +207,11 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
   }
 
   if (raw.synthstudioLayout !== "v1") {
-    return { ok: false, error: 'Fehlender oder falscher "synthstudioLayout"-Marker (erwartet "v1").' };
+    return {
+      ok: false,
+      error:
+        'Fehlender oder falscher "synthstudioLayout"-Marker (erwartet "v1").',
+    };
   }
 
   const warnings: string[] = [];
@@ -185,18 +228,23 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
         return;
       }
       if (!isCcValid(entry.cc)) {
-        warnings.push(`ccMappings[${idx}] ungültiger cc (${entry.cc}) — übersprungen.`);
+        warnings.push(
+          `ccMappings[${idx}] ungültiger cc (${entry.cc}) — übersprungen.`
+        );
         return;
       }
       if (!isChannelValid(entry.channel)) {
-        warnings.push(`ccMappings[${idx}] ungültiger channel (${entry.channel}) — übersprungen.`);
+        warnings.push(
+          `ccMappings[${idx}] ungültiger channel (${entry.channel}) — übersprungen.`
+        );
         return;
       }
       if (!isTargetValid(entry.target)) {
         warnings.push(`ccMappings[${idx}] ungültiges target — übersprungen.`);
         return;
       }
-      const label = typeof entry.label === "string" ? entry.label : `CC ${entry.cc}`;
+      const label =
+        typeof entry.label === "string" ? entry.label : `CC ${entry.cc}`;
       ccMappings.push({
         cc: entry.cc,
         channel: entry.channel,
@@ -216,18 +264,25 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
         return;
       }
       if (!isNoteValid(entry.note)) {
-        warnings.push(`noteMappings[${idx}] ungültige note (${entry.note}) — übersprungen.`);
+        warnings.push(
+          `noteMappings[${idx}] ungültige note (${entry.note}) — übersprungen.`
+        );
         return;
       }
       if (!isChannelValid(entry.channel)) {
-        warnings.push(`noteMappings[${idx}] ungültiger channel (${entry.channel}) — übersprungen.`);
+        warnings.push(
+          `noteMappings[${idx}] ungültiger channel (${entry.channel}) — übersprungen.`
+        );
         return;
       }
       if (typeof entry.partId !== "string" || entry.partId.length === 0) {
-        warnings.push(`noteMappings[${idx}] partId fehlt oder leer — übersprungen.`);
+        warnings.push(
+          `noteMappings[${idx}] partId fehlt oder leer — übersprungen.`
+        );
         return;
       }
-      const label = typeof entry.label === "string" ? entry.label : `Note ${entry.note}`;
+      const label =
+        typeof entry.label === "string" ? entry.label : `Note ${entry.note}`;
       const mapping: MidiNoteMapping = {
         note: entry.note,
         channel: entry.channel,
@@ -242,7 +297,7 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
           mapping.performancePadIndex = entry.performancePadIndex;
         } else {
           warnings.push(
-            `noteMappings[${idx}] ungültiger performancePadIndex (${entry.performancePadIndex}) — Feld ignoriert.`,
+            `noteMappings[${idx}] ungültiger performancePadIndex (${entry.performancePadIndex}) — Feld ignoriert.`
           );
         }
       }
@@ -253,7 +308,7 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
           mapping.target = entry.target;
         } else {
           warnings.push(
-            `noteMappings[${idx}] ungültiges target — Feld ignoriert.`,
+            `noteMappings[${idx}] ungültiges target — Feld ignoriert.`
           );
         }
       }
@@ -263,7 +318,10 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
   }
 
   if (ccMappings.length === 0 && noteMappings.length === 0) {
-    return { ok: false, error: "Keine gültigen Mappings im Layout — leeres Resultat." };
+    return {
+      ok: false,
+      error: "Keine gültigen Mappings im Layout — leeres Resultat.",
+    };
   }
 
   return {
@@ -284,7 +342,7 @@ export function parseMidiLayoutJson(text: string): MidiLayoutParseResult {
  */
 export function checkPartIdsExist(
   noteMappings: MidiNoteMapping[],
-  knownPartIds: string[],
+  knownPartIds: string[]
 ): string[] {
   const known = new Set(knownPartIds);
   const missing = new Set<string>();
@@ -294,7 +352,7 @@ export function checkPartIdsExist(
   if (missing.size === 0) return [];
   return [
     `Note-Mappings referenzieren ${missing.size} unbekannte partId(s): ${[...missing].slice(0, 5).join(", ")}` +
-    (missing.size > 5 ? ", …" : "") +
-    ". Diese Note-Mappings werden zwar importiert, lösen aber erst aus wenn die Parts entsprechend erstellt sind.",
+      (missing.size > 5 ? ", …" : "") +
+      ". Diese Note-Mappings werden zwar importiert, lösen aber erst aus wenn die Parts entsprechend erstellt sind.",
   ];
 }

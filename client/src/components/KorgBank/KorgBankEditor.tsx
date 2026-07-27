@@ -26,7 +26,13 @@
  * Gated via PRO_FEATURE_KORG_BANK_WRITE (gated auch das Open-Flow).
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useProjectStore, type Sample } from "@/store/useProjectStore";
 import { toast } from "@/store/useToastStore";
 import { useElectron } from "../../../../electron/useElectron";
@@ -40,7 +46,10 @@ import {
 import {
   parseE2sBank,
   E2sParseError,
+  type E2sBank,
 } from "@/utils/korg/e2sBankReader";
+import { bundleE2sSamplesToZip } from "@/utils/korg/e2sSampleExport";
+import { trimE2sSlotPcm, stereoToMonoE2s } from "@/utils/korg/e2sSampleEdit";
 import {
   convertToE2sSpec,
   AudioProcessError,
@@ -61,6 +70,8 @@ import {
   displayName,
   filterOpenedSlots,
   hasUnsavedChanges,
+  mergeE2sBankIntoOpenedSlots,
+  moveOrSwapSlot,
   openedSlotsToBuildInputs,
   patchOpenedSlot,
   replaceSlotSample,
@@ -87,9 +98,11 @@ import {
   buildEsxStereoSampleSlotOverview,
   commitEsxPatchesAll,
   commitEsxStereoSamplePatches,
+  commitEsxSampleRenames,
   countPendingEsxPatches,
   countPendingEsxSamplePatches,
   countPendingEsxStereoSamplePatches,
+  countPendingEsxSampleRenames,
   filterEsxRows,
   filterEsxSampleRows,
   filterEsxStereoSampleRows,
@@ -100,11 +113,15 @@ import {
   stageEsxPatch,
   stageEsxSamplePatch,
   stageEsxStereoSamplePatch,
+  stageEsxSampleRename,
+  esxSampleRenameKey,
   unstageEsxPatch,
   unstageEsxSamplePatch,
   unstageEsxStereoSamplePatch,
+  unstageEsxSampleRename,
   type EsxSampleSlotRow,
   type EsxSamplePatchEntry,
+  type EsxSampleRename,
   type EsxSlotRow,
   type EsxStereoSampleSlotRow,
   // v3.38.0 — Undo/Redo
@@ -128,10 +145,7 @@ import {
   onsetsToSlices as onsetsToEsliSlices,
   slicesToOnsets as esliSlicesToOnsets,
 } from "@/utils/korg/sliceBridge";
-import {
-  autoSlice,
-  type OnsetCandidate,
-} from "@/utils/sampleSlicing";
+import { autoSlice, type OnsetCandidate } from "@/utils/sampleSlicing";
 import {
   extractSliceBuffer,
   playSliceWithContext,
@@ -189,7 +203,8 @@ interface NewModeSlot {
   pcmBytes?: number;
 }
 
-const TARGET_SAMPLE_RATE_OPTIONS: ReadonlyArray<44100 | 48000> = E2S_SAMPLE_RATES;
+const TARGET_SAMPLE_RATE_OPTIONS: ReadonlyArray<44100 | 48000> =
+  E2S_SAMPLE_RATES;
 
 type EditorMode = "new" | "edit" | "esx";
 
@@ -237,6 +252,14 @@ export function KorgBankEditor({
 
   // "edit" mode state
   const [openedSlots, setOpenedSlots] = useState<OpenedSlot[]>([]);
+  // v3.284 — die geparste E2S-Bank behalten, damit „Samples als WAV" das
+  // originale PCM exportieren kann (Oe2sSLE „Export sample to WAV").
+  const [e2sSourceBank, setE2sSourceBank] = useState<E2sBank | null>(null);
+  // v3.284 — Oe2sSLE-Export-Option: Loop-/Slice-Metadaten (smpl/cue) einbetten.
+  const [e2sExportEmbedMeta, setE2sExportEmbedMeta] = useState(true);
+  // v3.284 — Oe2sSLE „Import e2sSample.all": zweite Bank mergen (ab #Num).
+  const [e2sMergeFromNumber, setE2sMergeFromNumber] = useState(501);
+  const e2sMergeInputRef = useRef<HTMLInputElement | null>(null);
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   // v3.286 — Slot-Browser-Filter (1002 Slots wollen gefiltert werden).
@@ -246,9 +269,9 @@ export function KorgBankEditor({
   // v3.29.0 — "esx" mode state
   const [esxBankBuffer, setEsxBankBuffer] = useState<ArrayBuffer | null>(null);
   const [esxRows, setEsxRows] = useState<EsxSlotRow[]>([]);
-  const [esxPendingPatches, setEsxPendingPatches] = useState<Map<number, ArrayBuffer>>(
-    () => new Map(),
-  );
+  const [esxPendingPatches, setEsxPendingPatches] = useState<
+    Map<number, ArrayBuffer>
+  >(() => new Map());
   const [esxSelectedSlot, setEsxSelectedSlot] = useState<number | null>(null);
   const [esxSearch, setEsxSearch] = useState<string>("");
   const [esxHideInit, setEsxHideInit] = useState<boolean>(true);
@@ -261,16 +284,21 @@ export function KorgBankEditor({
   const [esxSamplePending, setEsxSamplePending] = useState<
     Map<number, EsxSamplePatchEntry>
   >(() => new Map());
-  const [esxSampleSelectedSlot, setEsxSampleSelectedSlot] = useState<number | null>(
-    null,
-  );
+  const [esxSampleSelectedSlot, setEsxSampleSelectedSlot] = useState<
+    number | null
+  >(null);
   const [esxSampleSearch, setEsxSampleSearch] = useState<string>("");
   const [esxSampleHideEmpty, setEsxSampleHideEmpty] = useState<boolean>(true);
-  const [esxSampleDropTargetSlot, setEsxSampleDropTargetSlot] = useState<number | null>(
-    null,
-  );
+  const [esxSampleDropTargetSlot, setEsxSampleDropTargetSlot] = useState<
+    number | null
+  >(null);
   const esxSampleReplaceInputRef = useRef<HTMLInputElement | null>(null);
   const esxSampleReplaceTargetSlotRef = useRef<number | null>(null);
+  // v3.284 — Sample-Rename-Staging (name-only, bit-exakt). Nicht Teil der
+  // Undo-History (leichtgewichtig, per-Slot über die UI revert-bar).
+  const [esxSampleRenamePending, setEsxSampleRenamePending] = useState<
+    Map<string, EsxSampleRename>
+  >(() => new Map());
 
   // v3.32.0 — ESX stereo-sample state + sample-channel-toggle
   type EsxSampleChannelMode = "mono" | "stereo";
@@ -282,15 +310,14 @@ export function KorgBankEditor({
   const [esxStereoSamplePending, setEsxStereoSamplePending] = useState<
     Map<number, EsxSamplePatchEntry>
   >(() => new Map());
-  const [esxStereoSampleSelectedSlot, setEsxStereoSampleSelectedSlot] = useState<
-    number | null
-  >(null);
+  const [esxStereoSampleSelectedSlot, setEsxStereoSampleSelectedSlot] =
+    useState<number | null>(null);
   const esxStereoSampleReplaceInputRef = useRef<HTMLInputElement | null>(null);
   const esxStereoSampleReplaceTargetSlotRef = useRef<number | null>(null);
 
   // v3.38.0 — Undo/Redo history for the ESX editor.
-  const [esxHistory, setEsxHistory] = useState<EsxEditorHistory>(
-    () => createEsxEditorHistory(),
+  const [esxHistory, setEsxHistory] = useState<EsxEditorHistory>(() =>
+    createEsxEditorHistory()
   );
 
   // Shared
@@ -311,7 +338,11 @@ export function KorgBankEditor({
   const auditionHandleRef = useRef<SliceAuditionHandle | null>(null);
 
   const stopCurrentAudition = useCallback((): void => {
-    try { auditionHandleRef.current?.stop(); } catch { /* ignore */ }
+    try {
+      auditionHandleRef.current?.stop();
+    } catch {
+      /* ignore */
+    }
     auditionHandleRef.current = null;
     setAuditionState(null);
   }, []);
@@ -321,9 +352,15 @@ export function KorgBankEditor({
     if (!open) return;
     return () => {
       // v3.9.0 — Stop laufende Audition vor Context-Close.
-      try { auditionHandleRef.current?.stop(); } catch { /* ignore */ }
+      try {
+        auditionHandleRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
       auditionHandleRef.current = null;
-      audioContextRef.current?.close().catch(() => {/* */});
+      audioContextRef.current?.close().catch(() => {
+        /* */
+      });
       audioContextRef.current = null;
     };
   }, [open]);
@@ -338,6 +375,7 @@ export function KorgBankEditor({
     if (!open) {
       setNewSlots([]);
       setOpenedSlots([]);
+      setE2sSourceBank(null);
       setOpenedSourceName("");
       setSelectedRowId(null);
       setResultMsg(null);
@@ -361,6 +399,7 @@ export function KorgBankEditor({
       setEsxSampleChannelMode("mono");
       setEsxStereoSampleRows([]);
       setEsxStereoSamplePending(new Map());
+      setEsxSampleRenamePending(new Map());
       setEsxStereoSampleSelectedSlot(null);
       esxStereoSampleReplaceTargetSlotRef.current = null;
       // v3.38.0 — Undo/Redo history
@@ -372,21 +411,28 @@ export function KorgBankEditor({
 
   function getCtx(): AudioContext {
     if (!audioContextRef.current) {
-      const Ctor = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      const Ctor =
+        window.AudioContext ||
+        (window as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
       if (!Ctor) throw new Error("AudioContext nicht verfügbar");
       audioContextRef.current = new Ctor();
     }
     return audioContextRef.current;
   }
 
-  async function decodeSample(sample: Sample): Promise<{ pcm: Float32Array; sampleRate: number; channels: 1 | 2 }> {
+  async function decodeSample(
+    sample: Sample
+  ): Promise<{ pcm: Float32Array; sampleRate: number; channels: 1 | 2 }> {
     const res = await fetch(sample.path);
     if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
     const ab = await res.arrayBuffer();
     return decodeArrayBuffer(ab);
   }
 
-  async function decodeArrayBuffer(ab: ArrayBuffer): Promise<{ pcm: Float32Array; sampleRate: number; channels: 1 | 2 }> {
+  async function decodeArrayBuffer(
+    ab: ArrayBuffer
+  ): Promise<{ pcm: Float32Array; sampleRate: number; channels: 1 | 2 }> {
     const ctx = getCtx();
     const buf = await ctx.decodeAudioData(ab.slice(0));
     const channels: 1 | 2 = buf.numberOfChannels >= 2 ? 2 : 1;
@@ -414,12 +460,12 @@ export function KorgBankEditor({
    * Undo restores the prior pending-set.
    */
   const pushEsxHistorySnapshot = useCallback((): void => {
-    setEsxHistory((prev) =>
+    setEsxHistory(prev =>
       pushEsxHistory(prev, {
         patternMap: esxPendingPatches,
         sampleMap: esxSamplePending,
         stereoSampleMap: esxStereoSamplePending,
-      }),
+      })
     );
   }, [esxPendingPatches, esxSamplePending, esxStereoSamplePending]);
 
@@ -429,7 +475,7 @@ export function KorgBankEditor({
    * the bank for visual consistency.
    */
   const handleEsxUndo = useCallback((): void => {
-    setEsxHistory((prevHist) => {
+    setEsxHistory(prevHist => {
       const result = undoEsxEditor(prevHist, {
         patternMap: esxPendingPatches,
         sampleMap: esxSamplePending,
@@ -454,13 +500,18 @@ export function KorgBankEditor({
       }
       return result.history;
     });
-  }, [esxBankBuffer, esxPendingPatches, esxSamplePending, esxStereoSamplePending]);
+  }, [
+    esxBankBuffer,
+    esxPendingPatches,
+    esxSamplePending,
+    esxStereoSamplePending,
+  ]);
 
   /**
    * v3.38.0 — Redo last undone edit. Mirror of handleEsxUndo.
    */
   const handleEsxRedo = useCallback((): void => {
-    setEsxHistory((prevHist) => {
+    setEsxHistory(prevHist => {
       const result = redoEsxEditor(prevHist, {
         patternMap: esxPendingPatches,
         sampleMap: esxSamplePending,
@@ -482,7 +533,12 @@ export function KorgBankEditor({
       }
       return result.history;
     });
-  }, [esxBankBuffer, esxPendingPatches, esxSamplePending, esxStereoSamplePending]);
+  }, [
+    esxBankBuffer,
+    esxPendingPatches,
+    esxSamplePending,
+    esxStereoSamplePending,
+  ]);
 
   const esxCanUndo = canUndoEsxEditor(esxHistory);
   const esxCanRedo = canRedoEsxEditor(esxHistory);
@@ -538,7 +594,8 @@ export function KorgBankEditor({
     }
     if (hasChanges) {
       const ok = await confirm({
-        title: "Ungespeicherte Änderungen gehen verloren. Trotzdem Modus wechseln?",
+        title:
+          "Ungespeicherte Änderungen gehen verloren. Trotzdem Modus wechseln?",
         confirmLabel: "Wechseln",
         destructive: true,
       });
@@ -549,6 +606,7 @@ export function KorgBankEditor({
       setNewSlots([]);
     } else if (mode === "edit") {
       setOpenedSlots([]);
+      setE2sSourceBank(null);
       setOpenedSourceName("");
       setSelectedRowId(null);
     } else if (mode === "esx") {
@@ -568,6 +626,7 @@ export function KorgBankEditor({
       setEsxSampleChannelMode("mono");
       setEsxStereoSampleRows([]);
       setEsxStereoSamplePending(new Map());
+      setEsxSampleRenamePending(new Map());
       setEsxStereoSampleSelectedSlot(null);
       // v3.38.0 — clear history when leaving ESX mode
       setEsxHistory(createEsxEditorHistory());
@@ -590,10 +649,10 @@ export function KorgBankEditor({
     try {
       const ab = await file.arrayBuffer();
       if (!isEsxBuffer(ab)) {
-        toast(
-          "Kein gültiges ESX-1-Format (KORG/ESX-Magic fehlt).",
-          { kind: "error", duration: 5000 },
-        );
+        toast("Kein gültiges ESX-1-Format (KORG/ESX-Magic fehlt).", {
+          kind: "error",
+          duration: 5000,
+        });
         setBusy(false);
         setResultMsg(null);
         return;
@@ -609,6 +668,7 @@ export function KorgBankEditor({
       setEsxPendingPatches(new Map());
       setEsxSamplePending(new Map());
       setEsxStereoSamplePending(new Map());
+      setEsxSampleRenamePending(new Map());
       setEsxSelectedSlot(null);
       setEsxSampleSelectedSlot(null);
       setEsxStereoSampleSelectedSlot(null);
@@ -621,16 +681,21 @@ export function KorgBankEditor({
       const baseName = file.name.replace(/\.[^.]+$/, "");
       const safeName = baseName.replace(/[^A-Za-z0-9._-]/g, "_");
       setFilename(`${safeName}.esx`);
-      const filledRows = rows.filter((r) => !r.empty).length;
+      const filledRows = rows.filter(r => !r.empty).length;
       toast(
         `ESX-Bank geladen: ${filledRows}/256 Pattern — ${bank.warnings.length} Warnungen`,
-        { kind: "success", duration: 4000 },
+        { kind: "success", duration: 4000 }
       );
-      setResultMsg(`${filledRows} Pattern bereit — wähle einen Slot zum Ersetzen.`);
+      setResultMsg(
+        `${filledRows} Pattern bereit — wähle einen Slot zum Ersetzen.`
+      );
     } catch (err) {
       const msg =
-        err instanceof EsxParseError ? err.message :
-        err instanceof Error ? err.message : String(err);
+        err instanceof EsxParseError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
       toast(`Fehler beim Laden: ${msg}`, { kind: "error", duration: 6000 });
       setResultMsg(null);
     } finally {
@@ -656,6 +721,7 @@ export function KorgBankEditor({
       setEsxPendingPatches(new Map());
       setEsxSamplePending(new Map());
       setEsxStereoSamplePending(new Map());
+      setEsxSampleRenamePending(new Map());
       setEsxSelectedSlot(null);
       setEsxSampleSelectedSlot(null);
       setEsxStereoSampleSelectedSlot(null);
@@ -666,10 +732,10 @@ export function KorgBankEditor({
       setFilename("new-bank.esx");
       toast(
         `Frische ESX-Bank erzeugt — 256 leere Pattern + 0 Samples (${(ab.byteLength / 1024 / 1024).toFixed(2)} MB)`,
-        { kind: "success", duration: 4000 },
+        { kind: "success", duration: 4000 }
       );
       setResultMsg(
-        "Leere ESX-Bank bereit — füge Pattern + Samples ein. Speichern via Save-Button.",
+        "Leere ESX-Bank bereit — füge Pattern + Samples ein. Speichern via Save-Button."
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -680,53 +746,61 @@ export function KorgBankEditor({
     }
   }, []);
 
-  const loadBankFromFile = useCallback(async (file: File): Promise<void> => {
-    if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
-    if (file.size === 0) {
-      toast("Datei ist leer.", { kind: "error" });
-      return;
-    }
-    // v3.29.0 — .esx → ESX-Mode, .all (default) → E2-Edit-Mode.
-    if (file.name.toLowerCase().endsWith(".esx")) {
-      await loadEsxBankFromFile(file);
-      return;
-    }
-    setBusy(true);
-    setResultMsg("Lade Bank...");
-    try {
-      const ab = await file.arrayBuffer();
-      const bank = parseE2sBank(ab, file.name, { preserveRawRiff: true });
-      const slots = bankToOpenedSlots(bank);
-      setOpenedSlots(slots);
-      setOpenedSourceName(file.name);
-      setMode("edit");
-      // Pre-select first filled slot if any.
-      const firstFilled = slots.find((s) => !s.empty);
-      setSelectedRowId(firstFilled ? firstFilled.rowId : null);
-      // Filename default = source (sanitized at save time).
-      setFilename(file.name);
-      const filledCount = countFilledSlots(slots);
-      toast(
-        `Bank geladen: ${filledCount} Slot(s) — ${bank.warnings.length} Warnungen`,
-        { kind: "success", duration: 4000 },
-      );
-      setResultMsg(`${filledCount} Slot(s) bereit zur Bearbeitung`);
-    } catch (err) {
-      const msg =
-        err instanceof E2sParseError ? err.message :
-        err instanceof Error ? err.message : String(err);
-      toast(`Fehler beim Laden: ${msg}`, { kind: "error", duration: 6000 });
-      setResultMsg(null);
-    } finally {
-      setBusy(false);
-    }
-  }, [loadEsxBankFromFile]);
+  const loadBankFromFile = useCallback(
+    async (file: File): Promise<void> => {
+      if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
+      if (file.size === 0) {
+        toast("Datei ist leer.", { kind: "error" });
+        return;
+      }
+      // v3.29.0 — .esx → ESX-Mode, .all (default) → E2-Edit-Mode.
+      if (file.name.toLowerCase().endsWith(".esx")) {
+        await loadEsxBankFromFile(file);
+        return;
+      }
+      setBusy(true);
+      setResultMsg("Lade Bank...");
+      try {
+        const ab = await file.arrayBuffer();
+        const bank = parseE2sBank(ab, file.name, { preserveRawRiff: true });
+        const slots = bankToOpenedSlots(bank);
+        setOpenedSlots(slots);
+        setE2sSourceBank(bank);
+        setOpenedSourceName(file.name);
+        setMode("edit");
+        // Pre-select first filled slot if any.
+        const firstFilled = slots.find(s => !s.empty);
+        setSelectedRowId(firstFilled ? firstFilled.rowId : null);
+        // Filename default = source (sanitized at save time).
+        setFilename(file.name);
+        const filledCount = countFilledSlots(slots);
+        toast(
+          `Bank geladen: ${filledCount} Slot(s) — ${bank.warnings.length} Warnungen`,
+          { kind: "success", duration: 4000 }
+        );
+        setResultMsg(`${filledCount} Slot(s) bereit zur Bearbeitung`);
+      } catch (err) {
+        const msg =
+          err instanceof E2sParseError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        toast(`Fehler beim Laden: ${msg}`, { kind: "error", duration: 6000 });
+        setResultMsg(null);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadEsxBankFromFile]
+  );
 
   // v3.7: external file (drag-drop into editor) auto-open
   useEffect(() => {
     if (!open || !externalOpenFile) return;
-    loadBankFromFile(externalOpenFile)
-      .finally(() => onExternalOpenFileConsumed?.());
+    loadBankFromFile(externalOpenFile).finally(() =>
+      onExternalOpenFileConsumed?.()
+    );
   }, [open, externalOpenFile, loadBankFromFile, onExternalOpenFileConsumed]);
 
   function handleOpenBankClick(): void {
@@ -747,7 +821,7 @@ export function KorgBankEditor({
       toast(`E2S unterstützt nur ${E2S_MAX_SLOTS} Slots`, { kind: "warning" });
       return;
     }
-    if (newSlots.some((s) => s.source.id === source.id)) {
+    if (newSlots.some(s => s.source.id === source.id)) {
       toast("Sample bereits in der Liste", { kind: "info" });
       return;
     }
@@ -760,55 +834,125 @@ export function KorgBankEditor({
       oneshot: true,
       status: "pending",
     };
-    setNewSlots((prev) => [...prev, slot]);
+    setNewSlots(prev => [...prev, slot]);
   }
 
   function removeNewSlot(rowId: string): void {
-    setNewSlots((prev) => {
-      const filtered = prev.filter((s) => s.rowId !== rowId);
+    setNewSlots(prev => {
+      const filtered = prev.filter(s => s.rowId !== rowId);
       return filtered.map((s, i) => ({ ...s, slotIndex: i }));
     });
   }
 
   function updateNewSlot(rowId: string, patch: Partial<NewModeSlot>): void {
-    setNewSlots((prev) => prev.map((s) => (s.rowId === rowId ? { ...s, ...patch } : s)));
+    setNewSlots(prev =>
+      prev.map(s => (s.rowId === rowId ? { ...s, ...patch } : s))
+    );
   }
 
   // ─── "Edit" Mode Operations ────────────────────────────────────────────────
 
   function editSlotPatch(rowId: string, patch: Partial<OpenedSlot>): void {
-    setOpenedSlots((prev) => patchOpenedSlot(prev, rowId, patch));
+    setOpenedSlots(prev => patchOpenedSlot(prev, rowId, patch));
   }
 
   function editSlotDelete(rowId: string): void {
-    setOpenedSlots((prev) => deleteSlot(prev, rowId));
+    setOpenedSlots(prev => deleteSlot(prev, rowId));
   }
 
   function editSlotRevert(rowId: string): void {
-    setOpenedSlots((prev) => revertSlot(prev, rowId));
+    setOpenedSlots(prev => revertSlot(prev, rowId));
   }
 
-  async function editSlotReplaceSample(rowId: string, file: File): Promise<void> {
+  // v3.284 — Oe2sSLE „Trim": PCM auf den Loop-Bereich [loopStart, loopEnd]
+  // schneiden, Loop-Punkte auf das neue Sample zurücksetzen. Nur sinnvoll bei
+  // einem echten Bereich (loopEnd > loopStart) mit vorhandenem PCM.
+  function editSlotTrimToLoop(rowId: string): void {
+    setOpenedSlots(prev => {
+      const slot = prev.find(s => s.rowId === rowId);
+      if (!slot || !slot.pcmData || slot.channels == null) return prev;
+      const { pcmData, frames } = trimE2sSlotPcm(
+        slot.pcmData,
+        slot.channels,
+        slot.loopStart,
+        slot.loopEnd
+      );
+      if (frames === slot.frames) return prev; // No-op → nichts markieren
+      return patchOpenedSlot(prev, rowId, {
+        pcmData,
+        frames,
+        loopStart: 0,
+        loopEnd: Math.max(0, frames - 1),
+      });
+    });
+  }
+
+  // v3.284 — Oe2sSLE „Move / Exchange / #Num": Inhalt eines Slots auf eine andere
+  // Nummer verschieben (Ziel frei) bzw. tauschen (Ziel belegt). Die Selektion
+  // folgt dem Inhalt zur Ziel-Nummer.
+  function editSlotMoveTo(rowId: string, toIndex: number): void {
+    const from = openedSlots.find(s => s.rowId === rowId);
+    const target = openedSlots.find(s => s.slotIndex === toIndex);
+    if (!from || !target || from.slotIndex === toIndex) return;
+    setOpenedSlots(prev => moveOrSwapSlot(prev, rowId, toIndex));
+    setSelectedRowId(target.rowId);
+  }
+
+  // v3.284 — Oe2sSLE „Stereo → Mono": zentrierter Downmix (mix=0), setzt
+  // channels=1 (Builder schreibt dann useChan1=false). Frame-Zahl bleibt gleich.
+  function editSlotStereoToMono(rowId: string): void {
+    setOpenedSlots(prev => {
+      const slot = prev.find(s => s.rowId === rowId);
+      if (!slot || !slot.pcmData || slot.channels !== 2) return prev;
+      const mono = stereoToMonoE2s(slot.pcmData, 0);
+      return patchOpenedSlot(prev, rowId, { pcmData: mono, channels: 1 });
+    });
+  }
+
+  async function editSlotReplaceSample(
+    rowId: string,
+    file: File
+  ): Promise<void> {
     setBusy(true);
     try {
       const ab = await file.arrayBuffer();
       const decoded = await decodeArrayBuffer(ab);
-      const processed = convertToE2sSpec(decoded.pcm, decoded.sampleRate, decoded.channels, {
-        targetSampleRate: targetSr,
-        forceMono,
-      });
+      const processed = convertToE2sSpec(
+        decoded.pcm,
+        decoded.sampleRate,
+        decoded.channels,
+        {
+          targetSampleRate: targetSr,
+          forceMono,
+        }
+      );
       if (processed.estimatedPcmBytes > MAX_BYTES_PER_SLOT) {
-        toast(`Sample zu groß (${(processed.estimatedPcmBytes / 1024 / 1024).toFixed(1)} MB > 10 MB)`, { kind: "error" });
+        toast(
+          `Sample zu groß (${(processed.estimatedPcmBytes / 1024 / 1024).toFixed(1)} MB > 10 MB)`,
+          { kind: "error" }
+        );
         return;
       }
-      setOpenedSlots((prev) =>
-        replaceSlotSample(prev, rowId, processed.pcm, processed.sampleRate, processed.channels),
+      setOpenedSlots(prev =>
+        replaceSlotSample(
+          prev,
+          rowId,
+          processed.pcm,
+          processed.sampleRate,
+          processed.channels
+        )
       );
-      toast(`Sample ersetzt: ${file.name}`, { kind: "success", duration: 3000 });
+      toast(`Sample ersetzt: ${file.name}`, {
+        kind: "success",
+        duration: 3000,
+      });
     } catch (err) {
       const msg =
-        err instanceof AudioProcessError ? err.message :
-        err instanceof Error ? err.message : String(err);
+        err instanceof AudioProcessError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
       toast(`Fehler beim Ersetzen: ${msg}`, { kind: "error" });
     } finally {
       setBusy(false);
@@ -827,7 +971,9 @@ export function KorgBankEditor({
     esxFileInputRef.current?.click();
   }
 
-  function handleEsxBankFileInput(e: React.ChangeEvent<HTMLInputElement>): void {
+  function handleEsxBankFileInput(
+    e: React.ChangeEvent<HTMLInputElement>
+  ): void {
     const f = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting same file
     if (f) loadEsxBankFromFile(f);
@@ -854,27 +1000,28 @@ export function KorgBankEditor({
       const block = buildEsxPatternBlock(esxInput);
       // v3.38.0 — push history snapshot BEFORE applying the patch.
       pushEsxHistorySnapshot();
-      setEsxPendingPatches((prev) => stageEsxPatch(prev, slotIndex, block));
+      setEsxPendingPatches(prev => stageEsxPatch(prev, slotIndex, block));
       // Update overview row so the UI immediately reflects the new name/bpm.
-      setEsxRows((prev) =>
-        prev.map((r) =>
+      setEsxRows(prev =>
+        prev.map(r =>
           r.index === slotIndex
             ? {
                 index: slotIndex,
                 empty: false,
                 name: (patched.name ?? "").slice(0, 8),
                 bpm:
-                  typeof patched.bpm === "number" && Number.isFinite(patched.bpm)
+                  typeof patched.bpm === "number" &&
+                  Number.isFinite(patched.bpm)
                     ? patched.bpm
                     : 120,
                 stepLength: patched.stepCount ?? 16,
               }
-            : r,
-        ),
+            : r
+        )
       );
       toast(
         `Slot #${slotIndex} mit "${(patched.name ?? "").slice(0, 8) || "(unnamed)"}" ersetzt`,
-        { kind: "success", duration: 2500 },
+        { kind: "success", duration: 2500 }
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -885,7 +1032,7 @@ export function KorgBankEditor({
   function handleEsxRevertSlot(slotIndex: number): void {
     // v3.38.0 — capture pre-revert snapshot for undo.
     pushEsxHistorySnapshot();
-    setEsxPendingPatches((prev) => unstageEsxPatch(prev, slotIndex));
+    setEsxPendingPatches(prev => unstageEsxPatch(prev, slotIndex));
     // Refresh overview row from the (untouched) loaded bank by re-parsing —
     // cheap because parseEsxPattern is per-slot, but we already have the
     // pre-load snapshot in esxRows pre-stage. Simpler: re-build rows from the
@@ -896,14 +1043,14 @@ export function KorgBankEditor({
         const rows = buildEsxSlotOverview(bank);
         // Preserve any *other* still-staged slots' overview rows so the user
         // doesn't see them flicker back to the original.
-        setEsxRows((prev) =>
-          rows.map((r) => {
+        setEsxRows(prev =>
+          rows.map(r => {
             if (esxPendingPatches.has(r.index) && r.index !== slotIndex) {
-              const old = prev.find((p) => p.index === r.index);
+              const old = prev.find(p => p.index === r.index);
               return old ?? r;
             }
             return r;
-          }),
+          })
         );
       } catch {
         /* keep existing rows */
@@ -920,17 +1067,26 @@ export function KorgBankEditor({
     const patchCount = countPendingEsxPatches(esxPendingPatches);
     const sampleCount = countPendingEsxSamplePatches(esxSamplePending);
     const stereoSampleCount = countPendingEsxStereoSamplePatches(
-      esxStereoSamplePending,
+      esxStereoSamplePending
     );
-    if (patchCount === 0 && sampleCount === 0 && stereoSampleCount === 0) {
+    const renameCount = countPendingEsxSampleRenames(esxSampleRenamePending);
+    if (
+      patchCount === 0 &&
+      sampleCount === 0 &&
+      stereoSampleCount === 0 &&
+      renameCount === 0
+    ) {
       toast("Keine Slots zum Speichern modifiziert.", { kind: "warning" });
       return;
     }
     const summaryParts: string[] = [];
     if (patchCount > 0) summaryParts.push(`${patchCount} Pattern-Slot(s)`);
-    if (sampleCount > 0) summaryParts.push(`${sampleCount} Mono-Sample-Slot(s)`);
+    if (sampleCount > 0)
+      summaryParts.push(`${sampleCount} Mono-Sample-Slot(s)`);
     if (stereoSampleCount > 0)
       summaryParts.push(`${stereoSampleCount} Stereo-Sample-Slot(s)`);
+    if (renameCount > 0)
+      summaryParts.push(`${renameCount} Sample-Umbenennung(en)`);
     const ok = await confirm({
       title: `${summaryParts.join(" + ")} wurden geändert.`,
       message:
@@ -945,11 +1101,18 @@ export function KorgBankEditor({
       let newBuffer = commitEsxPatchesAll(
         esxBankBuffer,
         esxPendingPatches,
-        esxSamplePending,
+        esxSamplePending
       );
       // v3.32.0 — apply stereo patches after mono/patterns.
       if (stereoSampleCount > 0) {
-        newBuffer = commitEsxStereoSamplePatches(newBuffer, esxStereoSamplePending);
+        newBuffer = commitEsxStereoSamplePatches(
+          newBuffer,
+          esxStereoSamplePending
+        );
+      }
+      // v3.284 — Sample-Renames zuletzt (name-only, bit-exakt).
+      if (renameCount > 0) {
+        newBuffer = commitEsxSampleRenames(newBuffer, esxSampleRenamePending);
       }
       const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_");
       const finalName = safeName.toLowerCase().endsWith(".esx")
@@ -967,20 +1130,23 @@ export function KorgBankEditor({
           setResultMsg(null);
           return;
         }
-        toast(
-          `ESX-Bank gespeichert: ${result.filePath} (${summaryMsg})`,
-          { kind: "success", duration: 4000 },
-        );
+        toast(`ESX-Bank gespeichert: ${result.filePath} (${summaryMsg})`, {
+          kind: "success",
+          duration: 4000,
+        });
         setResultMsg(`Gespeichert: ${result.filePath}`);
         // Update working copy + clear pending patches.
         setEsxBankBuffer(newBuffer);
         setEsxPendingPatches(new Map());
         setEsxSamplePending(new Map());
         setEsxStereoSamplePending(new Map());
+        setEsxSampleRenamePending(new Map());
         // v3.38.0 — reset history after save (committed state is the new baseline).
         setEsxHistory(createEsxEditorHistory());
       } else {
-        const blob = new Blob([newBuffer], { type: "application/octet-stream" });
+        const blob = new Blob([newBuffer], {
+          type: "application/octet-stream",
+        });
         const url = URL.createObjectURL(blob);
         try {
           const a = document.createElement("a");
@@ -992,21 +1158,25 @@ export function KorgBankEditor({
         } finally {
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
-        toast(
-          `ESX-Bank heruntergeladen: ${finalName} (${summaryMsg})`,
-          { kind: "success", duration: 4000 },
-        );
+        toast(`ESX-Bank heruntergeladen: ${finalName} (${summaryMsg})`, {
+          kind: "success",
+          duration: 4000,
+        });
         setResultMsg(`Download: ${finalName}`);
         setEsxBankBuffer(newBuffer);
         setEsxPendingPatches(new Map());
         setEsxSamplePending(new Map());
         setEsxStereoSamplePending(new Map());
+        setEsxSampleRenamePending(new Map());
         // v3.38.0 — reset history after save.
         setEsxHistory(createEsxEditorHistory());
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast(`Speichern fehlgeschlagen: ${msg}`, { kind: "error", duration: 6000 });
+      toast(`Speichern fehlgeschlagen: ${msg}`, {
+        kind: "error",
+        duration: 6000,
+      });
       setResultMsg(null);
     } finally {
       setBusy(false);
@@ -1049,7 +1219,12 @@ export function KorgBankEditor({
     }
     // Strip extension from filename for the slot-name.
     const baseName = file.name.replace(/\.[^.]+$/, "");
-    return { pcm: mono, sampleRate: ESX_TARGET_SR, channels: 1, name: baseName };
+    return {
+      pcm: mono,
+      sampleRate: ESX_TARGET_SR,
+      channels: 1,
+      name: baseName,
+    };
   }
 
   function handleEsxSampleReplaceClick(slot: number): void {
@@ -1059,7 +1234,7 @@ export function KorgBankEditor({
   }
 
   async function handleEsxSampleReplaceInput(
-    e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -1082,9 +1257,9 @@ export function KorgBankEditor({
       };
       // v3.38.0 — push history snapshot BEFORE applying the patch.
       pushEsxHistorySnapshot();
-      setEsxSamplePending((prev) => stageEsxSamplePatch(prev, slot, entry));
-      setEsxSampleRows((prev) =>
-        prev.map((r) =>
+      setEsxSamplePending(prev => stageEsxSamplePatch(prev, slot, entry));
+      setEsxSampleRows(prev =>
+        prev.map(r =>
           r.index === slot
             ? {
                 index: slot,
@@ -1095,12 +1270,12 @@ export function KorgBankEditor({
                 frames: decoded.pcm.length,
                 level: 100,
               }
-            : r,
-        ),
+            : r
+        )
       );
       toast(
         `Slot #${slot} → "${decoded.name.slice(0, 8) || "(unnamed)"}" (${decoded.pcm.length} frames)`,
-        { kind: "success", duration: 2500 },
+        { kind: "success", duration: 2500 }
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1113,20 +1288,20 @@ export function KorgBankEditor({
   function handleEsxSampleRevertSlot(slot: number): void {
     // v3.38.0 — push history snapshot BEFORE applying the revert.
     pushEsxHistorySnapshot();
-    setEsxSamplePending((prev) => unstageEsxSamplePatch(prev, slot));
+    setEsxSamplePending(prev => unstageEsxSamplePatch(prev, slot));
     // Refresh row from the (untouched) loaded bank by re-parsing.
     if (esxBankBuffer) {
       try {
         const bank = parseEsxBank(esxBankBuffer);
         const rows = buildEsxSampleSlotOverview(bank);
-        setEsxSampleRows((prev) =>
-          rows.map((r) => {
+        setEsxSampleRows(prev =>
+          rows.map(r => {
             if (esxSamplePending.has(r.index) && r.index !== slot) {
-              const old = prev.find((p) => p.index === r.index);
+              const old = prev.find(p => p.index === r.index);
               return old ?? r;
             }
             return r;
-          }),
+          })
         );
       } catch {
         /* keep existing rows */
@@ -1136,7 +1311,7 @@ export function KorgBankEditor({
 
   function handleEsxSampleDragOver(
     e: React.DragEvent<HTMLLIElement>,
-    slot: number,
+    slot: number
   ): void {
     if (!e.dataTransfer.types.includes("Files")) return;
     e.preventDefault();
@@ -1150,7 +1325,7 @@ export function KorgBankEditor({
 
   async function handleEsxSampleDrop(
     e: React.DragEvent<HTMLLIElement>,
-    slot: number,
+    slot: number
   ): Promise<void> {
     e.preventDefault();
     setEsxSampleDropTargetSlot(null);
@@ -1217,7 +1392,7 @@ export function KorgBankEditor({
   }
 
   async function handleEsxStereoSampleReplaceInput(
-    e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement>
   ): Promise<void> {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -1229,7 +1404,7 @@ export function KorgBankEditor({
 
   async function replaceEsxStereoSampleSlot(
     slot: number,
-    file: File,
+    file: File
   ): Promise<void> {
     setBusy(true);
     try {
@@ -1244,11 +1419,11 @@ export function KorgBankEditor({
       };
       // v3.38.0 — push history snapshot BEFORE applying the patch.
       pushEsxHistorySnapshot();
-      setEsxStereoSamplePending((prev) =>
-        stageEsxStereoSamplePatch(prev, slot, entry),
+      setEsxStereoSamplePending(prev =>
+        stageEsxStereoSamplePatch(prev, slot, entry)
       );
-      setEsxStereoSampleRows((prev) =>
-        prev.map((r) =>
+      setEsxStereoSampleRows(prev =>
+        prev.map(r =>
           r.index === slot
             ? {
                 index: slot,
@@ -1259,16 +1434,19 @@ export function KorgBankEditor({
                 frames,
                 level: 100,
               }
-            : r,
-        ),
+            : r
+        )
       );
       toast(
         `Stereo-Slot #${slot} → "${decoded.name.slice(0, 8) || "(unnamed)"}" (${frames} fr)`,
-        { kind: "success", duration: 2500 },
+        { kind: "success", duration: 2500 }
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast(`Fehler beim Stereo-Replace: ${msg}`, { kind: "error", duration: 5000 });
+      toast(`Fehler beim Stereo-Replace: ${msg}`, {
+        kind: "error",
+        duration: 5000,
+      });
     } finally {
       setBusy(false);
     }
@@ -1277,19 +1455,19 @@ export function KorgBankEditor({
   function handleEsxStereoSampleRevertSlot(slot: number): void {
     // v3.38.0 — push history snapshot BEFORE applying the revert.
     pushEsxHistorySnapshot();
-    setEsxStereoSamplePending((prev) => unstageEsxStereoSamplePatch(prev, slot));
+    setEsxStereoSamplePending(prev => unstageEsxStereoSamplePatch(prev, slot));
     if (esxBankBuffer) {
       try {
         const bank = parseEsxBank(esxBankBuffer);
         const rows = buildEsxStereoSampleSlotOverview(bank);
-        setEsxStereoSampleRows((prev) =>
-          rows.map((r) => {
+        setEsxStereoSampleRows(prev =>
+          rows.map(r => {
             if (esxStereoSamplePending.has(r.index) && r.index !== slot) {
-              const old = prev.find((p) => p.index === r.index);
+              const old = prev.find(p => p.index === r.index);
               return old ?? r;
             }
             return r;
-          }),
+          })
         );
       } catch {
         /* keep existing rows */
@@ -1314,7 +1492,9 @@ export function KorgBankEditor({
     }
     const report = inspectEsxBankWaste(esxBankBuffer);
     if (!report) {
-      toast("Bank-Buffer ist beschädigt — Compaction nicht möglich.", { kind: "error" });
+      toast("Bank-Buffer ist beschädigt — Compaction nicht möglich.", {
+        kind: "error",
+      });
       return;
     }
     if (report.orphanBytes === 0) {
@@ -1350,22 +1530,29 @@ export function KorgBankEditor({
       setEsxStereoSampleRows(buildEsxStereoSampleSlotOverview(bank));
       setEsxSamplePending(new Map());
       setEsxStereoSamplePending(new Map());
+      setEsxSampleRenamePending(new Map());
       setEsxSampleSelectedSlot(null);
       setEsxStereoSampleSelectedSlot(null);
       // v3.38.0 — reset history after compact (compaction is a non-undoable rewrite).
       setEsxHistory(createEsxEditorHistory());
-      toast(
-        `Bank compactiert · ${mb} MB gespart`,
-        { kind: "success", duration: 3500 },
-      );
+      toast(`Bank compactiert · ${mb} MB gespart`, {
+        kind: "success",
+        duration: 3500,
+      });
       setResultMsg(
-        `Compact: ${report.orphanBytes.toLocaleString()} Bytes Orphans entfernt (~${mb} MB)`,
+        `Compact: ${report.orphanBytes.toLocaleString()} Bytes Orphans entfernt (~${mb} MB)`
       );
     } catch (err) {
       const msg =
-        err instanceof EsxBankCompactError ? err.message :
-        err instanceof Error ? err.message : String(err);
-      toast(`Compact fehlgeschlagen: ${msg}`, { kind: "error", duration: 6000 });
+        err instanceof EsxBankCompactError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      toast(`Compact fehlgeschlagen: ${msg}`, {
+        kind: "error",
+        duration: 6000,
+      });
       setResultMsg(null);
     } finally {
       setBusy(false);
@@ -1376,13 +1563,14 @@ export function KorgBankEditor({
 
   function editSlotSetSlices(
     rowId: string,
-    slices: ReturnType<typeof onsetsToEsliSlices>,
+    slices: ReturnType<typeof onsetsToEsliSlices>
   ): void {
-    setOpenedSlots((prev) => setSlotSlices(prev, rowId, slices));
+    setOpenedSlots(prev => setSlotSlices(prev, rowId, slices));
   }
 
   function handleAutoSlice(slot: OpenedSlot): void {
-    if (!slot.pcmData || !slot.sampleRate || !slot.channels || !slot.frames) return;
+    if (!slot.pcmData || !slot.sampleRate || !slot.channels || !slot.frames)
+      return;
     const mono = extractMonoChannel(slot.pcmData, slot.channels);
     try {
       const specs = autoSlice(mono, slot.sampleRate, {
@@ -1390,7 +1578,7 @@ export function KorgBankEditor({
         snapToZero: true,
         fillToMax: false,
       });
-      const onsets: OnsetCandidate[] = specs.map((s) => ({
+      const onsets: OnsetCandidate[] = specs.map(s => ({
         frame: s.startFrame,
         strength: 1,
       }));
@@ -1424,10 +1612,15 @@ export function KorgBankEditor({
       }
       try {
         const dec = await decodeSample(slot.source);
-        const processed = convertToE2sSpec(dec.pcm, dec.sampleRate, dec.channels, {
-          targetSampleRate: targetSr,
-          forceMono,
-        });
+        const processed = convertToE2sSpec(
+          dec.pcm,
+          dec.sampleRate,
+          dec.channels,
+          {
+            targetSampleRate: targetSr,
+            forceMono,
+          }
+        );
         if (processed.estimatedPcmBytes > MAX_BYTES_PER_SLOT) {
           updated.push({
             ...slot,
@@ -1447,13 +1640,111 @@ export function KorgBankEditor({
         });
       } catch (err) {
         const msg =
-          err instanceof AudioProcessError ? err.message :
-          err instanceof Error ? err.message : String(err);
+          err instanceof AudioProcessError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : String(err);
         updated.push({ ...slot, status: "error", errorMessage: msg });
       }
     }
     setNewSlots(updated);
     return updated;
+  }
+
+  // v3.284 — Oe2sSLE „Export all as wav": alle belegten Slots der geladenen
+  // E2S-Bank als WAV-ZIP herunterladen (originales PCM der geladenen Datei).
+  async function handleE2sExportSamples(): Promise<void> {
+    if (!e2sSourceBank) {
+      toast("Keine E2S-Bank geladen.", { kind: "warning" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await bundleE2sSamplesToZip(e2sSourceBank, undefined, {
+        smpl: e2sExportEmbedMeta,
+        cue: e2sExportEmbedMeta,
+      });
+      if (res.sampleCount === 0) {
+        toast("Keine Samples in dieser Bank zum Exportieren.", {
+          kind: "warning",
+        });
+        return;
+      }
+      const copy = new Uint8Array(res.zip.byteLength);
+      copy.set(new Uint8Array(res.zip));
+      const url = URL.createObjectURL(
+        new Blob([copy.buffer], { type: "application/zip" })
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast(
+        `${res.sampleCount} Sample(s) als WAV exportiert → ${res.fileName}`,
+        {
+          kind: "success",
+          duration: 4000,
+        }
+      );
+    } catch (err) {
+      toast(
+        `Sample-Export fehlgeschlagen: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        { kind: "error" }
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // v3.284 — Oe2sSLE „Import e2sSample.all": eine zweite `.all`-Bank auswählen
+  // und ihre Samples in die freien Slots ab #Num mergen.
+  async function handleE2sMergeImportPick(
+    e: React.ChangeEvent<HTMLInputElement>
+  ): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try {
+      const ab = await file.arrayBuffer();
+      const imported = parseE2sBank(ab, file.name);
+      const res = mergeE2sBankIntoOpenedSlots(
+        openedSlots,
+        imported.slots,
+        e2sMergeFromNumber
+      );
+      if (res.merged === 0) {
+        toast(
+          `Keine Samples gemergt (keine freien Slots ab #${e2sMergeFromNumber}?).`,
+          { kind: "warning" }
+        );
+        return;
+      }
+      setOpenedSlots(res.slots);
+      toast(
+        `${res.merged} Sample(s) aus ${file.name} gemergt` +
+          (res.skipped > 0
+            ? ` (${res.skipped} übersprungen — Slots voll)`
+            : ""),
+        { kind: "success", duration: 4000 }
+      );
+    } catch (err) {
+      const msg =
+        err instanceof E2sParseError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      toast(`Merge-Import fehlgeschlagen: ${msg}`, { kind: "error" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleSaveAs(): Promise<void> {
@@ -1464,25 +1755,31 @@ export function KorgBankEditor({
 
     if (mode === "new") {
       if (newSlots.length === 0) {
-        toast("Keine Samples in der Bank — bitte zuerst hinzufügen.", { kind: "warning" });
+        toast("Keine Samples in der Bank — bitte zuerst hinzufügen.", {
+          kind: "warning",
+        });
         return;
       }
       setBusy(true);
       setResultMsg("Decodiere Samples...");
       try {
         const decoded = await decodeAllPendingNew();
-        const ready = decoded.filter((s) => s.status === "ready");
-        const errored = decoded.filter((s) => s.status === "error");
+        const ready = decoded.filter(s => s.status === "ready");
+        const errored = decoded.filter(s => s.status === "error");
         if (ready.length === 0) {
-          toast("Keine gültigen Samples — alle Decodes fehlgeschlagen.", { kind: "error" });
+          toast("Keine gültigen Samples — alle Decodes fehlgeschlagen.", {
+            kind: "error",
+          });
           setResultMsg(null);
           setBusy(false);
           return;
         }
         if (errored.length > 0) {
-          toast(`${errored.length} Slot(s) übersprungen wg. Decode-Fehler`, { kind: "warning" });
+          toast(`${errored.length} Slot(s) übersprungen wg. Decode-Fehler`, {
+            kind: "warning",
+          });
         }
-        inputs = ready.map((s) => ({
+        inputs = ready.map(s => ({
           slotIndex: s.slotIndex,
           name: s.name,
           category: s.category,
@@ -1513,7 +1810,9 @@ export function KorgBankEditor({
       inputs = built.inputs;
       savedMsgDetail = `${built.dirtyCount} geändert, ${built.passthroughCount} bit-exakt erhalten`;
       if (built.droppedCount > 0) {
-        toast(`${built.droppedCount} korrupter Slot(s) verworfen`, { kind: "warning" });
+        toast(`${built.droppedCount} korrupter Slot(s) verworfen`, {
+          kind: "warning",
+        });
       }
     }
 
@@ -1526,7 +1825,9 @@ export function KorgBankEditor({
       const buf = result.buffer;
 
       const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_");
-      const finalName = safeName.endsWith(".all") ? safeName : `${safeName}.all`;
+      const finalName = safeName.endsWith(".all")
+        ? safeName
+        : `${safeName}.all`;
 
       if (electron.isElectron) {
         const saveResult = await electron.saveKorgBankAs(finalName, buf);
@@ -1535,11 +1836,16 @@ export function KorgBankEditor({
             setResultMsg(null);
             return;
           }
-          toast(`Fehler beim Speichern: ${saveResult.error}`, { kind: "error" });
+          toast(`Fehler beim Speichern: ${saveResult.error}`, {
+            kind: "error",
+          });
           setResultMsg(null);
           return;
         }
-        toast(`E2S Bank gespeichert: ${saveResult.filePath} (${savedMsgDetail})`, { kind: "success", duration: 4000 });
+        toast(
+          `E2S Bank gespeichert: ${saveResult.filePath} (${savedMsgDetail})`,
+          { kind: "success", duration: 4000 }
+        );
         setResultMsg(`Gespeichert: ${saveResult.filePath}`);
       } else {
         const blob = new Blob([buf], { type: "application/octet-stream" });
@@ -1554,11 +1860,19 @@ export function KorgBankEditor({
         } finally {
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
-        toast(`E2S Bank heruntergeladen: ${finalName} (${savedMsgDetail})`, { kind: "success", duration: 4000 });
+        toast(`E2S Bank heruntergeladen: ${finalName} (${savedMsgDetail})`, {
+          kind: "success",
+          duration: 4000,
+        });
         setResultMsg(`Download: ${finalName}`);
       }
     } catch (err) {
-      const msg = err instanceof E2sBuildError ? err.message : err instanceof Error ? err.message : String(err);
+      const msg =
+        err instanceof E2sBuildError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err);
       toast(`Build-Fehler: ${msg}`, { kind: "error", duration: 6000 });
       setResultMsg(null);
     } finally {
@@ -1570,19 +1884,25 @@ export function KorgBankEditor({
 
   const totalBytesNew = useMemo(
     () => newSlots.reduce((sum, s) => sum + (s.pcmBytes ?? 0), 0),
-    [newSlots],
+    [newSlots]
   );
 
   const availableSamples = useMemo(
-    () => samples.filter((sm) => !newSlots.some((es) => es.source.id === sm.id)),
-    [samples, newSlots],
+    () => samples.filter(sm => !newSlots.some(es => es.source.id === sm.id)),
+    [samples, newSlots]
   );
 
-  const filledCountOpened = useMemo(() => countFilledSlots(openedSlots), [openedSlots]);
-  const dirtyCountOpened = useMemo(() => countDirtySlots(openedSlots), [openedSlots]);
+  const filledCountOpened = useMemo(
+    () => countFilledSlots(openedSlots),
+    [openedSlots]
+  );
+  const dirtyCountOpened = useMemo(
+    () => countDirtySlots(openedSlots),
+    [openedSlots]
+  );
   const selectedSlot = useMemo(
-    () => openedSlots.find((s) => s.rowId === selectedRowId) ?? null,
-    [openedSlots, selectedRowId],
+    () => openedSlots.find(s => s.rowId === selectedRowId) ?? null,
+    [openedSlots, selectedRowId]
   );
   const visibleOpenedSlots = useMemo(
     () => filterOpenedSlots(openedSlots, openedSearch, openedHideEmpty),
@@ -1591,73 +1911,77 @@ export function KorgBankEditor({
 
   // v3.29.0 — ESX-Mode computed
   const esxFilledCount = useMemo(
-    () => esxRows.filter((r) => !r.empty).length,
-    [esxRows],
+    () => esxRows.filter(r => !r.empty).length,
+    [esxRows]
   );
   const esxPendingCount = useMemo(
     () => countPendingEsxPatches(esxPendingPatches),
-    [esxPendingPatches],
+    [esxPendingPatches]
   );
   const esxVisibleRows = useMemo(
     () => filterEsxRows(esxRows, esxSearch, esxHideInit, esxHideEmpty),
-    [esxRows, esxSearch, esxHideInit, esxHideEmpty],
+    [esxRows, esxSearch, esxHideInit, esxHideEmpty]
   );
   const esxSelectedRow = useMemo(
-    () => (esxSelectedSlot == null ? null : esxRows.find((r) => r.index === esxSelectedSlot) ?? null),
-    [esxRows, esxSelectedSlot],
+    () =>
+      esxSelectedSlot == null
+        ? null
+        : (esxRows.find(r => r.index === esxSelectedSlot) ?? null),
+    [esxRows, esxSelectedSlot]
   );
 
   // v3.31.0 — Sample-Tab computed
   const esxSampleFilledCount = useMemo(
-    () => esxSampleRows.filter((r) => !r.empty).length,
-    [esxSampleRows],
+    () => esxSampleRows.filter(r => !r.empty).length,
+    [esxSampleRows]
   );
   const esxSamplePendingCount = useMemo(
     () => countPendingEsxSamplePatches(esxSamplePending),
-    [esxSamplePending],
+    [esxSamplePending]
   );
   const esxSampleVisibleRows = useMemo(
-    () => filterEsxSampleRows(esxSampleRows, esxSampleSearch, esxSampleHideEmpty),
-    [esxSampleRows, esxSampleSearch, esxSampleHideEmpty],
+    () =>
+      filterEsxSampleRows(esxSampleRows, esxSampleSearch, esxSampleHideEmpty),
+    [esxSampleRows, esxSampleSearch, esxSampleHideEmpty]
   );
   const esxSampleSelectedRow = useMemo(
     () =>
       esxSampleSelectedSlot == null
         ? null
-        : esxSampleRows.find((r) => r.index === esxSampleSelectedSlot) ?? null,
-    [esxSampleRows, esxSampleSelectedSlot],
+        : (esxSampleRows.find(r => r.index === esxSampleSelectedSlot) ?? null),
+    [esxSampleRows, esxSampleSelectedSlot]
   );
 
   // v3.32.0 — Stereo computed
   const esxStereoSampleFilledCount = useMemo(
-    () => esxStereoSampleRows.filter((r) => !r.empty).length,
-    [esxStereoSampleRows],
+    () => esxStereoSampleRows.filter(r => !r.empty).length,
+    [esxStereoSampleRows]
   );
   const esxStereoSamplePendingCount = useMemo(
     () => countPendingEsxStereoSamplePatches(esxStereoSamplePending),
-    [esxStereoSamplePending],
+    [esxStereoSamplePending]
   );
   const esxStereoSampleVisibleRows = useMemo(
     () =>
       filterEsxStereoSampleRows(
         esxStereoSampleRows,
         esxSampleSearch,
-        esxSampleHideEmpty,
+        esxSampleHideEmpty
       ),
-    [esxStereoSampleRows, esxSampleSearch, esxSampleHideEmpty],
+    [esxStereoSampleRows, esxSampleSearch, esxSampleHideEmpty]
   );
   const esxStereoSampleSelectedRow = useMemo(
     () =>
       esxStereoSampleSelectedSlot == null
         ? null
-        : esxStereoSampleRows.find(
-            (r) => r.index === esxStereoSampleSelectedSlot,
-          ) ?? null,
-    [esxStereoSampleRows, esxStereoSampleSelectedSlot],
+        : (esxStereoSampleRows.find(
+            r => r.index === esxStereoSampleSelectedSlot
+          ) ?? null),
+    [esxStereoSampleRows, esxStereoSampleSelectedSlot]
   );
   const esxCompactReport = useMemo(
     () => (esxBankBuffer ? inspectEsxBankWaste(esxBankBuffer) : null),
-    [esxBankBuffer],
+    [esxBankBuffer]
   );
   const esxTotalPendingCount =
     esxPendingCount + esxSamplePendingCount + esxStereoSamplePendingCount;
@@ -1668,7 +1992,7 @@ export function KorgBankEditor({
     <div
       data-testid="korg-bank-editor-overlay"
       className="fixed inset-0 z-50 bg-bg-base/80 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={(e) => {
+      onClick={e => {
         if (e.target === e.currentTarget && !busy) onClose();
       }}
     >
@@ -1841,19 +2165,81 @@ export function KorgBankEditor({
                 <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
               </button>
             ) : (
-              <button
-                data-testid="korg-bank-editor-save"
-                onClick={handleSaveAs}
-                disabled={
-                  busy ||
-                  (mode === "new" && newSlots.length === 0) ||
-                  (mode === "edit" && filledCountOpened === 0)
-                }
-                className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
-              >
-                {busy ? "Speichere..." : "Als .all speichern"}
-                <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
-              </button>
+              <>
+                {mode === "edit" && e2sSourceBank && (
+                  <>
+                    <label
+                      className="flex items-center gap-1 text-[11px] text-text-muted"
+                      title="Oe2sSLE: Loop-Punkt (smpl) + Slice-Marker (cue) in die WAV einbetten"
+                    >
+                      <input
+                        data-testid="korg-bank-editor-e2s-export-meta"
+                        type="checkbox"
+                        checked={e2sExportEmbedMeta}
+                        onChange={e => setE2sExportEmbedMeta(e.target.checked)}
+                        className="accent-accent-primary"
+                      />
+                      smpl/cue
+                    </label>
+                    <button
+                      data-testid="korg-bank-editor-e2s-export-samples"
+                      onClick={handleE2sExportSamples}
+                      disabled={busy}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:brightness-125 transition-all disabled:opacity-40 flex items-center gap-2"
+                      title="Alle Samples der geladenen Bank als WAV-ZIP exportieren"
+                    >
+                      🎵 Samples als WAV
+                    </button>
+                    <span className="w-px h-5 bg-border-color" />
+                    <label
+                      className="flex items-center gap-1 text-[11px] text-text-muted"
+                      title="Start-Slot-Nummer für den Merge-Import"
+                    >
+                      ab #
+                      <input
+                        data-testid="korg-bank-editor-e2s-merge-from"
+                        type="number"
+                        min={0}
+                        max={E2S_MAX_SLOTS - 1}
+                        value={e2sMergeFromNumber}
+                        onChange={e =>
+                          setE2sMergeFromNumber(Number(e.target.value))
+                        }
+                        className="w-16 bg-bg-base border border-border-color rounded px-1 py-0.5 text-text-primary"
+                      />
+                    </label>
+                    <button
+                      data-testid="korg-bank-editor-e2s-merge-import"
+                      onClick={() => e2sMergeInputRef.current?.click()}
+                      disabled={busy}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:brightness-125 transition-all disabled:opacity-40 flex items-center gap-2"
+                      title="Eine zweite .all-Bank auswählen und ihre Samples in freie Slots mergen"
+                    >
+                      📥 Bank mergen
+                    </button>
+                    <input
+                      ref={e2sMergeInputRef}
+                      type="file"
+                      accept=".all,.e2sallsample,application/octet-stream"
+                      className="hidden"
+                      onChange={handleE2sMergeImportPick}
+                    />
+                  </>
+                )}
+                <button
+                  data-testid="korg-bank-editor-save"
+                  onClick={handleSaveAs}
+                  disabled={
+                    busy ||
+                    (mode === "new" && newSlots.length === 0) ||
+                    (mode === "edit" && filledCountOpened === 0)
+                  }
+                  className="px-3 py-1 rounded text-xs bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
+                >
+                  {busy ? "Speichere..." : "Als .all speichern"}
+                  <ProLockBadge feature={PRO_FEATURE_KORG_BANK_WRITE} />
+                </button>
+              </>
             )}
           </div>
         </footer>
@@ -1873,11 +2259,12 @@ export function KorgBankEditor({
           </h3>
           {availableSamples.length === 0 ? (
             <p className="text-xs text-text-muted">
-              Alle Project-Samples sind bereits in der Bank, oder die Sample-Library ist leer.
+              Alle Project-Samples sind bereits in der Bank, oder die
+              Sample-Library ist leer.
             </p>
           ) : (
             <ul className="space-y-1" data-testid="korg-bank-editor-picker">
-              {availableSamples.map((s) => (
+              {availableSamples.map(s => (
                 <li key={s.id}>
                   <button
                     data-testid={`korg-bank-editor-pick-${s.id}`}
@@ -1902,11 +2289,15 @@ export function KorgBankEditor({
               <select
                 data-testid="korg-bank-editor-target-sr"
                 value={targetSr}
-                onChange={(e) => setTargetSr(Number(e.target.value) as 44100 | 48000)}
+                onChange={e =>
+                  setTargetSr(Number(e.target.value) as 44100 | 48000)
+                }
                 className="bg-bg-elevated border border-border-color rounded text-xs px-1 py-0.5 text-text-primary"
               >
-                {TARGET_SAMPLE_RATE_OPTIONS.map((r) => (
-                  <option key={r} value={r}>{r} Hz</option>
+                {TARGET_SAMPLE_RATE_OPTIONS.map(r => (
+                  <option key={r} value={r}>
+                    {r} Hz
+                  </option>
                 ))}
               </select>
             </label>
@@ -1915,7 +2306,7 @@ export function KorgBankEditor({
                 data-testid="korg-bank-editor-force-mono"
                 type="checkbox"
                 checked={forceMono}
-                onChange={(e) => setForceMono(e.target.checked)}
+                onChange={e => setForceMono(e.target.checked)}
                 className="accent-accent-primary"
               />
               Force Mono
@@ -1926,7 +2317,7 @@ export function KorgBankEditor({
                 data-testid="korg-bank-editor-filename"
                 type="text"
                 value={filename}
-                onChange={(e) => setFilename(e.target.value)}
+                onChange={e => setFilename(e.target.value)}
                 className="flex-1 bg-bg-elevated border border-border-color rounded text-xs px-1 py-0.5 text-text-primary"
               />
             </label>
@@ -1938,7 +2329,7 @@ export function KorgBankEditor({
             </p>
           ) : (
             <div className="space-y-1" data-testid="korg-bank-editor-list">
-              {newSlots.map((slot) => (
+              {newSlots.map(slot => (
                 <div
                   key={slot.rowId}
                   data-testid={`korg-bank-editor-row-${slot.rowId}`}
@@ -1951,30 +2342,46 @@ export function KorgBankEditor({
                     data-testid={`korg-bank-editor-name-${slot.rowId}`}
                     type="text"
                     value={slot.name}
-                    onChange={(e) => updateNewSlot(slot.rowId, { name: e.target.value.slice(0, 16) })}
+                    onChange={e =>
+                      updateNewSlot(slot.rowId, {
+                        name: e.target.value.slice(0, 16),
+                      })
+                    }
                     maxLength={16}
                     className="flex-1 min-w-[80px] bg-bg-base border border-border-color rounded px-1 py-0.5 text-text-primary"
                   />
                   <select
                     data-testid={`korg-bank-editor-cat-${slot.rowId}`}
                     value={slot.category}
-                    onChange={(e) => updateNewSlot(slot.rowId, { category: Number(e.target.value) })}
+                    onChange={e =>
+                      updateNewSlot(slot.rowId, {
+                        category: Number(e.target.value),
+                      })
+                    }
                     className="bg-bg-base border border-border-color rounded text-xs px-1 py-0.5 text-text-primary w-24 flex-shrink-0"
                   >
                     {E2S_CATEGORY_NAMES.map((n, i) => (
-                      <option key={i} value={i}>{n}</option>
+                      <option key={i} value={i}>
+                        {n}
+                      </option>
                     ))}
                   </select>
                   <label className="text-text-muted flex items-center gap-1 text-[10px]">
                     <input
                       type="checkbox"
                       checked={slot.oneshot}
-                      onChange={(e) => updateNewSlot(slot.rowId, { oneshot: e.target.checked })}
+                      onChange={e =>
+                        updateNewSlot(slot.rowId, { oneshot: e.target.checked })
+                      }
                     />
                     1-Shot
                   </label>
-                  <span className={`text-[10px] w-20 truncate ${slot.status === "error" ? "text-accent-danger" : "text-text-dim"}`}>
-                    {slot.status === "ready" && slot.frames ? `${slot.frames} fr` : slot.status}
+                  <span
+                    className={`text-[10px] w-20 truncate ${slot.status === "error" ? "text-accent-danger" : "text-text-dim"}`}
+                  >
+                    {slot.status === "ready" && slot.frames
+                      ? `${slot.frames} fr`
+                      : slot.status}
                   </span>
                   <button
                     data-testid={`korg-bank-editor-remove-${slot.rowId}`}
@@ -2022,7 +2429,8 @@ export function KorgBankEditor({
               📂 Bank öffnen
             </button>
             <p className="text-[10px] text-text-dim">
-              Tipp: Du kannst auch eine `.all` Datei direkt in dieses Fenster ziehen.
+              Tipp: Du kannst auch eine `.all` Datei direkt in dieses Fenster
+              ziehen.
             </p>
           </div>
         </div>
@@ -2047,7 +2455,7 @@ export function KorgBankEditor({
               📂 Andere
             </button>
           </div>
-          {/* v3.286 — Filter. Die Tabelle hat 1002 Slots; eine Hacktribe-Bank
+          {/* v3.286 — Filter. Die Tabelle hat 1020 Slots; eine Hacktribe-Bank
               belegt davon die ab 501. Ohne Filter wäre das eine Scroll-Wüste. */}
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <input
@@ -2089,7 +2497,9 @@ export function KorgBankEditor({
                   <span className="font-mono text-text-dim w-10 flex-shrink-0">
                     #{slot.slotIndex}
                   </span>
-                  <span className={`flex-1 truncate ${slot.empty ? "text-text-dim italic" : "text-text-primary"}`}>
+                  <span
+                    className={`flex-1 truncate ${slot.empty ? "text-text-dim italic" : "text-text-primary"}`}
+                  >
                     {displayName(slot)}
                   </span>
                   {!slot.empty && (
@@ -2119,7 +2529,10 @@ export function KorgBankEditor({
               Wähle links einen Slot aus, um Details zu bearbeiten.
             </p>
           ) : selectedSlot.empty ? (
-            <div data-testid="korg-bank-editor-detail-empty" className="text-center py-8 space-y-3">
+            <div
+              data-testid="korg-bank-editor-detail-empty"
+              className="text-center py-8 space-y-3"
+            >
               <p className="text-sm text-text-muted">
                 Slot #{selectedSlot.slotIndex} ist leer.
               </p>
@@ -2136,10 +2549,14 @@ export function KorgBankEditor({
           ) : (
             <div data-testid="korg-bank-editor-detail" className="space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-border-color">
-                <span className="font-mono text-xs text-text-dim">Slot #{selectedSlot.slotIndex}</span>
+                <span className="font-mono text-xs text-text-dim">
+                  Slot #{selectedSlot.slotIndex}
+                </span>
                 <div className="flex items-center gap-2">
                   {selectedSlot.isDirty && (
-                    <span className="text-[10px] text-accent-secondary">● geändert</span>
+                    <span className="text-[10px] text-accent-secondary">
+                      ● geändert
+                    </span>
                   )}
                   <button
                     data-testid="korg-bank-editor-revert"
@@ -2169,8 +2586,10 @@ export function KorgBankEditor({
                   type="text"
                   value={selectedSlot.name}
                   maxLength={16}
-                  onChange={(e) =>
-                    editSlotPatch(selectedSlot.rowId, { name: e.target.value.slice(0, 16) })
+                  onChange={e =>
+                    editSlotPatch(selectedSlot.rowId, {
+                      name: e.target.value.slice(0, 16),
+                    })
                   }
                   className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
                 />
@@ -2182,13 +2601,17 @@ export function KorgBankEditor({
                 <select
                   data-testid="korg-bank-editor-detail-category"
                   value={selectedSlot.category}
-                  onChange={(e) =>
-                    editSlotPatch(selectedSlot.rowId, { category: Number(e.target.value) })
+                  onChange={e =>
+                    editSlotPatch(selectedSlot.rowId, {
+                      category: Number(e.target.value),
+                    })
                   }
                   className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
                 >
                   {E2S_CATEGORY_NAMES.map((n, i) => (
-                    <option key={i} value={i}>{n}</option>
+                    <option key={i} value={i}>
+                      {n}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -2200,8 +2623,10 @@ export function KorgBankEditor({
                     data-testid="korg-bank-editor-detail-oneshot"
                     type="checkbox"
                     checked={selectedSlot.oneshot}
-                    onChange={(e) =>
-                      editSlotPatch(selectedSlot.rowId, { oneshot: e.target.checked })
+                    onChange={e =>
+                      editSlotPatch(selectedSlot.rowId, {
+                        oneshot: e.target.checked,
+                      })
                     }
                     className="accent-accent-primary"
                   />
@@ -2212,8 +2637,10 @@ export function KorgBankEditor({
                     data-testid="korg-bank-editor-detail-gain12db"
                     type="checkbox"
                     checked={selectedSlot.gain12db}
-                    onChange={(e) =>
-                      editSlotPatch(selectedSlot.rowId, { gain12db: e.target.checked })
+                    onChange={e =>
+                      editSlotPatch(selectedSlot.rowId, {
+                        gain12db: e.target.checked,
+                      })
                     }
                     className="accent-accent-primary"
                   />
@@ -2221,21 +2648,102 @@ export function KorgBankEditor({
                 </label>
               </div>
 
-              {/* Sample-Tune */}
+              {/* Sample-Tune (Oe2sSLE Coarse-Tune -63..+63) */}
               <label className="block text-xs text-text-muted">
-                Sample-Tune (Semitones): {selectedSlot.sampleTune}
+                Sample-Tune: {selectedSlot.sampleTune}
                 <input
                   data-testid="korg-bank-editor-detail-tune"
                   type="range"
-                  min={-99}
-                  max={99}
+                  min={-63}
+                  max={63}
                   value={selectedSlot.sampleTune}
-                  onChange={(e) =>
-                    editSlotPatch(selectedSlot.rowId, { sampleTune: Number(e.target.value) })
+                  onChange={e =>
+                    editSlotPatch(selectedSlot.rowId, {
+                      sampleTune: Number(e.target.value),
+                    })
                   }
                   className="w-full mt-1 accent-accent-primary"
                 />
               </label>
+
+              {/* Level (playVolume 0..127) */}
+              <label className="block text-xs text-text-muted">
+                Level: {selectedSlot.level}
+                <input
+                  data-testid="korg-bank-editor-detail-level"
+                  type="range"
+                  min={0}
+                  max={127}
+                  value={selectedSlot.level}
+                  onChange={e =>
+                    editSlotPatch(selectedSlot.rowId, {
+                      level: Number(e.target.value),
+                    })
+                  }
+                  className="w-full mt-1 accent-accent-primary"
+                />
+              </label>
+
+              {/* Loop-Punkte (nur bei Forward-Loop, Oe2sSLE „Edit loop") */}
+              {!selectedSlot.oneshot && (
+                <div
+                  className="space-y-2 pt-2 border-t border-border-color"
+                  data-testid="korg-bank-editor-detail-loop"
+                >
+                  <div className="text-[11px] text-text-muted">
+                    Loop-Punkte (Frames · von {selectedSlot.frames ?? 0})
+                  </div>
+                  <label className="block text-xs text-text-muted">
+                    Loop-Start: {selectedSlot.loopStart}
+                    <input
+                      data-testid="korg-bank-editor-detail-loop-start"
+                      type="range"
+                      min={0}
+                      max={Math.max(0, (selectedSlot.frames ?? 1) - 1)}
+                      value={selectedSlot.loopStart}
+                      onChange={e =>
+                        editSlotPatch(selectedSlot.rowId, {
+                          loopStart: Math.min(
+                            Number(e.target.value),
+                            selectedSlot.loopEnd
+                          ),
+                        })
+                      }
+                      className="w-full mt-1 accent-accent-primary"
+                    />
+                  </label>
+                  <label className="block text-xs text-text-muted">
+                    Loop-Ende: {selectedSlot.loopEnd}
+                    <input
+                      data-testid="korg-bank-editor-detail-loop-end"
+                      type="range"
+                      min={0}
+                      max={Math.max(0, (selectedSlot.frames ?? 1) - 1)}
+                      value={selectedSlot.loopEnd}
+                      onChange={e =>
+                        editSlotPatch(selectedSlot.rowId, {
+                          loopEnd: Math.max(
+                            Number(e.target.value),
+                            selectedSlot.loopStart
+                          ),
+                        })
+                      }
+                      className="w-full mt-1 accent-accent-primary"
+                    />
+                  </label>
+                  <button
+                    data-testid="korg-bank-editor-detail-trim"
+                    onClick={() => editSlotTrimToLoop(selectedSlot.rowId)}
+                    disabled={
+                      busy || selectedSlot.loopEnd <= selectedSlot.loopStart
+                    }
+                    className="px-2 py-1 rounded text-[11px] bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                    title="PCM auf den Loop-Bereich schneiden (destruktiv, per Revert rückgängig)"
+                  >
+                    ✂ Auf Loop-Bereich trimmen
+                  </button>
+                </div>
+              )}
 
               {/* Audio info + Replace */}
               <div className="text-xs text-text-muted space-y-1 pt-2 border-t border-border-color">
@@ -2243,14 +2751,53 @@ export function KorgBankEditor({
                   Audio: {selectedSlot.channels === 2 ? "Stereo" : "Mono"} ·{" "}
                   {selectedSlot.sampleRate} Hz · {selectedSlot.frames} frames
                 </p>
-                <button
-                  data-testid="korg-bank-editor-replace-sample"
-                  onClick={() => handleReplaceClick(selectedSlot.rowId)}
-                  disabled={busy}
-                  className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
-                >
-                  🎵 Sample ersetzen…
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    data-testid="korg-bank-editor-replace-sample"
+                    onClick={() => handleReplaceClick(selectedSlot.rowId)}
+                    disabled={busy}
+                    className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                  >
+                    🎵 Sample ersetzen…
+                  </button>
+                  {selectedSlot.channels === 2 && (
+                    <button
+                      data-testid="korg-bank-editor-detail-stereo-to-mono"
+                      onClick={() => editSlotStereoToMono(selectedSlot.rowId)}
+                      disabled={busy}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                      title="Stereo auf Mono mischen (zentriert; per Revert rückgängig)"
+                    >
+                      ⇥ Stereo → Mono
+                    </button>
+                  )}
+                </div>
+                {/* #Num verschieben/tauschen (Oe2sSLE Move/Exchange) */}
+                <label className="flex items-center gap-2 text-xs text-text-muted pt-1">
+                  <span>#Num (verschieben / tauschen):</span>
+                  <input
+                    key={selectedSlot.rowId}
+                    data-testid="korg-bank-editor-detail-move-num"
+                    type="number"
+                    min={0}
+                    max={E2S_MAX_SLOTS - 1}
+                    defaultValue={selectedSlot.slotIndex}
+                    disabled={busy}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        editSlotMoveTo(
+                          selectedSlot.rowId,
+                          Number((e.target as HTMLInputElement).value)
+                        );
+                      }
+                    }}
+                    onBlur={e =>
+                      editSlotMoveTo(selectedSlot.rowId, Number(e.target.value))
+                    }
+                    className="w-20 bg-bg-base border border-border-color rounded px-2 py-0.5 text-text-primary disabled:opacity-40"
+                    title="Ziel-Nummer eingeben + Enter: leer → verschieben, belegt → tauschen"
+                  />
+                </label>
               </div>
 
               {/* v3.8.0 — Slices */}
@@ -2279,8 +2826,9 @@ export function KorgBankEditor({
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="text-center space-y-3 max-w-md">
             <p className="text-sm text-text-muted">
-              Lade eine existierende <code className="text-text-primary">.esx</code>{" "}
-              ESX-1 Bank (KORG ESX-1 Backup).
+              Lade eine existierende{" "}
+              <code className="text-text-primary">.esx</code> ESX-1 Bank (KORG
+              ESX-1 Backup).
             </p>
             <p className="text-xs text-text-dim">
               Du kannst einzelne Pattern- oder Sample-Slots ersetzen. Alles
@@ -2412,7 +2960,12 @@ export function KorgBankEditor({
               title={`Rückgängig (Ctrl+Z) — ${esxHistory.past.length} verfügbar`}
               aria-label="Undo"
             >
-              ↶ Undo {esxHistory.past.length > 0 && <span className="text-[9px] text-text-dim ml-0.5">({esxHistory.past.length})</span>}
+              ↶ Undo{" "}
+              {esxHistory.past.length > 0 && (
+                <span className="text-[9px] text-text-dim ml-0.5">
+                  ({esxHistory.past.length})
+                </span>
+              )}
             </button>
             <button
               data-testid="korg-bank-editor-esx-redo"
@@ -2422,22 +2975,30 @@ export function KorgBankEditor({
               title={`Wiederholen (Ctrl+Shift+Z) — ${esxHistory.future.length} verfügbar`}
               aria-label="Redo"
             >
-              ↷ Redo {esxHistory.future.length > 0 && <span className="text-[9px] text-text-dim ml-0.5">({esxHistory.future.length})</span>}
+              ↷ Redo{" "}
+              {esxHistory.future.length > 0 && (
+                <span className="text-[9px] text-text-dim ml-0.5">
+                  ({esxHistory.future.length})
+                </span>
+              )}
             </button>
           </div>
 
           {/* v3.32.0 — Compact-Bank-Button (only in samples tab) */}
-          {esxSubTab === "samples" && esxCompactReport && esxCompactReport.orphanBytes > 0 && (
-            <button
-              data-testid="korg-bank-editor-esx-compact"
-              onClick={handleEsxCompactBank}
-              disabled={busy}
-              className="px-2 py-0.5 rounded text-[10px] bg-accent-secondary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
-              title={`Spare ${(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB durch Compaction`}
-            >
-              🗜 Compact Bank ({(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB)
-            </button>
-          )}
+          {esxSubTab === "samples" &&
+            esxCompactReport &&
+            esxCompactReport.orphanBytes > 0 && (
+              <button
+                data-testid="korg-bank-editor-esx-compact"
+                onClick={handleEsxCompactBank}
+                disabled={busy}
+                className="px-2 py-0.5 rounded text-[10px] bg-accent-secondary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40"
+                title={`Spare ${(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB durch Compaction`}
+              >
+                🗜 Compact Bank (
+                {(esxCompactReport.orphanBytes / 1024 / 1024).toFixed(2)} MB)
+              </button>
+            )}
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col md:flex-row">
@@ -2478,7 +3039,7 @@ export function KorgBankEditor({
               type="text"
               placeholder="Suchen (Name oder Index)"
               value={esxSearch}
-              onChange={(e) => setEsxSearch(e.target.value)}
+              onChange={e => setEsxSearch(e.target.value)}
               className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
             />
             <label className="text-[10px] text-text-muted flex items-center gap-1">
@@ -2486,7 +3047,7 @@ export function KorgBankEditor({
                 data-testid="korg-bank-editor-esx-hide-init"
                 type="checkbox"
                 checked={esxHideInit}
-                onChange={(e) => setEsxHideInit(e.target.checked)}
+                onChange={e => setEsxHideInit(e.target.checked)}
                 className="accent-accent-primary"
               />
               Init verbergen
@@ -2496,7 +3057,7 @@ export function KorgBankEditor({
                 data-testid="korg-bank-editor-esx-hide-empty"
                 type="checkbox"
                 checked={esxHideEmpty}
-                onChange={(e) => setEsxHideEmpty(e.target.checked)}
+                onChange={e => setEsxHideEmpty(e.target.checked)}
                 className="accent-accent-primary"
               />
               Leere verbergen
@@ -2512,7 +3073,7 @@ export function KorgBankEditor({
                 Keine Slots passen zu deinem Filter.
               </li>
             ) : (
-              esxVisibleRows.map((r) => {
+              esxVisibleRows.map(r => {
                 const dirty = esxPendingPatches.has(r.index);
                 const selected = esxSelectedSlot === r.index;
                 return (
@@ -2622,8 +3183,7 @@ export function KorgBankEditor({
 
               <div className="pt-2 border-t border-border-color space-y-2">
                 <p className="text-xs text-text-muted">
-                  Den Slot mit dem aktuell aktiven Synthstudio-Pattern
-                  ersetzen.
+                  Den Slot mit dem aktuell aktiven Synthstudio-Pattern ersetzen.
                 </p>
                 <button
                   data-testid="korg-bank-editor-esx-replace"
@@ -2653,7 +3213,7 @@ export function KorgBankEditor({
                     data-testid="korg-bank-editor-esx-filename"
                     type="text"
                     value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
+                    onChange={e => setFilename(e.target.value)}
                     className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
                   />
                 </label>
@@ -2683,7 +3243,8 @@ export function KorgBankEditor({
         <div className="md:w-2/5 border-r border-border-color overflow-y-auto p-2 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h3 className="text-xs font-semibold text-text-primary">
-              Mono-Sample-Slots ({esxSampleVisibleRows.length}/{esxSampleRows.length})
+              Mono-Sample-Slots ({esxSampleVisibleRows.length}/
+              {esxSampleRows.length})
             </h3>
           </div>
 
@@ -2694,7 +3255,7 @@ export function KorgBankEditor({
               type="text"
               placeholder="Suchen (Name oder Index)"
               value={esxSampleSearch}
-              onChange={(e) => setEsxSampleSearch(e.target.value)}
+              onChange={e => setEsxSampleSearch(e.target.value)}
               className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
             />
             <label className="text-[10px] text-text-muted flex items-center gap-1">
@@ -2702,7 +3263,7 @@ export function KorgBankEditor({
                 data-testid="korg-bank-editor-esx-sample-hide-empty"
                 type="checkbox"
                 checked={esxSampleHideEmpty}
-                onChange={(e) => setEsxSampleHideEmpty(e.target.checked)}
+                onChange={e => setEsxSampleHideEmpty(e.target.checked)}
                 className="accent-accent-primary"
               />
               Leere verbergen
@@ -2718,16 +3279,16 @@ export function KorgBankEditor({
                 Keine Sample-Slots passen zu deinem Filter.
               </li>
             ) : (
-              esxSampleVisibleRows.map((r) => {
+              esxSampleVisibleRows.map(r => {
                 const dirty = esxSamplePending.has(r.index);
                 const selected = esxSampleSelectedSlot === r.index;
                 const isDropTarget = esxSampleDropTargetSlot === r.index;
                 return (
                   <li
                     key={r.index}
-                    onDragOver={(e) => handleEsxSampleDragOver(e, r.index)}
+                    onDragOver={e => handleEsxSampleDragOver(e, r.index)}
                     onDragLeave={handleEsxSampleDragLeave}
-                    onDrop={(e) => handleEsxSampleDrop(e, r.index)}
+                    onDrop={e => handleEsxSampleDrop(e, r.index)}
                   >
                     <button
                       data-testid={`korg-bank-editor-esx-sample-slot-${r.index}`}
@@ -2785,7 +3346,8 @@ export function KorgBankEditor({
               ersetzen.
               <br />
               <span className="text-[10px] text-text-dim">
-                Tipp: Du kannst auch eine WAV-Datei direkt auf einen Slot ziehen.
+                Tipp: Du kannst auch eine WAV-Datei direkt auf einen Slot
+                ziehen.
               </span>
             </p>
           ) : (
@@ -2795,7 +3357,8 @@ export function KorgBankEditor({
             >
               <div className="flex items-center justify-between pb-2 border-b border-border-color">
                 <span className="font-mono text-xs text-text-dim">
-                  Mono-Sample-Slot #{esxSampleSelectedRow.index.toString().padStart(3, "0")}
+                  Mono-Sample-Slot #
+                  {esxSampleSelectedRow.index.toString().padStart(3, "0")}
                 </span>
                 {esxSamplePending.has(esxSampleSelectedRow.index) && (
                   <div className="flex items-center gap-2">
@@ -2804,7 +3367,9 @@ export function KorgBankEditor({
                     </span>
                     <button
                       data-testid="korg-bank-editor-esx-sample-revert"
-                      onClick={() => handleEsxSampleRevertSlot(esxSampleSelectedRow.index)}
+                      onClick={() =>
+                        handleEsxSampleRevertSlot(esxSampleSelectedRow.index)
+                      }
                       className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
                       title="Patch verwerfen — Originalslot wiederherstellen"
                     >
@@ -2828,7 +3393,9 @@ export function KorgBankEditor({
                     <p>
                       <span className="text-text-dim">Channels:</span>{" "}
                       <span className="text-text-primary">
-                        {esxSampleSelectedRow.channels === 1 ? "Mono" : "Stereo"}
+                        {esxSampleSelectedRow.channels === 1
+                          ? "Mono"
+                          : "Stereo"}
                       </span>
                     </p>
                     <p>
@@ -2842,7 +3409,7 @@ export function KorgBankEditor({
                       <span className="text-text-primary">
                         {formatSampleLength(
                           esxSampleSelectedRow.frames,
-                          esxSampleSelectedRow.sampleRate,
+                          esxSampleSelectedRow.sampleRate
                         )}{" "}
                         ({esxSampleSelectedRow.frames} fr)
                       </span>
@@ -2857,14 +3424,81 @@ export function KorgBankEditor({
                 )}
               </div>
 
+              {/* v3.284 — Sample umbenennen (name-only, bit-exakt) */}
+              {!esxSampleSelectedRow.empty && (
+                <div className="pt-2 border-t border-border-color space-y-1">
+                  <label className="block text-xs text-text-muted">
+                    Umbenennen (max 8 ASCII Zeichen)
+                    <input
+                      data-testid="korg-bank-editor-esx-sample-rename"
+                      type="text"
+                      maxLength={8}
+                      value={
+                        esxSampleRenamePending.get(
+                          esxSampleRenameKey(1, esxSampleSelectedRow.index)
+                        )?.name ?? esxSampleSelectedRow.name
+                      }
+                      onChange={e => {
+                        const name = e.target.value.slice(0, 8);
+                        const idx = esxSampleSelectedRow.index;
+                        if (name === esxSampleSelectedRow.name) {
+                          // Zurück zum Original → Rename ausstagen.
+                          setEsxSampleRenamePending(prev =>
+                            unstageEsxSampleRename(prev, 1, idx)
+                          );
+                        } else {
+                          setEsxSampleRenamePending(prev =>
+                            stageEsxSampleRename(prev, {
+                              index: idx,
+                              channels: 1,
+                              name,
+                            })
+                          );
+                        }
+                      }}
+                      className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+                    />
+                  </label>
+                  {esxSampleRenamePending.has(
+                    esxSampleRenameKey(1, esxSampleSelectedRow.index)
+                  ) && (
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="text-[10px] text-accent-secondary"
+                        data-testid="korg-bank-editor-esx-sample-rename-badge"
+                      >
+                        ● wird umbenannt
+                      </span>
+                      <button
+                        onClick={() =>
+                          setEsxSampleRenamePending(prev =>
+                            unstageEsxSampleRename(
+                              prev,
+                              1,
+                              esxSampleSelectedRow.index
+                            )
+                          )
+                        }
+                        className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
+                        title="Umbenennung verwerfen"
+                      >
+                        ↺ Revert
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="pt-2 border-t border-border-color space-y-2">
                 <p className="text-xs text-text-muted">
-                  Den Slot mit einer WAV/AIFF/MP3-Datei ersetzen. Wird auf
-                  44100 Hz Mono resampelt (ESX-1 Hardware-Format).
+                  Den Slot mit einer WAV/AIFF/MP3-Datei ersetzen. Wird auf 44100
+                  Hz Mono resampelt (ESX-1 Hardware-Format).
                 </p>
                 <button
                   data-testid="korg-bank-editor-esx-sample-replace"
-                  onClick={() => handleEsxSampleReplaceClick(esxSampleSelectedRow.index)}
+                  onClick={() =>
+                    handleEsxSampleReplaceClick(esxSampleSelectedRow.index)
+                  }
                   disabled={busy}
                   className="w-full px-3 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
                 >
@@ -2880,7 +3514,7 @@ export function KorgBankEditor({
                     data-testid="korg-bank-editor-esx-sample-filename"
                     type="text"
                     value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
+                    onChange={e => setFilename(e.target.value)}
                     className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
                   />
                 </label>
@@ -2910,7 +3544,8 @@ export function KorgBankEditor({
         <div className="md:w-2/5 border-r border-border-color overflow-y-auto p-2 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h3 className="text-xs font-semibold text-text-primary">
-              Stereo-Sample-Slots ({esxStereoSampleVisibleRows.length}/{esxStereoSampleRows.length})
+              Stereo-Sample-Slots ({esxStereoSampleVisibleRows.length}/
+              {esxStereoSampleRows.length})
             </h3>
           </div>
 
@@ -2920,7 +3555,7 @@ export function KorgBankEditor({
               type="text"
               placeholder="Suchen (Name oder Index)"
               value={esxSampleSearch}
-              onChange={(e) => setEsxSampleSearch(e.target.value)}
+              onChange={e => setEsxSampleSearch(e.target.value)}
               className="flex-1 min-w-[120px] bg-bg-elevated border border-border-color rounded text-xs px-2 py-0.5 text-text-primary placeholder:text-text-dim"
             />
             <label className="text-[10px] text-text-muted flex items-center gap-1">
@@ -2928,7 +3563,7 @@ export function KorgBankEditor({
                 data-testid="korg-bank-editor-esx-stereo-sample-hide-empty"
                 type="checkbox"
                 checked={esxSampleHideEmpty}
-                onChange={(e) => setEsxSampleHideEmpty(e.target.checked)}
+                onChange={e => setEsxSampleHideEmpty(e.target.checked)}
                 className="accent-accent-primary"
               />
               Leere verbergen
@@ -2944,7 +3579,7 @@ export function KorgBankEditor({
                 Keine Stereo-Slots passen zu deinem Filter.
               </li>
             ) : (
-              esxStereoSampleVisibleRows.map((r) => {
+              esxStereoSampleVisibleRows.map(r => {
                 const dirty = esxStereoSamplePending.has(r.index);
                 const selected = esxStereoSampleSelectedSlot === r.index;
                 return (
@@ -2999,11 +3634,12 @@ export function KorgBankEditor({
               data-testid="korg-bank-editor-esx-stereo-sample-no-selection"
               className="text-xs text-text-muted text-center py-8"
             >
-              Wähle links einen Stereo-Sample-Slot aus, um ihn mit einer WAV-Datei
-              zu ersetzen.
+              Wähle links einen Stereo-Sample-Slot aus, um ihn mit einer
+              WAV-Datei zu ersetzen.
               <br />
               <span className="text-[10px] text-text-dim">
-                Stereo-Inputs bleiben L+R; Mono-Inputs werden auf beide Channels dupliziert.
+                Stereo-Inputs bleiben L+R; Mono-Inputs werden auf beide Channels
+                dupliziert.
               </span>
             </p>
           ) : (
@@ -3013,16 +3649,23 @@ export function KorgBankEditor({
             >
               <div className="flex items-center justify-between pb-2 border-b border-border-color">
                 <span className="font-mono text-xs text-text-dim">
-                  Stereo-Sample-Slot S#{esxStereoSampleSelectedRow.index.toString().padStart(3, "0")}
+                  Stereo-Sample-Slot S#
+                  {esxStereoSampleSelectedRow.index.toString().padStart(3, "0")}
                 </span>
-                {esxStereoSamplePending.has(esxStereoSampleSelectedRow.index) && (
+                {esxStereoSamplePending.has(
+                  esxStereoSampleSelectedRow.index
+                ) && (
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-accent-danger">
                       ● wird ersetzt
                     </span>
                     <button
                       data-testid="korg-bank-editor-esx-stereo-sample-revert"
-                      onClick={() => handleEsxStereoSampleRevertSlot(esxStereoSampleSelectedRow.index)}
+                      onClick={() =>
+                        handleEsxStereoSampleRevertSlot(
+                          esxStereoSampleSelectedRow.index
+                        )
+                      }
                       className="px-2 py-0.5 rounded text-[10px] bg-bg-elevated text-text-muted hover:text-text-primary transition-colors"
                       title="Patch verwerfen — Originalslot wiederherstellen"
                     >
@@ -3058,7 +3701,7 @@ export function KorgBankEditor({
                       <span className="text-text-primary">
                         {formatSampleLength(
                           esxStereoSampleSelectedRow.frames,
-                          esxStereoSampleSelectedRow.sampleRate,
+                          esxStereoSampleSelectedRow.sampleRate
                         )}{" "}
                         ({esxStereoSampleSelectedRow.frames} fr / Kanal)
                       </span>
@@ -3080,7 +3723,11 @@ export function KorgBankEditor({
                 </p>
                 <button
                   data-testid="korg-bank-editor-esx-stereo-sample-replace"
-                  onClick={() => handleEsxStereoSampleReplaceClick(esxStereoSampleSelectedRow.index)}
+                  onClick={() =>
+                    handleEsxStereoSampleReplaceClick(
+                      esxStereoSampleSelectedRow.index
+                    )
+                  }
                   disabled={busy}
                   className="w-full px-3 py-2 rounded text-sm bg-accent-primary text-bg-base hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center justify-center gap-2"
                 >
@@ -3095,7 +3742,7 @@ export function KorgBankEditor({
                     data-testid="korg-bank-editor-esx-stereo-sample-filename"
                     type="text"
                     value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
+                    onChange={e => setFilename(e.target.value)}
                     className="w-full mt-1 bg-bg-base border border-border-color rounded px-2 py-1 text-sm text-text-primary"
                   />
                 </label>
@@ -3136,7 +3783,7 @@ export function KorgBankEditor({
     const handleAudition = (
       sliceIndex: number,
       startFrame: number,
-      endFrame: number,
+      endFrame: number
     ): void => {
       // Toggle: zweiter Klick auf dasselbe Slice stoppt es (kein Re-Play).
       if (
@@ -3156,7 +3803,7 @@ export function KorgBankEditor({
           slot.pcmData,
           slot.channels,
           startFrame,
-          endFrame,
+          endFrame
         );
         if (buf.length === 0) return;
         const startedAt =
@@ -3166,10 +3813,12 @@ export function KorgBankEditor({
           onEnded: (): void => {
             // Bei natürlichem Ende oder stop(): Audition-State leeren —
             // aber nur wenn es noch das aktuelle Audition ist.
-            setAuditionState((prev) =>
-              prev && prev.rowId === slot.rowId && prev.sliceIndex === sliceIndex
+            setAuditionState(prev =>
+              prev &&
+              prev.rowId === slot.rowId &&
+              prev.sliceIndex === sliceIndex
                 ? null
-                : prev,
+                : prev
             );
           },
         });
@@ -3238,9 +3887,15 @@ export function KorgBankEditor({
           testId="korg-bank-editor-slice-canvas"
           className="rounded border border-border-color overflow-hidden"
           onAudition={handleAudition}
-          playingSliceIndex={isPlayingThisSlot ? auditionState!.sliceIndex : null}
+          playingSliceIndex={
+            isPlayingThisSlot ? auditionState!.sliceIndex : null
+          }
           playingStartedAt={isPlayingThisSlot ? auditionState!.startedAt : null}
-          playingDurationMs={isPlayingThisSlot ? auditionState!.durationMs : null}
+          playingDurationMs={
+            isPlayingThisSlot ? auditionState!.durationMs : null
+          }
+          loopStart={slot.oneshot ? null : slot.loopStart}
+          loopEnd={slot.oneshot ? null : slot.loopEnd}
         />
 
         <p
@@ -3249,12 +3904,18 @@ export function KorgBankEditor({
         >
           {sliceCount > 0 ? (
             <>
-              <span className="text-accent-primary font-semibold">▶ Klick auf Slice</span>
-              {" "}= abspielen · Alt/Ctrl+Klick = Marker hinzufügen · Drag = verschieben ·
-              Shift/Rechtsklick = entfernen · max {MAX_ESLI_SLICES} Slices
+              <span className="text-accent-primary font-semibold">
+                ▶ Klick auf Slice
+              </span>{" "}
+              = abspielen · Alt/Ctrl+Klick = Marker hinzufügen · Drag =
+              verschieben · Shift/Rechtsklick = entfernen · max{" "}
+              {MAX_ESLI_SLICES} Slices
             </>
           ) : (
-            <>Linksklick = Marker hinzufügen · max {MAX_ESLI_SLICES} Slices (E2S-Hardware-Limit)</>
+            <>
+              Linksklick = Marker hinzufügen · max {MAX_ESLI_SLICES} Slices
+              (E2S-Hardware-Limit)
+            </>
           )}
         </p>
       </div>

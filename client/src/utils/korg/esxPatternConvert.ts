@@ -26,6 +26,10 @@
 
 import type { EsxPattern, EsxSong, EsxSongEvent } from "./esxParser";
 import { ESX1_SONG_EVENT_END_MARKER } from "./esxParser";
+import {
+  esxFilterToImportedFilter,
+  type ImportedFilter,
+} from "./esxFilterMap";
 import type {
   EsxPatternInput,
   EsxDrumPartInput,
@@ -52,12 +56,26 @@ export interface SynthstudioDrumPartImport {
   volume: number;
   /** -1..+1 (0 = center). */
   pan: number;
-  /** Signed semitones. */
+  /** Signed semitones (Part-global). */
   pitchSemitones: number;
   /** Boolean trigger pro Step. */
   steps: boolean[];
   /** 0..127 pro Step. Default 100 wenn nicht extrahierbar. */
   velocities: number[];
+  /**
+   * v3.286: Per-Step-Pitch in Semitones relativ zu C4 (=0). Bei Synth/Keyboard-
+   * Parts aus der Note abgeleitet (note − 60), bei Drums 0. Trägt die Melodie
+   * der ESX-1-Keyboard-Parts in den Sequencer.
+   */
+  pitches: number[];
+  /** v3.287: Mute-Zustand aus der ESX-Pattern-muteStatus-Maske. */
+  muted: boolean;
+  /**
+   * v3.293: Verifizierter Per-Part Filter (Type/Cutoff/Resonance → ChannelFx),
+   * damit „Filter & Effekte" beim Import direkt angewandt werden. Undefined bei
+   * neutralem Filter (LPF offen, Res 0) → Part bleibt transparent.
+   */
+  filter?: ImportedFilter;
 }
 
 /** Synthstudio-Pattern-Import wie es der Caller in die Stores faechert. */
@@ -66,8 +84,8 @@ export interface SynthstudioPatternImport {
   name: string;
   /** BPM. */
   bpm: number;
-  /** Pattern-Step-Count (16 oder 32). ESX-1 ist immer 16. */
-  stepCount: 16 | 32 | 64;
+  /** Pattern-Step-Count. ESX-1: patternLength × 16 → 16/32/64/128. */
+  stepCount: 16 | 32 | 64 | 128;
   /** Swing 0..100 (Info — Synthstudio hat eigenes Groove-System). */
   swing: number;
   /** 16 Parts. */
@@ -100,12 +118,12 @@ export interface ConvertEsxPatternOpts {
  *   14..15 → Synth 1..2
  */
 export function esxPartHint(partIndex: number): string {
-  if (partIndex < 0 || partIndex >= 16) return `Part ${partIndex + 1}`;
+  // v3.286: verifiziertes 14-Part-Layout — 9 Drum, 3 Stretch/Slice, 2 Synth.
+  if (partIndex < 0) return `Part ${partIndex + 1}`;
   if (partIndex < 9) return `ESX Drum ${partIndex + 1}`;
-  if (partIndex < 11) return `ESX Stretch ${partIndex - 8}`;
-  if (partIndex < 13) return `ESX Slice ${partIndex - 10}`;
-  if (partIndex === 13) return "ESX Audio-In";
-  return `ESX Synth ${partIndex - 13}`;
+  if (partIndex < 12) return `ESX Stretch/Slice ${partIndex - 8}`;
+  if (partIndex < 14) return `ESX Synth ${partIndex - 11}`;
+  return `Part ${partIndex + 1}`;
 }
 
 /**
@@ -124,20 +142,31 @@ export function esxPartHint(partIndex: number): string {
  */
 export function convertEsxPatternToSynthstudio(
   esxPattern: EsxPattern,
-  opts: ConvertEsxPatternOpts = {},
+  opts: ConvertEsxPatternOpts = {}
 ): SynthstudioPatternImport {
-  const stepCount: 16 | 32 | 64 =
-    esxPattern.lengthSteps > 32 ? 64 : esxPattern.lengthSteps > 16 ? 32 : 16;
-  const sourceSteps = Math.min(esxPattern.parts[0]?.steps.length ?? 0, stepCount);
+  // v3.286: die ECHTE Pattern-Länge nutzen (patternLength × 16, bis 128) statt
+  // lengthSteps (immer 16) — vorher wurde jeder Import fälschlich auf 16 Steps
+  // gekürzt. Auf das interne 16/32/64/128-Raster runden (aufwärts).
+  const effective =
+    typeof esxPattern.effectiveSteps === "number" &&
+    Number.isFinite(esxPattern.effectiveSteps)
+      ? esxPattern.effectiveSteps
+      : esxPattern.lengthSteps;
+  const stepCount: 16 | 32 | 64 | 128 =
+    effective > 64 ? 128 : effective > 32 ? 64 : effective > 16 ? 32 : 16;
 
-  const drumParts: SynthstudioDrumPartImport[] = esxPattern.parts.map((part) => {
+  const drumParts: SynthstudioDrumPartImport[] = esxPattern.parts.map(part => {
     const steps = new Array<boolean>(stepCount).fill(false);
     const velocities = new Array<number>(stepCount).fill(100);
+    const pitches = new Array<number>(stepCount).fill(0);
+    const sourceSteps = Math.min(part.steps.length, stepCount);
     for (let s = 0; s < sourceSteps; s++) {
       const ev = part.steps[s];
       steps[s] = ev.active;
       if (ev.active) {
         velocities[s] = ev.velocity > 0 ? ev.velocity : 100;
+        // Synth/Keyboard-Parts tragen eine Note → Per-Step-Pitch (note − 60).
+        if (typeof ev.note === "number") pitches[s] = ev.note - 60;
       } else if (opts.zeroVelocityForInactive) {
         velocities[s] = 0;
       }
@@ -151,6 +180,10 @@ export function convertEsxPatternToSynthstudio(
       pitchSemitones: part.pitch,
       steps,
       velocities,
+      pitches,
+      muted: part.muted === true,
+      // v3.293: verifizierten ESX-Part-Filter → Synthstudio-Filter mappen.
+      filter: esxFilterToImportedFilter(part.filter),
     };
   });
 
@@ -171,9 +204,9 @@ export function convertEsxPatternToSynthstudio(
  */
 export function convertEsxPatternsToSynthstudio(
   patterns: ReadonlyArray<EsxPattern>,
-  opts: ConvertEsxPatternOpts = {},
+  opts: ConvertEsxPatternOpts = {}
 ): SynthstudioPatternImport[] {
-  return patterns.map((p) => convertEsxPatternToSynthstudio(p, opts));
+  return patterns.map(p => convertEsxPatternToSynthstudio(p, opts));
 }
 
 // ─── kleine Helper (intern) ───────────────────────────────────────────────────
@@ -243,7 +276,7 @@ export function synthPanToEsxPan(pan: number | undefined): number {
 
 /** Convert a single Synthstudio step → ESX step (accent if velocity > threshold). */
 export function synthStepToEsx(
-  step: { active: boolean; velocity?: number } | undefined,
+  step: { active: boolean; velocity?: number } | undefined
 ): EsxStepInput {
   if (!step || !step.active) return { active: false };
   const accent =
@@ -271,7 +304,7 @@ function emptyEsxSteps(): EsxStepInput[] {
  * encoded in v3.27). Steps are converted via {@link synthStepToEsx}.
  */
 export function synthPartToEsxDrumPart(
-  part: SynthstudioPartLike | undefined,
+  part: SynthstudioPartLike | undefined
 ): EsxDrumPartInput {
   if (!part) {
     return {
@@ -288,9 +321,15 @@ export function synthPartToEsxDrumPart(
   for (let s = 0; s < 16; s++) {
     const src = stepsIn[s];
     steps[s] = synthStepToEsx(src);
-    if (src && typeof src.pitch === "number" && Number.isFinite(src.pitch) && src.active) {
+    if (
+      src &&
+      typeof src.pitch === "number" &&
+      Number.isFinite(src.pitch) &&
+      src.active
+    ) {
       // Take the pitch from the first active step that defines it (best-effort).
-      if (pitchSemis === 0) pitchSemis = Math.max(-64, Math.min(63, Math.floor(src.pitch)));
+      if (pitchSemis === 0)
+        pitchSemis = Math.max(-64, Math.min(63, Math.floor(src.pitch)));
     }
   }
   return {
@@ -304,7 +343,7 @@ export function synthPartToEsxDrumPart(
 
 /** Same shape mapping, but returned as a short-part (different stride at write time). */
 export function synthPartToEsxShortPart(
-  part: SynthstudioPartLike | undefined,
+  part: SynthstudioPartLike | undefined
 ): EsxShortPartInput {
   // Structurally identical to drum mapping — the difference is only in the
   // binary encoding (stride / header layout), which the builder handles.
@@ -325,11 +364,13 @@ export function synthPartToEsxShortPart(
  * are dropped.
  */
 export function convertSynthstudioPatternToEsx(
-  pattern: SynthstudioPatternLike,
+  pattern: SynthstudioPatternLike
 ): EsxPatternInput {
   const safeName = (pattern.name ?? "").slice(0, 8);
   const bpm =
-    typeof pattern.bpm === "number" && Number.isFinite(pattern.bpm) ? pattern.bpm : 120;
+    typeof pattern.bpm === "number" && Number.isFinite(pattern.bpm)
+      ? pattern.bpm
+      : 120;
 
   const parts = Array.isArray(pattern.parts) ? pattern.parts : [];
 
@@ -339,10 +380,13 @@ export function convertSynthstudioPatternToEsx(
   const stretchPart = synthPartToEsxDrumPart(parts[10]);
 
   const shortParts: EsxShortPartInput[] = new Array(4);
-  for (let i = 0; i < 4; i++) shortParts[i] = synthPartToEsxShortPart(parts[11 + i]);
+  for (let i = 0; i < 4; i++)
+    shortParts[i] = synthPartToEsxShortPart(parts[11 + i]);
 
   // Audio-In = part 15. Defaults to silent if not provided.
-  const audioInPart = parts[15] ? synthPartToEsxShortPart(parts[15]) : undefined;
+  const audioInPart = parts[15]
+    ? synthPartToEsxShortPart(parts[15])
+    : undefined;
 
   const stepCount =
     typeof pattern.stepCount === "number" && Number.isFinite(pattern.stepCount)
@@ -401,7 +445,9 @@ export interface SynthstudioSongArrangement {
  *
  * Out-of-range → A (defensiv).
  */
-export function esxPatternIndexToBank(patternIndex: number): SynthstudioPatternBank {
+export function esxPatternIndexToBank(
+  patternIndex: number
+): SynthstudioPatternBank {
   if (!Number.isFinite(patternIndex) || patternIndex < 0) return "A";
   if (patternIndex < 64) return "A";
   if (patternIndex < 128) return "B";
@@ -437,7 +483,7 @@ function clampRepeats(value: number): number {
  * @returns         Arrangement-Spec, direkt mit useSongStore.createArrangement nutzbar.
  */
 export function convertEsxSongToSynthstudio(
-  song: EsxSong,
+  song: EsxSong
 ): SynthstudioSongArrangement {
   const slots: SynthstudioSongSlotInput[] = [];
 
@@ -451,7 +497,8 @@ export function convertEsxSongToSynthstudio(
     const bank = esxPatternIndexToBank(ev.pattern);
     // ESX `length` field is the repeat-count for the pattern. Default values
     // (0xF7 = 247) sind defensive-clamped auf 1 wenn out-of-range.
-    const repeats = ev.length === 0xf7 || ev.length === 0 ? 1 : clampRepeats(ev.length);
+    const repeats =
+      ev.length === 0xf7 || ev.length === 0 ? 1 : clampRepeats(ev.length);
     slots.push({ bank, repeats });
   }
 

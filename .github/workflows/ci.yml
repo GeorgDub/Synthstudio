@@ -109,6 +109,37 @@ jobs:
       - name: Install Playwright Browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # Die Sim-Loopback-Specs verbinden sich auf ws://localhost:8744 mit einem
+      # virtuellen OmniTribe-Gerät (sim_ws_server.py). Der Server lebt im
+      # omnitribe-Repo — hier auschecken + im Hintergrund starten, damit die
+      # WS-Sim-Specs echt grün laufen (statt in den Connect-Timeout zu rennen).
+      # Falls omnitribe privat ist, braucht der Checkout ein PAT-Secret
+      # (OMNITRIBE_PAT); ohne das bleibt der Job wie bisher non-blocking rot.
+      - name: Checkout omnitribe (sim WS server)
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: GeorgDub/omnitribe
+          ref: main
+          path: _omnitribe
+          token: ${{ secrets.OMNITRIBE_PAT || github.token }}
+
+      - name: Start OmniTribe sim WS server (ws://localhost:8744)
+        continue-on-error: true
+        working-directory: _omnitribe
+        run: |
+          python3 -m pip install --quiet websockets
+          PYTHONPATH="$PWD" nohup python3 -X utf8 tools/sim/sim_ws_server.py \
+            --autoload chord --quiet >/tmp/sim.log 2>&1 &
+          for i in $(seq 1 40); do
+            if python3 -c "import socket;socket.create_connection(('localhost',8744),1).close()" 2>/dev/null; then
+              echo "sim WS server up on :8744"; exit 0
+            fi
+            sleep 0.5
+          done
+          echo "sim WS server did not start — sim specs will time out. Log:"
+          cat /tmp/sim.log || true
+
       - name: Run Playwright Browser Tests (Audio/Sim)
         run: pnpm test:web
 
