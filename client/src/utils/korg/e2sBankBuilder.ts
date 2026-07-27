@@ -51,6 +51,7 @@ import {
   E2S_FILE_MAX_BYTES,
   E2S_MAX_SLOTS,
   E2S_MAX_TOTAL_PCM_BYTES,
+  E2S_DEVICE_PCM_WARN_BYTES,
   ESLI_CATEGORY_OFFSET,
   ESLI_END_OFFSET,
   ESLI_LOOP_START_OFFSET,
@@ -264,6 +265,19 @@ export function buildE2sBank(
     offsetTable[input.slotIndex] = cursor;
     pending.push({ slotIndex: input.slotIndex, bytes: riff });
     cursor += riff.length;
+  }
+
+  // Geraete-Limit: nur warnen, nicht ablehnen. Die harte Grenze oben schuetzt
+  // gegen Speicher-Explosion beim Bauen; DIESE Schwelle sagt, ob das Geraet die
+  // Bank ueberhaupt laden wird. Ohne die Warnung baut man stumm eine Datei,
+  // die am Geraet scheitert.
+  if (totalPcm > E2S_DEVICE_PCM_WARN_BYTES) {
+    const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
+    warnings.push(
+      `PCM-Gesamtgröße ${mb(totalPcm)} MB übersteigt das Geräte-Limit von ` +
+        `${mb(E2S_DEVICE_PCM_WARN_BYTES)} MB — die Electribe wird diese Bank ` +
+        `voraussichtlich nicht vollständig laden.`
+    );
   }
 
   const totalSize = cursor;
