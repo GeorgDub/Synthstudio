@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.298.0",
+    version: "3.300.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,67 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-27T09:30:00.000Z",
+      done: [
+        "v3.300.0 — Sample-Slicer: Slices kommen jetzt dort an, wo sie hingehoeren, und das Material laesst sich vorher aufbereiten. Nutzer-Befund: Marker setzen geht, aber die Slices landen weder im Sequencer noch im Sample-Browser, und als WAV exportieren geht gar nicht.",
+        "BEFUND 1 — Sample-Browser: fehlte komplett, gleiche Klasse wie der .all-Import aus v3.299. handleSlicesApply legte Slices auf Drum-Kanaele (setPartSample) und Performance-Pads (CustomEvent), aber nie in useProjectStore.samples. Jetzt via onSamplesImported, Kategorie 'Slices'. Die Blob-URLs entstehen EINMAL und werden fuer Library UND Kanal-Zuweisung wiederverwendet — vorher encodierte die Schleife pro Kanal neu.",
+        "BEFUND 2 — WAV-Export: gab es nicht. Neu utils/sliceExport.ts (rein): sanitizeSliceStem (FAT-tauglich, Zieldateisystem ist die SD-Karte), sliceFileName mit Nullen-Auffuellung (sonst steht _10 vor _2 und die Slice-Reihenfolge im Dateimanager ist unbrauchbar), encodeSlices, bundleSlicesToZip mit injizierbarer JSZip-Klasse wie in channelBounce. Ab ZIP_THRESHOLD=4 wird gepackt: Browser brechen Download-Serien nach den ersten Dateien ab. Leere Slices werden uebersprungen, die Nummerierung folgt aber der Position im ORIGINAL — slice_03 bleibt der dritte Abschnitt.",
+        "BEFUND 3 — Sequencer: der Pfad EXISTIERTE (setPartSample auf die Parts des aktiven Patterns). Ohne aktives Pattern ist parts leer, es passiert nichts, und der Toast meldete trotzdem Erfolg ('auf Slice-Pads gelegt'). Das erweckte den Eindruck, der Sequencer haette sie bekommen. Jetzt eigene Warnung 'Kein aktives Pattern'.",
+        "NEU — utils/sampleCleanup.ts: Aufbereitung vor dem Schneiden. Erfindet keine DSP; die Bausteine lagen laengst im Repo (sampleHighPass, sampleLowPass, sampleNoiseReduction, sampleNoiseGate). Gefehlt hat die VERKETTUNG in fester Reihenfolge auf dem Datentyp des Slicers (flache Float32Array + Rate). Reihenfolge ist begruendet, nicht beliebig: DC-Offset zuerst (sonst misst jede Pegel-Erkennung danach falsch und der Zero-Crossing-Snap findet keine Nulldurchgaenge), Hochpass vor Pegelkram (Rumpeln dominiert sonst die Normalisierung), Noise-Reduction VOR dem Trimmen (die vordere Stille IST das Rausch-Profil), Normalisieren vor dem Trimmen (sonst haengt die Schwelle am alten Pegel), Fades zuletzt.",
+        "Vier Presets: Aus / Standard / Field-Recording / Drum-Loop / Vinyl-Tape. CLEANUP_DEFAULTS enthaelt BEWUSST kein Gate und keine Rauschminderung — beide koennen Material beschaedigen und gehoeren dem Nutzer in die Hand, nicht in einen Default. Zwei Schutzregeln: trimmt NICHT, wenn das ganze Sample unter der Schwelle liegt (lieber zu lang als leer), und die Randfades ueberlappen nie (sonst waere die Mitte leiser als die Raender).",
+        "UI: der Editor arbeitet jetzt auf einer ARBEITSKOPIE (workData). Cleanup ersetzt sie, 'Zuruecksetzen' holt das Original — ein zu harter Filter darf nicht heissen, die Datei neu laden zu muessen. Ein Cleanup setzt die Onsets zurueck: Trimmen und Filtern verschieben die Frame-Positionen, gesetzte Marker zeigten danach ins Leere.",
+        "NEBENBEFUND: components/SampleSlicer/SampleSlicer.tsx (605 LOC) wird NIRGENDS gerendert — toter Code. Der aktive Pfad ist SampleEditor/SampleSliceEditor.tsx, gemountet aus DrumMachine.tsx. Nicht angefasst, aber notiert.",
+        "Gates: pnpm check clean, volle Suite 502 Dateien / 11178 passed / 97 skipped (+51 Tests: sample-cleanup 29, slice-export 22). 3 neue Playwright-Smokes (tests/web/slice-cleanup-export.spec.ts) schleusen eine echte, im Test erzeugte WAV durch decodeAudioData und pruefen Aufbereitung, Zuruecksetzen und beide Export-Pfade ueber echte Download-Events."
+      ],
+      next: [
+        "Am Geraet gegenpruefen: Loop slicen, aufbereiten, exportieren, Dateien auf die SD-Karte — passen Benennung und Reihenfolge auf dem Electribe-Display?",
+        "SampleSlicer.tsx (toter Code, 605 LOC): loeschen oder als zweite Ansicht anbinden? Entscheidung des Nutzers.",
+        "Offen aus der Vorwelle: Gegenprobe der Tabellen-Geometrie 0x0010 an einer echten Hacktribe-.all (Warnung 'offset-table geometry suspect' beachten); RAM-Timeout-Test 0xC00A80F0 Laenge 524; GitHub-Release muss der Nutzer selbst anstossen (403 auf beiden Wegen); E2S_MAX_TOTAL_PCM_BYTES 224 vs 24 MB; source_control-Kodierung; C-Handler OTP CMD 0x10; Device->Parametername-Tabelle.",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/sampleCleanup.ts",
+        "client/src/utils/sliceExport.ts",
+        "client/src/components/SampleEditor/SampleSliceEditor.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/sample-cleanup.test.ts",
+        "tests/features/slice-export.test.ts",
+        "tests/web/slice-cleanup-export.spec.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-27T08:20:00.000Z",
+      done: [
+        "v3.299.0 — Electribe-Import traegt seine Samples jetzt in die Sample-Library ein. Nutzer-Befund: .all + .e2pat importieren, Patterns spielen MIT den richtigen Samples, aber im Sample-Browser taucht nichts auf.",
+        "URSACHE (die Beobachtung war diagnostisch praezise): die PCM-Daten waren geladen, nur am falschen Ort. processElectribeFiles (DrumMachine.tsx) baut per makeE2sSampleResolver Blob-URLs und haengt sie ueber dm.setPartSample bzw. PatternData.sampleUrl an die Pattern-Parts — also in den DrumMachine-Store. Der Sample-Browser rendert dagegen useProjectStore.samples. Zwischen beiden gab es keine Verbindung.",
+        "STRUKTURELL konnte die Komponente das gar nicht: DrumMachine bekam `samples` nur als Lese-Liste, ohne Adder-Callback — anders als SampleBrowser (onSamplesImported={project.addSamples}) oder KorgBankModal (onAddSample -> handleKorgBankAddSample). Der einzige existierende Weg in die Library fuehrte ueber KorgBankModal, und die wird beim kombinierten Drop nie erreicht, weil ElectronDropZone die .all aus `remaining` herausfiltert und nur electribe:filesImport feuert.",
+        "FIX: neue optionale Prop onSamplesImported an DrumMachine, verdrahtet an allen drei Render-Stellen (App.tsx, Workspace/panels/SequencerPanel.tsx, CollabSplitView.tsx — dort NUR die lokale Instanz; die Remote-Seite spiegelt eine fremde Sitzung und gehoert nicht in unsere Library).",
+        "Die Zuordnung liegt als REINE Funktion bei buildE2sSampleMap: bankSamplesToLibraryEntries(bank, bankFileName, resolve, knownIds) in utils/korg/e2sPatternSampleLink.ts. Zwei Entscheidungen darin sind wichtig: (a) die Blob-URL kommt aus DEMSELBEN Resolver wie die Pattern-Parts — ein zweites Encoding haette dieselben PCM-Daten doppelt im Speicher gehalten und Library-Eintrag und Part auf verschiedene Blobs zeigen lassen; (b) iteriert wird nach derselben Bedingung wie buildE2sSampleMap (sampleNumber > 0), damit der Browser exakt das zeigt, was ein Pattern-Part auch treffen kann.",
+        "DEDUPE: addSamples dedupliziert ueber `path`, und Blob-URLs sind bei jedem Import neu — ein zweiter Import derselben Bank haette alles doppelt angelegt. Deshalb stabile id `e2s:<bankname>:<geraetenummer>` (e2sLibraryEntryId), gegen die vorhandenen Sample-IDs gefiltert.",
+        "NEBENBEI: eine .all ohne Pattern-Datei ist kein Fehlgriff mehr. Vorher kam eine Warnung 'waehle zusaetzlich eine .e2sallpat'; jetzt landen die Samples in der Library und die Meldung sagt, wie viele.",
+        "AUSSERDEM: die Geometrie-Selbstpruefung aus v3.298 wird in diesem Pfad als Toast sichtbar gemacht (12 s). Das ist die erste Stelle, an der eine ECHTE Geraetedatei durch den Parser laeuft — meldet der Reader einen konstanten Versatz zwischen Tabellen-Index und esli.OSC_0index, passen die Sample-Nummern nicht zum Geraete-Display, und das still zu verschlucken waere das Schlimmste.",
+        "Gates: pnpm check clean, volle Suite 500 Dateien / 11127 passed / 97 skipped (+10 Tests fuer bankSamplesToLibraryEntries in tests/features/e2s-pattern-sample-link.test.ts, u.a. Deckungsgleichheit mit buildE2sSampleMap und die Dedupe-Faelle)."
+      ],
+      next: [
+        "Am Geraet gegenpruefen: .all importieren und schauen, ob (a) die Samples jetzt im Browser stehen, (b) die Namen/Nummern zum Geraete-Display passen, (c) die Geometrie-Warnung schweigt. Punkt (c) ist die noch offene Frage zur Tabellen-Adresse 0x0010.",
+        "Offen: RAM-Timeout im IFX/Groove-Panel — trennender Test 0xC00A80F0 Laenge 524 (rein lesend). Antwortet der, ist nur IFX_COUNT_ADDR (geraten) falsch; schweigt er auch, spricht die Firmware kein 0x52.",
+        "GitHub-Release aus der Session nicht ausloesbar (workflow_dispatch 403, Tag-Push 403). Nutzer: Actions -> Electron Release -> Run workflow -> main.",
+        "E2S_MAX_TOTAL_PCM_BYTES: 224 MB vs 24 MB (SoT). Offene Produktentscheidung.",
+        "Offen aus der Vorwelle: source_control-Kodierung (0x42 vs 0x02), C-Handler fuer OTP CMD 0x10 (GATE-001), Device->Parametername-Tabelle (403).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/korg/e2sPatternSampleLink.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/App.tsx",
+        "client/src/components/Workspace/panels/SequencerPanel.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/e2s-pattern-sample-link.test.ts"
+      ]
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-07-27T05:40:00.000Z",

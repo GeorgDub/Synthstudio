@@ -28,6 +28,12 @@ import {
   type SliceSpec,
 } from "@/utils/sampleSlicing";
 
+import {
+  CLEANUP_PRESETS,
+  cleanupSample,
+  describeCleanup,
+} from "@/utils/sampleCleanup";
+
 export interface SampleSliceEditorProps {
   /** Name fuer Header-Anzeige (z.B. Dateiname ohne Pfad). */
   sampleName: string;
@@ -46,6 +52,13 @@ export interface SampleSliceEditorProps {
    * Neumount (analog dem File-Picker-Pfad).
    */
   onReplaceSample?: (file: File) => void;
+  /**
+   * v3.300: "Als WAV exportieren". Bekommt die fertigen Slice-Buffer und die
+   * Sample-Rate des BEARBEITETEN Materials — nach einem Cleanup kann sie sich
+   * nicht aendern, der Name aber schon (Suffix), deshalb reicht der Editor ihn
+   * mit durch.
+   */
+  onExportSlices?: (slices: Float32Array[], sampleRate: number, name: string) => void;
 }
 
 const WAVE_HEIGHT_PX = 200;
@@ -95,16 +108,26 @@ export function SampleSliceEditor({
   onApply,
   onClose,
   onReplaceSample,
+  onExportSlices,
 }: SampleSliceEditorProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [canvasWidth, setCanvasWidth] = useState<number>(800);
   // v3.1.0: Zone-spezifisches Drag-Drop auf den Waveform-Bereich.
   const [isDragOver, setIsDragOver] = useState(false);
+  /**
+   * v3.300 — Arbeitskopie. Alle Ansichten und das Slicen arbeiten hierauf,
+   * nicht auf `channelData`. Ein Cleanup ersetzt sie; "Zuruecksetzen" holt das
+   * Original zurueck. Das Original bleibt unangetastet, damit ein zu harter
+   * Filter nicht bedeutet, die Datei neu laden zu muessen.
+   */
+  const [workData, setWorkData] = useState<Float32Array>(channelData);
+  const [cleanupPreset, setCleanupPreset] = useState<string>("default");
+  const [cleanupNote, setCleanupNote] = useState<string>("");
   const [onsets, setOnsets] = useState<OnsetCandidate[]>([{ frame: 0, strength: 0 }]);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [dragFrame, setDragFrame] = useState<number | null>(null);
-  const totalFrames = channelData.length;
+  const totalFrames = workData.length;
 
   // ── Slices abgeleitet aus onsets (Single-Source) ──────────────────────────
   const slices = useMemo<SliceSpec[]>(
@@ -127,7 +150,7 @@ export function SampleSliceEditor({
   }, []);
 
   // ── Peaks memo (re-bauen wenn channelData oder Breite wechselt) ──────────
-  const peaks = useMemo(() => buildPeaks(channelData, canvasWidth), [channelData, canvasWidth]);
+  const peaks = useMemo(() => buildPeaks(workData, canvasWidth), [workData, canvasWidth]);
 
   // ── Canvas-Render via RAF ─────────────────────────────────────────────────
   useEffect(() => {
@@ -278,13 +301,13 @@ export function SampleSliceEditor({
   const handleMouseUp = useCallback(() => {
     if (dragFrame === null) return;
     if (snapEnabled && dragFrame !== 0) {
-      const snapped = snapToZeroCrossing(channelData, dragFrame, ZC_SEARCH_RADIUS);
+      const snapped = snapToZeroCrossing(workData, dragFrame, ZC_SEARCH_RADIUS);
       if (snapped !== dragFrame) {
         setOnsets(prev => moveOnset(prev, dragFrame, snapped));
       }
     }
     setDragFrame(null);
-  }, [dragFrame, snapEnabled, channelData]);
+  }, [dragFrame, snapEnabled, workData]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -294,7 +317,7 @@ export function SampleSliceEditor({
 
   const handleAutoSlice = useCallback(() => {
     try {
-      const specs = autoSlice(channelData, sampleRate, {
+      const specs = autoSlice(workData, sampleRate, {
         maxSlices: MAX_PERFORMANCE_PADS,
         snapToZero: snapEnabled,
         fillToMax: false,
@@ -308,16 +331,48 @@ export function SampleSliceEditor({
     } catch (err) {
       console.error("[SampleSliceEditor] autoSlice failed", err);
     }
-  }, [channelData, sampleRate, snapEnabled]);
+  }, [workData, sampleRate, snapEnabled]);
 
   const handleReset = useCallback(() => {
     setOnsets([{ frame: 0, strength: 0 }]);
   }, []);
 
+  /**
+   * v3.300 — Cleanup auf die Arbeitskopie anwenden.
+   *
+   * Setzt die Onsets ZURUECK: Trimmen und Filtern verschieben die
+   * Frame-Positionen, gesetzte Marker zeigten danach ins Leere. Lieber
+   * sichtbar neu anfangen als stillschweigend danebenliegende Marker behalten.
+   */
+  const handleCleanup = useCallback(() => {
+    const preset = CLEANUP_PRESETS.find(p => p.id === cleanupPreset);
+    if (!preset) return;
+    const { pcm, report } = cleanupSample(workData, sampleRate, preset.options);
+    if (pcm.length === 0) {
+      setCleanupNote("Ergebnis wäre leer — nichts geändert");
+      return;
+    }
+    setWorkData(pcm);
+    setOnsets([{ frame: 0, strength: 0 }]);
+    setCleanupNote(describeCleanup(report));
+  }, [cleanupPreset, workData, sampleRate]);
+
+  const handleCleanupReset = useCallback(() => {
+    setWorkData(channelData);
+    setOnsets([{ frame: 0, strength: 0 }]);
+    setCleanupNote("");
+  }, [channelData]);
+
+  const handleExport = useCallback(() => {
+    if (!onExportSlices) return;
+    const buffers = splitChannelDataAtSlices(workData, slices);
+    onExportSlices(buffers, sampleRate, sampleName);
+  }, [workData, slices, sampleRate, sampleName, onExportSlices]);
+
   const handleApply = useCallback(() => {
-    const buffers = splitChannelDataAtSlices(channelData, slices);
+    const buffers = splitChannelDataAtSlices(workData, slices);
     onApply(buffers, slices);
-  }, [channelData, slices, onApply]);
+  }, [workData, slices, onApply]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -351,6 +406,53 @@ export function SampleSliceEditor({
           >
             ×
           </button>
+        </div>
+
+        {/* v3.300 — Aufbereitung. Steht bewusst VOR der Slice-Toolbar: erst
+            das Material sauber machen, dann schneiden. Umgekehrt verschieben
+            Trimmen und Filtern die Marker, die man gerade gesetzt hat. */}
+        <div className="px-4 py-2 border-b border-border-color flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-text-muted uppercase tracking-wide">Aufbereiten</span>
+          <select
+            value={cleanupPreset}
+            onChange={e => setCleanupPreset(e.target.value)}
+            className="bg-bg-elevated border border-border-color rounded text-xs px-2 py-1 text-text-primary"
+            data-testid="slice-editor-cleanup-preset"
+            title="Voreinstellung für die Aufbereitung"
+          >
+            {CLEANUP_PRESETS.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleCleanup}
+            className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary border border-border-color hover:border-accent-primary transition-colors"
+            data-testid="slice-editor-cleanup-apply"
+            title="Rauschen, Rumpeln und Gleichspannung entfernen, Pegel geradeziehen"
+          >
+            Anwenden
+          </button>
+          {workData !== channelData && (
+            <button
+              onClick={handleCleanupReset}
+              className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors"
+              data-testid="slice-editor-cleanup-reset"
+              title="Original wiederherstellen"
+            >
+              Zurücksetzen
+            </button>
+          )}
+          {cleanupNote && (
+            <span
+              className="text-[10px] text-accent-success truncate max-w-[50%]"
+              data-testid="slice-editor-cleanup-note"
+              title={cleanupNote}
+            >
+              {cleanupNote}
+            </span>
+          )}
         </div>
 
         {/* Toolbar */}
@@ -495,6 +597,17 @@ export function SampleSliceEditor({
           >
             Abbrechen
           </button>
+          {onExportSlices && (
+            <button
+              onClick={handleExport}
+              disabled={slices.length === 0}
+              className="px-3 py-1.5 rounded text-xs bg-bg-elevated text-text-primary border border-border-color hover:border-accent-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="slice-editor-export"
+              title="Slices als WAV-Dateien speichern"
+            >
+              Als WAV exportieren
+            </button>
+          )}
           <button
             onClick={handleApply}
             disabled={slices.length === 0}

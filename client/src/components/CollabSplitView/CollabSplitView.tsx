@@ -499,6 +499,7 @@ export function CollabSplitView({
               bpm={bpm}
               onPlayStop={onPlayStop}
               onBpmChange={onBpmChange}
+              onSamplesImported={onSamplesImported}
               className="h-full"
             />
           </div>
