@@ -79,7 +79,11 @@ import {
   loadNeverList,
 } from "@/utils/midiDeviceDetection";
 import { getMidiFxChain } from "@/store/useMidiFxStore";
-import { applyMidiFx, MidiFxNoteTracker, type NoteOn } from "@/utils/midiFxEngine";
+import {
+  applyMidiFx,
+  MidiFxNoteTracker,
+  type NoteOn,
+} from "@/utils/midiFxEngine";
 // v3.269.0: Eingangsfilter (pro Gerät + pro Nachrichtenklasse) und
 // CC-Fernsteuerung der echten Electribe (Controller → Synthstudio → Korg).
 import { getMidiInputFilterState, useMidiInputFilterStore } from "@/store/useMidiInputFilterStore";
@@ -1190,12 +1194,6 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   const nativeAccessRef = useRef<NativeMidiAccess | null>(null);
   const electron = useElectron();
   const activeInputRef = useRef<MIDIInput | null>(null);
-  /**
-   * v3.269.0: ALLE Eingänge, an denen gerade ein Listener hängt. Im
-   * Einzelgerät-Modus enthält das genau `activeInputRef`, im Multi-Input-Modus
-   * jeden verfügbaren Port. Getrennt geführt, damit Abräumen vollständig ist.
-   */
-  const attachedInputsRef = useRef<MIDIInput[]>([]);
   // Multi-Device: zusätzlich zu activeInputRef attachte Input-IDs (useMidiInputsStore).
   const multiInputsRef = useRef<Set<string>>(new Set());
   const activeOutputRef = useRef<MIDIOutput | null>(null);
@@ -2049,50 +2047,24 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
 
   // ─── Gerät verbinden ──────────────────────────────────────────────────────
 
-  const detachAllInputs = useCallback(() => {
-    for (const input of attachedInputsRef.current) {
-      try {
-        input.onmidimessage = null;
-      } catch {
-        // Port wurde zwischenzeitlich abgezogen — nichts mehr abzuräumen.
+  const connectDevice = useCallback(
+    (deviceId: string | null) => {
+      // Altes Input-Listener entfernen
+      if (activeInputRef.current) {
+        activeInputRef.current.onmidimessage = null;
+        activeInputRef.current = null;
       }
-    }
-    attachedInputsRef.current = [];
-    // Merge v3.286+: die per-Name attachten Ports (syncMultiInputs) sind oben
-    // mit abgeräumt worden. Ohne dieses Leeren hielte syncMultiInputs sie für
-    // weiterhin verbunden und würde den Listener nie neu setzen.
-    multiInputsRef.current.clear();
-    activeInputRef.current = null;
-  }, []);
 
-  const connectDevice = useCallback((deviceId: string | null) => {
-    detachAllInputs();
-    const access = midiAccessRef.current;
-    if (!access) return;
+      if (!deviceId || !midiAccessRef.current) return;
 
-    // v3.269.0: Mehrgeräte-Betrieb. Vorher konnte genau EIN Eingang gehört
-    // werden — Korg und Fader-Controller gleichzeitig war damit unmöglich, und
-    // ein Pro-Gerät-Mute hätte nichts zu muten gehabt. Wer welche Nachrichten
-    // schicken darf, entscheidet danach der Eingangsfilter im Handler.
-    if (getMidiInputFilterState().listenAllInputs) {
-      access.inputs.forEach((input) => {
+      const input = midiAccessRef.current.inputs.get(deviceId);
+      if (input) {
         input.onmidimessage = handleMidiMessage;
-        attachedInputsRef.current.push(input);
-        // `activeDeviceId` bleibt trotzdem gesetzt: daran hängen Auto-Reconnect
-        // und die Geräteanzeige in den Einstellungen.
-        if (input.id === deviceId) activeInputRef.current = input;
-      });
-      return;
-    }
-
-    if (!deviceId) return;
-    const input = access.inputs.get(deviceId);
-    if (input) {
-      input.onmidimessage = handleMidiMessage;
-      attachedInputsRef.current.push(input);
-      activeInputRef.current = input;
-    }
-  }, [detachAllInputs, handleMidiMessage]);
+        activeInputRef.current = input;
+      }
+    },
+    [handleMidiMessage]
+  );
 
   // ─── Multi-Device: alle enabled Inputs (useMidiInputsStore) attachen ────────
   // Hängt handleMidiMessage an JEDES per-Store aktivierte Input-Gerät (by name),
@@ -2100,23 +2072,25 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   // idempotent → koexistiert konfliktfrei mit dem Legacy-Single-Device-Pfad
   // (activeInputRef). Beim Deaktivieren wird nur detacht, was NICHT das Legacy-
   // Aktiv-Gerät ist. Rollen-Filter passiert in handleMidiMessage.
+  //
+  // v3.298 (Merge): der Eingangsfilter kennt zusätzlich `listenAllInputs` —
+  // die Opt-out-Variante (alles hören, gezielt stummschalten). Beide Wege
+  // laufen bewusst über DIESELBE Buchführung (`multiInputsRef`); zwei
+  // konkurrierende Detach-Pfade würden sich sonst gegenseitig die Listener
+  // abräumen. Ist listenAllInputs gesetzt, gilt jeder Port als aktiviert.
   const syncMultiInputs = useCallback(() => {
     const access = midiAccessRef.current;
     if (!access) return;
+    const listenAll = getMidiInputFilterState().listenAllInputs;
     const enabled = new Set(enabledInputNames());
     const desiredIds = new Set<string>();
     access.inputs.forEach(input => {
       const name = input.name ?? "";
-      if (enabled.has(name)) {
+      if (listenAll || enabled.has(name)) {
         desiredIds.add(input.id);
         if (!multiInputsRef.current.has(input.id)) {
           input.onmidimessage = handleMidiMessage;
           multiInputsRef.current.add(input.id);
-          // Merge v3.286+: auch fuer detachAllInputs sichtbar machen,
-          // sonst bleibt ein per-Name attachter Port beim Geraetewechsel haengen.
-          if (!attachedInputsRef.current.includes(input)) {
-            attachedInputsRef.current.push(input);
-          }
         }
       }
     });
@@ -2130,6 +2104,33 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
       }
     });
   }, [handleMidiMessage]);
+
+  /**
+   * Reisst ALLE Listener ab — den Legacy-Einzelport und jeden per
+   * `syncMultiInputs` attachten. Wird beim disable() und beim Unmount
+   * gebraucht; unter Windows sind MIDI-Inputs exklusiv, ein geleakter
+   * Handle blockiert das naechste enable().
+   */
+  const detachAllInputs = useCallback(() => {
+    const access = midiAccessRef.current;
+    multiInputsRef.current.forEach(id => {
+      const input = access?.inputs.get(id);
+      try {
+        if (input) input.onmidimessage = null;
+      } catch {
+        // Port wurde zwischenzeitlich abgezogen — nichts mehr abzuraeumen.
+      }
+    });
+    multiInputsRef.current.clear();
+    if (activeInputRef.current) {
+      try {
+        activeInputRef.current.onmidimessage = null;
+      } catch {
+        // dito
+      }
+      activeInputRef.current = null;
+    }
+  }, []);
 
   // ─── Geräte-Liste aktualisieren ──────────────────────────────────────────
 
@@ -2505,7 +2506,16 @@ export function useMidi(options: UseMidiOptions = {}): MidiState & MidiActions {
   useEffect(() => {
     if (!isEnabled) return;
     connectDevice(activeDeviceId);
-  }, [inputFilter.listenAllInputs, isEnabled, activeDeviceId, connectDevice]);
+    // v3.298: listenAllInputs wird in syncMultiInputs ausgewertet — ohne
+    // diesen Aufruf griffe der Schalter erst beim naechsten Geraetewechsel.
+    syncMultiInputs();
+  }, [
+    inputFilter.listenAllInputs,
+    isEnabled,
+    activeDeviceId,
+    connectDevice,
+    syncMultiInputs,
+  ]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────
 

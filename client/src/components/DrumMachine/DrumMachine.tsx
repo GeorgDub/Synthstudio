@@ -105,7 +105,11 @@ import {
   PRO_FEATURE_KORG_BANK_WRITE,
   PRO_FEATURE_E2_PATTERN_EXPORT,
 } from "@/utils/proFeatures";
-import { buildE2PatternFileV2, buildE2AllPatFile, buildE2PatternBody } from "@/utils/e2sExport";
+import {
+  buildE2PatternFileV2,
+  buildE2AllPatFile,
+  buildE2PatternBody,
+} from "@/utils/e2sExport";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
 import { wrapPatternBodyAsFile } from "@/utils/korg/e2NativeSysex";
 import { requestPatternFromDevice, sendPatternToDevice } from "@/audio/E2NativeSysexTransfer";

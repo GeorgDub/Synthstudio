@@ -677,6 +677,50 @@ export function parseE2sBank(
     }
   }
 
+  // ── Selbstpruefung der Tabellen-Geometrie (v3.298) ─────────────────────────
+  //
+  // Die Datei traegt die Sample-Nummer doppelt: einmal als Position in der
+  // Offset-Tabelle, einmal als `OSC_0index` im korg/esli-Chunk des Slots. Bei
+  // korrektem `E2S_ALL_OFFSET_TABLE_START` sind beide gleich.
+  //
+  // Diese Redundanz ist das EINZIGE, was eine falsche Tabellen-Startadresse
+  // auffliegen laesst. Ein um n Eintraege verschobener Start liefert dieselben
+  // Offset-Werte, nur unter falschen Indizes — Plausibilitaetspruefungen wie
+  // "Offset >= 0x1000" oder "Anzahl nicht-null" koennen das prinzipiell nicht
+  // sehen. Genau daran sind hier schon zwei Werte gescheitert (0x07E0 und
+  // 0x0058); ohne diesen Abgleich faellt der naechste Irrtum wieder erst am
+  // Geraet auf, an verschobenen Sample-Nummern.
+  const mismatches: number[] = [];
+  for (let i = 0; i < E2S_MAX_SLOTS; i++) {
+    const s = slots[i];
+    if (s === null) continue;
+    if (s.sampleNumber !== i) mismatches.push(i);
+  }
+  if (mismatches.length > 0) {
+    const filled = slots.reduce<number>((n, s) => (s === null ? n : n + 1), 0);
+    const shifts = new Set(mismatches.map(i => (slots[i] as E2sSlot).sampleNumber - i));
+    // Ein Geometriefehler verschiebt AUSNAHMSLOS jeden Slot um denselben
+    // Betrag. Zwei einzelne krumme Slots ergeben trivial auch einen
+    // "konstanten" Versatz — deshalb muessen alle belegten Slots betroffen
+    // sein, und es muessen mehr als einer sein.
+    if (shifts.size === 1 && mismatches.length === filled && filled > 1) {
+      const shift = [...shifts][0];
+      warnings.push(
+        `offset-table geometry suspect: ALL ${mismatches.length} slots report ` +
+          `OSC_0index = index ${shift > 0 ? "+" : ""}${shift}. Ein konstanter ` +
+          `Versatz heisst in aller Regel: E2S_ALL_OFFSET_TABLE_START ist um ` +
+          `${Math.abs(shift) * 4} Bytes falsch (aktuell 0x${E2S_ALL_OFFSET_TABLE_START.toString(16)}).`
+      );
+    } else {
+      warnings.push(
+        `${mismatches.length} Slot(s) mit OSC_0index != Tabellen-Index ` +
+          `(z.B. Slot ${mismatches[0]} meldet ${(slots[mismatches[0]] as E2sSlot).sampleNumber}). ` +
+          `Kein konstanter Versatz — vermutlich einzelne Slots inkonsistent, ` +
+          `nicht die Tabellen-Geometrie.`
+      );
+    }
+  }
+
   const trailingBytes = Math.max(0, buf.length - lastEnd);
   return {
     source,

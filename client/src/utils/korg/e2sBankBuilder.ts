@@ -8,13 +8,16 @@
  * von `E2sSlotInput`-Records. Round-Trip via `parseE2sBank` ist die
  * Goldstandard-Verifizierung (siehe Tests).
  *
- * Layout (verified gegen e2sSample.all-Reference 2026-05-17, identisch
- * zur v3.3 Reader-Konvention):
+ * Layout (v3.286 korrigiert — Herleitung bei
+ * `E2S_ALL_OFFSET_TABLE_START` in constants.ts):
  *
  *   0x0000..0x0010  16B signature  "e2s sample all\x1a\x00"
  *   0x0010..0x1000  1020 × LE32 offset table (0 = empty slot; idx == OSC_0index)
- *   0x0BC8..0x1000  0x438 zero-padding to 4 KiB boundary
  *   0x1000..EOF     concatenated RIFF/WAVE chunks (one per non-empty slot)
+ *
+ * Bis v3.285 stand hier „Tabelle @0x07E0, 250 Einträge, davor 2032B padding".
+ * Das war dieselbe Byte-Folge, nur falsch geschnitten: die Werks-Referenzdatei
+ * belegt die Indizes 482..492, und 0x0058 + 482*4 == 0x07E0.
  *
  * Pro Slot:
  *
@@ -300,6 +303,19 @@ export function buildE2sBank(
   if (E2S_MAX_SLOTS * 4 !== E2S_ALL_OFFSET_TABLE_BYTES) {
     throw new E2sBuildError(
       `internal: offset-table-size mismatch (${E2S_MAX_SLOTS * 4} != ${E2S_ALL_OFFSET_TABLE_BYTES})`
+    );
+  }
+  // Exact-Fit-Invariante: die Tabelle endet genau da, wo die Sample-Area
+  // beginnt. Genau diese Rechnung hätte den 0x07E0/250-Fehler auffallen lassen
+  // — 0x07E0 + 1000 == 0x0BC8 != 0x1000. Deshalb steht sie jetzt im Code.
+  if (
+    E2S_ALL_OFFSET_TABLE_START + E2S_ALL_OFFSET_TABLE_BYTES !==
+    E2S_ALL_SAMPLE_AREA_START
+  ) {
+    throw new E2sBuildError(
+      `internal: offset table does not end at the sample area ` +
+        `(0x${E2S_ALL_OFFSET_TABLE_START.toString(16)} + ${E2S_ALL_OFFSET_TABLE_BYTES} != ` +
+        `0x${E2S_ALL_SAMPLE_AREA_START.toString(16)})`,
     );
   }
 
