@@ -19,6 +19,13 @@ name: Windows Test Build
 # electron-builder läuft mit `--publish never`: die publish-Config in
 # package.json zeigt auf ein separates Repo (Synthstudio-releases), das das
 # Auto-Token nicht erreicht. Das Release entsteht stattdessen auf diesem Repo.
+#
+# ⚠️ RELEASE-KONVENTION (siehe CLAUDE.md → „Release-Konvention"): ALLE Releases
+# gehören in das separate Repo `GeorgDub/Synthstudio-releases` — NICHT in dieses
+# Haupt-Repo. Die `winbuild-*`-Prereleases hier sind Alt-Lasten und sollen nach
+# `Synthstudio-releases` migriert werden (erfordert einen Cross-Repo-Token als
+# Secret, z. B. `RELEASES_TOKEN`, für softprops/action-gh-release `repository:`).
+# Bis dahin: keine NEUEN Release-Ziele im Haupt-Repo hinzufügen.
 
 on:
   push:

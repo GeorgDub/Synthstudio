@@ -267,3 +267,25 @@ Test-Files niemals löschen wenn obsolet → entweder anpassen oder `it.skip` mi
 - **Projects**: `.synth` JSON files; managed by `useProjectStore` with undo/redo stack
 - **Samples**: individual audio files or `.zip` packs (extracted by `electron/zip-import.ts` + `client/src/utils/zipSampleImport.ts`)
 - **MIDI**: parsed by `utils/smfParser.ts`, exported via `electron/export.ts`
+
+## Release-Konvention (VERBINDLICH — gilt für alle Agenten)
+
+**Alle Releases laufen ausschließlich über das separate Repo
+[`GeorgDub/Synthstudio-releases`](https://github.com/GeorgDub/Synthstudio-releases).**
+Das ist das einzige Release-Ziel. `package.json` `build.publish` zeigt bereits
+dorthin (`provider: github`, `repo: Synthstudio-releases`, `releaseType: draft`);
+`electron-builder --publish always` (siehe `.github/workflows/electron-release.yml`)
+veröffentlicht dorthin.
+
+**Nicht erlaubt:** Releases oder Release-Tags im Haupt-Repo `GeorgDub/Synthstudio`
+oder an einen Feature-Branch anlegen. Das verwässert die Release-Historie und
+führt dazu, dass Agenten die falsche Quelle als „Release" behandeln.
+
+- Die alten `winbuild-*`-Prereleases (Windows-Test-Builds) im Haupt-Repo sind
+  Alt-Lasten aus `windows-testbuild.yml` und sollen **entfernt** werden; künftige
+  Test-Builds gehören ebenfalls nach `Synthstudio-releases` (Migration erfordert
+  einen Cross-Repo-Token als Secret, z. B. `RELEASES_TOKEN`).
+- Wer einen Windows-/Electron-Build braucht: über den `Synthstudio-releases`-Kanal,
+  nicht per neuem Tag im Haupt-Repo.
+
+Kurz: **Ein Release = ein Eintrag in `Synthstudio-releases`. Sonst nirgends.**

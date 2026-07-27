@@ -1,6 +1,6 @@
 # OmniTribe NRPN-Reference
 
-_Auto-generiert am 2026-05-19 von `tools/build/generate_nrpn_reference.py`._
+_Auto-generiert am 2026-06-15 von `tools/build/generate_nrpn_reference.py`._
 
 **DO NOT EDIT MANUALLY** — regeneriere aus nrpn_map.json.
 
@@ -10,8 +10,8 @@ dokumentiert.
 
 ## Statistik
 
-- **Module mit NRPN-Handlern:** 16
-- **Total NRPN-Einträge:** 86
+- **Module mit NRPN-Handlern:** 17
+- **Total NRPN-Einträge:** 126
 - **Adress-Konflikte:** 0
 
 ## Quick-Reference-Tabelle
@@ -22,6 +22,46 @@ dokumentiert.
 | 0x07 | 0x01 | `wavetable` | Frame-Position (0..63 × 1024, q10) |
 | 0x07 | 0x02 | `wavetable` | Morph-Speed (LFO-Rate fuer Auto-Morph) |
 | 0x07 | 0x03 | `wavetable` | Morph-Range (0..63 Frames) |
+| 0x08 | 0x00 | `gen_catalog` | silence/clear-stub (catalog idx 0; device-binding TBD; selec |
+| 0x08 | 0x01 | `gen_catalog` | wavetable-interp osc [lut] (catalog idx 1; device-binding TB |
+| 0x08 | 0x02 | `gen_catalog` | wavetable-interp osc [lut] (catalog idx 2; device-binding TB |
+| 0x08 | 0x03 | `gen_catalog` | polynomial/parabolic shaper (catalog idx 3; device-binding T |
+| 0x08 | 0x04 | `gen_catalog` | generator, filter/resonator-shaped (catalog idx 4; device-bi |
+| 0x08 | 0x05 | `gen_catalog` | saw/ramp + soft-clip generator (catalog idx 5; device-bindin |
+| 0x08 | 0x06 | `gen_catalog` | generator, filter/resonator-shaped multimode (catalog idx 6; |
+| 0x08 | 0x07 | `gen_catalog` | generator, filter/resonator-shaped multimode (catalog idx 7; |
+| 0x08 | 0x08 | `gen_catalog` | generator, filter/resonator-shaped multimode (catalog idx 8; |
+| 0x08 | 0x09 | `gen_catalog` | wavetable-interp osc [lut] LSETUP (catalog idx 9; device-bin |
+| 0x08 | 0x0A | `gen_catalog` | wavetable-interp osc [lut] LSETUP (catalog idx 10; device-bi |
+| 0x08 | 0x0B | `gen_catalog` | polynomial/parabolic shaper (catalog idx 11; device-binding  |
+| 0x08 | 0x0C | `gen_catalog` | polynomial shaper LSETUP (catalog idx 12; device-binding TBD |
+| 0x08 | 0x0D | `gen_catalog` | additive/harmonic-sum osc (catalog idx 13; device-binding TB |
+| 0x08 | 0x0E | `gen_catalog` | additive/harmonic-sum osc (catalog idx 14; device-binding TB |
+| 0x08 | 0x0F | `gen_catalog` | additive osc + DC-offset (catalog idx 15; device-binding TBD |
+| 0x08 | 0x10 | `gen_catalog` | saw/wrap shaper (catalog idx 16; device-binding TBD; selecti |
+| 0x08 | 0x11 | `gen_catalog` | wavetable-interp osc + parabola pre-shape (catalog idx 17; d |
+| 0x08 | 0x12 | `gen_catalog` | wavetable-interp osc + parabola pre-shape (catalog idx 18; d |
+| 0x08 | 0x13 | `gen_catalog` | saw-wrap + parabola shaper (catalog idx 19; device-binding T |
+| 0x08 | 0x14 | `gen_catalog` | saw-wrap + polynomial shaper (catalog idx 20; device-binding |
+| 0x08 | 0x15 | `gen_catalog` | wavetable-interp osc [lut] LSETUP (catalog idx 21; device-bi |
+| 0x08 | 0x16 | `gen_catalog` | wavetable-interp osc [lut] LSETUP (catalog idx 22; device-bi |
+| 0x08 | 0x17 | `gen_catalog` | polynomial shaper state-rewind (catalog idx 23; device-bindi |
+| 0x08 | 0x18 | `gen_catalog` | polynomial/parabolic shaper LSETUP (catalog idx 24; device-b |
+| 0x08 | 0x19 | `gen_catalog` | wavetable-interp osc 2-stage (catalog idx 25; device-binding |
+| 0x08 | 0x1A | `gen_catalog` | wavetable-interp osc 2-stage (catalog idx 26; device-binding |
+| 0x08 | 0x1B | `gen_catalog` | generator, filter/resonator-shaped bidirectional (catalog id |
+| 0x08 | 0x1C | `gen_catalog` | generator, filter/resonator-shaped z-state (catalog idx 28;  |
+| 0x08 | 0x1D | `gen_catalog` | wavetable-interp osc 2-stage (catalog idx 29; device-binding |
+| 0x08 | 0x1E | `gen_catalog` | wavetable-interp osc 2-stage (catalog idx 30; device-binding |
+| 0x08 | 0x1F | `gen_catalog` | generator, filter/resonator-shaped bidirectional (catalog id |
+| 0x08 | 0x20 | `gen_catalog` | generator, filter/resonator-shaped z-state (catalog idx 32;  |
+| 0x08 | 0x21 | `gen_catalog` | generator, biquad/SVF-shaped (catalog idx 33; device-binding |
+| 0x08 | 0x22 | `gen_catalog` | PCM sample-player PINNED (catalog idx 34; device-binding TBD |
+| 0x08 | 0x23 | `gen_catalog` | generator, filter/resonator-shaped fu-MAC (catalog idx 35; d |
+| 0x08 | 0x24 | `gen_catalog` | slice/wrap-counter osc (catalog idx 36; device-binding TBD;  |
+| 0x08 | 0x25 | `gen_catalog` | wavetable-interp osc [lut] largest (catalog idx 37; device-b |
+| 0x08 | 0x26 | `gen_catalog` | bit-masked/quantizer osc (catalog idx 38; device-binding TBD |
+| 0x08 | 0x27 | `gen_catalog` | generator, filter/resonator-shaped + parabola TOP (catalog i |
 | 0x0A | 0x00 | `midi_learn` | Learn-Mode aktivieren (value = part << 8 | param_id_lsb, |
 | 0x0A | 0x01 | `midi_learn` | Clear-All-Mappings |
 | 0x12 | 0x00 | `mpe_voice` | Range (Halbtoene 0..24) |
@@ -144,6 +184,51 @@ dokumentiert.
 
 - `MSB 0x1A` / `LSB 0x10` → Target-CPU-Last in % (50..95)
 - `MSB 0x1A` / `LSB 0x11` → CPU-Stream aktivieren (0/1)
+
+### gen_catalog (generator_catalog.c)
+
+**MSB(s):** `0x08`
+
+- `MSB 0x08` / `LSB 0x00` → silence/clear-stub (catalog idx 0; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x01` → wavetable-interp osc [lut] (catalog idx 1; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x02` → wavetable-interp osc [lut] (catalog idx 2; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x03` → polynomial/parabolic shaper (catalog idx 3; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x04` → generator, filter/resonator-shaped (catalog idx 4; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x05` → saw/ramp + soft-clip generator (catalog idx 5; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x06` → generator, filter/resonator-shaped multimode (catalog idx 6; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x07` → generator, filter/resonator-shaped multimode (catalog idx 7; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x08` → generator, filter/resonator-shaped multimode (catalog idx 8; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x09` → wavetable-interp osc [lut] LSETUP (catalog idx 9; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x0A` → wavetable-interp osc [lut] LSETUP (catalog idx 10; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x0B` → polynomial/parabolic shaper (catalog idx 11; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x0C` → polynomial shaper LSETUP (catalog idx 12; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x0D` → additive/harmonic-sum osc (catalog idx 13; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x0E` → additive/harmonic-sum osc (catalog idx 14; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x0F` → additive osc + DC-offset (catalog idx 15; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x10` → saw/wrap shaper (catalog idx 16; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x11` → wavetable-interp osc + parabola pre-shape (catalog idx 17; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x12` → wavetable-interp osc + parabola pre-shape (catalog idx 18; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x13` → saw-wrap + parabola shaper (catalog idx 19; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x14` → saw-wrap + polynomial shaper (catalog idx 20; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x15` → wavetable-interp osc [lut] LSETUP (catalog idx 21; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x16` → wavetable-interp osc [lut] LSETUP (catalog idx 22; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x17` → polynomial shaper state-rewind (catalog idx 23; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x18` → polynomial/parabolic shaper LSETUP (catalog idx 24; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x19` → wavetable-interp osc 2-stage (catalog idx 25; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x1A` → wavetable-interp osc 2-stage (catalog idx 26; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x1B` → generator, filter/resonator-shaped bidirectional (catalog idx 27; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x1C` → generator, filter/resonator-shaped z-state (catalog idx 28; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x1D` → wavetable-interp osc 2-stage (catalog idx 29; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x1E` → wavetable-interp osc 2-stage (catalog idx 30; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x1F` → generator, filter/resonator-shaped bidirectional (catalog idx 31; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x20` → generator, filter/resonator-shaped z-state (catalog idx 32; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x21` → generator, biquad/SVF-shaped (catalog idx 33; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x22` → PCM sample-player PINNED (catalog idx 34; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x23` → generator, filter/resonator-shaped fu-MAC (catalog idx 35; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x24` → slice/wrap-counter osc (catalog idx 36; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x25` → wavetable-interp osc [lut] largest (catalog idx 37; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x26` → bit-masked/quantizer osc (catalog idx 38; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
+- `MSB 0x08` / `LSB 0x27` → generator, filter/resonator-shaped + parabola TOP (catalog idx 39; device-binding TBD; selection lever behind cross-core dispatch-bank wall, reverse Phase-3g)
 
 ### granular (granular.c)
 

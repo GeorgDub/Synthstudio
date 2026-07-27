@@ -262,7 +262,7 @@ export function KorgBankEditor({
   const e2sMergeInputRef = useRef<HTMLInputElement | null>(null);
   const [openedSourceName, setOpenedSourceName] = useState<string>("");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  // v3.286 — Slot-Browser-Filter (1002 Slots wollen gefiltert werden).
+  // v3.286 — Slot-Browser-Filter (1020 Slots wollen gefiltert werden).
   const [openedSearch, setOpenedSearch] = useState<string>("");
   const [openedHideEmpty, setOpenedHideEmpty] = useState<boolean>(true);
 

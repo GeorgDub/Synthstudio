@@ -117,10 +117,26 @@ export const E2S_NAME_MAX_CHARS = 24;
  * Wir behalten bewusst die weitere Grenze: sie ist nur ein Schutz gegen
  * Speicher-Explosion beim Bauen, und ein Absenken würde Banken zurückweisen,
  * die sich hier bisher bauen ließen. Das Gerät entscheidet ohnehin selbst,
- * was es lädt. Ein Absenken (oder eine Warnung ab 24 MB) ist eine
- * Produktentscheidung, keine Formatkorrektur — deshalb hier nicht mitgezogen.
+ * was es lädt.
+ *
+ * v3.287: Die Produktentscheidung ist getroffen — nicht absenken, sondern
+ * warnen. Siehe `E2S_DEVICE_PCM_WARN_BYTES`.
  */
 export const E2S_MAX_TOTAL_PCM_BYTES = 224 * 1024 * 1024; // ~224 MB
+/**
+ * Ab hier wird gewarnt, nicht abgelehnt: das reale Sample-Speicher-Limit des
+ * Geräts (SoT `constants.py`, TASK-029).
+ *
+ * Warum Warnung und nicht harte Grenze — beides wäre für sich falsch:
+ * bei 224 MB baut man stumm Bänke, die das Gerät nicht lädt; eine Absenkung
+ * auf 24 MB würde Bänke zurückweisen, die sich bisher bauen ließen, also eine
+ * Regression für bestehende Nutzung.
+ *
+ * Empirisch gestützt (2026-07-27, Bestand aus 47 realen Bänken): die größten
+ * liegen bei 24.037.610 B — knapp *unter* dieser Schwelle. Keine gemessene
+ * Gerätedatei überschreitet sie.
+ */
+export const E2S_DEVICE_PCM_WARN_BYTES = 24 * 1024 * 1024; // 24 MiB
 export const E2S_GLOBAL_SECTION_SIZE = 256;
 
 // ─── E2S `.all` container layout ──────────────────────────────────────────────

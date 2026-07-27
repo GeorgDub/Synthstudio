@@ -268,3 +268,34 @@ describe("filterOpenedSlots", () => {
     expect(filterOpenedSlots([], "", true)).toEqual([]);
   });
 });
+
+// ─── Geräte-Limit als Warnung ─────────────────────────────────────────────────
+
+describe("PCM-Budget: Geräte-Limit warnt, blockt aber nicht", () => {
+  it("warnt oberhalb von 24 MB, baut die Bank aber trotzdem", () => {
+    // ~25 MB PCM: über dem Geräte-Limit, weit unter der harten Bau-Grenze.
+    // Die Bank muss trotzdem entstehen — sonst wäre es eine Regression für
+    // alles, was sich bisher bauen ließ.
+    const perSlot = 1_600_000; // Samples => ~3,2 MB je Slot on disk
+    const built = buildE2sBank(
+      Array.from({ length: 8 }, (_, i) => ({
+        slotIndex: 500 + i,
+        name: `BIG${i}`,
+        pcmData: new Float32Array(perSlot),
+        sampleRate: 44100,
+        channels: 1,
+      })),
+    );
+
+    expect(built.slotCount).toBe(8);
+    expect(
+      built.warnings.some((w) => w.includes("Geräte-Limit")),
+      `keine Geräte-Limit-Warnung in: ${JSON.stringify(built.warnings)}`,
+    ).toBe(true);
+  });
+
+  it("schweigt bei einer Bank normaler Größe", () => {
+    const built = buildE2sBank([slot(501, "S501")]);
+    expect(built.warnings.some((w) => w.includes("Geräte-Limit"))).toBe(false);
+  });
+});

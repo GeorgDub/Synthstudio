@@ -661,9 +661,9 @@ export function displayCategory(s: OpenedSlot): string {
 /**
  * v3.286 — Filter für den Slot-Browser.
  *
- * Wurde nötig, als die Offset-Tabelle von (fälschlich) 250 auf 1002 Einträge
- * korrigiert wurde: eine Hacktribe-Bank hat ihre User-Samples ab Index 501,
- * davor stehen hunderte leere Slots. Ohne Filter müsste man die durchscrollen.
+ * Wurde nötig, als die Offset-Tabelle auf ihre volle Länge korrigiert wurde:
+ * eine Hacktribe-Bank hat ihre User-Samples ab Index 501, davor stehen
+ * hunderte leere Slots. Ohne Filter müsste man die durchscrollen.
  *
  * Reihenfolge bleibt die Slot-Reihenfolge — es wird nur weggelassen, nie
  * umsortiert. `hideEmpty` wirkt nicht auf geänderte Slots: was man gerade

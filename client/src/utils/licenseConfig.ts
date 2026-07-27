@@ -39,6 +39,12 @@
 
 // TODO: replace with real public key from your ED25519 keypair (32 bytes hex)
 // This placeholder is the all-zero key — verification will always fail with it.
+//
+// Schluesselpaar erzeugen:   pnpm license:keygen keygen
+// Lizenz signieren:          pnpm license:keygen sign --secret <hex> --email <adresse> [--days N]
+// Der PUBLIC-Key kommt hier hinein, der SECRET-Key NIE ins Repo und NIE ins
+// Bundle. Belegt durch tests/features/license-keygen-cli.test.ts: so gemintete
+// Schluessel validieren durch validateLicenseKey (den Pfad der App).
 export const LICENSE_PUBLIC_KEY_HEX =
   "0000000000000000000000000000000000000000000000000000000000000000";
 
