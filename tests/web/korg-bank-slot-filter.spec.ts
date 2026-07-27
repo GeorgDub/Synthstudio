@@ -1,12 +1,13 @@
 /**
  * korg-bank-slot-filter.spec.ts — v3.298.0
  *
- * Smoke für den Slot-Browser des KORG-Bank-Editors nach der Korrektur der
- * Offset-Tabelle (250 → 1002 Slots).
+ * Smoke für den Slot-Browser des KORG-Bank-Editors. Die Offset-Tabelle hat
+ * 1020 Einträge ab 0x0010 (Oe2sSLE-Geometrie); die Vorgängerwerte 250 @0x07E0
+ * und 1002 @0x0058 waren beide falsch — siehe constants.ts.
  *
  * Der Test lädt eine synthetisch gebaute `.all` mit genau zwei Samples, eines
  * davon auf **Slot 501** — dem Index, ab dem Hacktribe seine User-Samples
- * ablegt. Mit dem alten Layout war dieser Slot nicht adressierbar; dass er hier
+ * ablegt. Mit dem 250-Slot-Layout war er nicht adressierbar; dass er hier
  * in der Liste auftaucht, ist der eigentliche Beweis der Korrektur, und zwar
  * durch die komplette Kette Datei → Parser → UI.
  *
@@ -99,7 +100,7 @@ test("Bank mit Sample auf Hacktribe-Slot 501 landet im Slot-Browser", async ({ p
   });
 
   // Standard ist „Leere verbergen" — es dürfen also genau die zwei belegten
-  // Slots stehen, nicht 1002 Zeilen.
+  // Slots stehen, nicht 1020 Zeilen.
   const rows = page.getByTestId("korg-bank-editor-slot-browser").locator("li");
   await expect(rows).toHaveCount(2, { timeout: 15_000 });
   await expect(page.getByTestId("korg-bank-editor-slot-0")).toBeVisible();
