@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.299.0",
+    version: "3.300.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,36 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-27T09:30:00.000Z",
+      done: [
+        "v3.300.0 — Sample-Slicer: Slices kommen jetzt dort an, wo sie hingehoeren, und das Material laesst sich vorher aufbereiten. Nutzer-Befund: Marker setzen geht, aber die Slices landen weder im Sequencer noch im Sample-Browser, und als WAV exportieren geht gar nicht.",
+        "BEFUND 1 — Sample-Browser: fehlte komplett, gleiche Klasse wie der .all-Import aus v3.299. handleSlicesApply legte Slices auf Drum-Kanaele (setPartSample) und Performance-Pads (CustomEvent), aber nie in useProjectStore.samples. Jetzt via onSamplesImported, Kategorie 'Slices'. Die Blob-URLs entstehen EINMAL und werden fuer Library UND Kanal-Zuweisung wiederverwendet — vorher encodierte die Schleife pro Kanal neu.",
+        "BEFUND 2 — WAV-Export: gab es nicht. Neu utils/sliceExport.ts (rein): sanitizeSliceStem (FAT-tauglich, Zieldateisystem ist die SD-Karte), sliceFileName mit Nullen-Auffuellung (sonst steht _10 vor _2 und die Slice-Reihenfolge im Dateimanager ist unbrauchbar), encodeSlices, bundleSlicesToZip mit injizierbarer JSZip-Klasse wie in channelBounce. Ab ZIP_THRESHOLD=4 wird gepackt: Browser brechen Download-Serien nach den ersten Dateien ab. Leere Slices werden uebersprungen, die Nummerierung folgt aber der Position im ORIGINAL — slice_03 bleibt der dritte Abschnitt.",
+        "BEFUND 3 — Sequencer: der Pfad EXISTIERTE (setPartSample auf die Parts des aktiven Patterns). Ohne aktives Pattern ist parts leer, es passiert nichts, und der Toast meldete trotzdem Erfolg ('auf Slice-Pads gelegt'). Das erweckte den Eindruck, der Sequencer haette sie bekommen. Jetzt eigene Warnung 'Kein aktives Pattern'.",
+        "NEU — utils/sampleCleanup.ts: Aufbereitung vor dem Schneiden. Erfindet keine DSP; die Bausteine lagen laengst im Repo (sampleHighPass, sampleLowPass, sampleNoiseReduction, sampleNoiseGate). Gefehlt hat die VERKETTUNG in fester Reihenfolge auf dem Datentyp des Slicers (flache Float32Array + Rate). Reihenfolge ist begruendet, nicht beliebig: DC-Offset zuerst (sonst misst jede Pegel-Erkennung danach falsch und der Zero-Crossing-Snap findet keine Nulldurchgaenge), Hochpass vor Pegelkram (Rumpeln dominiert sonst die Normalisierung), Noise-Reduction VOR dem Trimmen (die vordere Stille IST das Rausch-Profil), Normalisieren vor dem Trimmen (sonst haengt die Schwelle am alten Pegel), Fades zuletzt.",
+        "Vier Presets: Aus / Standard / Field-Recording / Drum-Loop / Vinyl-Tape. CLEANUP_DEFAULTS enthaelt BEWUSST kein Gate und keine Rauschminderung — beide koennen Material beschaedigen und gehoeren dem Nutzer in die Hand, nicht in einen Default. Zwei Schutzregeln: trimmt NICHT, wenn das ganze Sample unter der Schwelle liegt (lieber zu lang als leer), und die Randfades ueberlappen nie (sonst waere die Mitte leiser als die Raender).",
+        "UI: der Editor arbeitet jetzt auf einer ARBEITSKOPIE (workData). Cleanup ersetzt sie, 'Zuruecksetzen' holt das Original — ein zu harter Filter darf nicht heissen, die Datei neu laden zu muessen. Ein Cleanup setzt die Onsets zurueck: Trimmen und Filtern verschieben die Frame-Positionen, gesetzte Marker zeigten danach ins Leere.",
+        "NEBENBEFUND: components/SampleSlicer/SampleSlicer.tsx (605 LOC) wird NIRGENDS gerendert — toter Code. Der aktive Pfad ist SampleEditor/SampleSliceEditor.tsx, gemountet aus DrumMachine.tsx. Nicht angefasst, aber notiert.",
+        "Gates: pnpm check clean, volle Suite 502 Dateien / 11178 passed / 97 skipped (+51 Tests: sample-cleanup 29, slice-export 22). 3 neue Playwright-Smokes (tests/web/slice-cleanup-export.spec.ts) schleusen eine echte, im Test erzeugte WAV durch decodeAudioData und pruefen Aufbereitung, Zuruecksetzen und beide Export-Pfade ueber echte Download-Events."
+      ],
+      next: [
+        "Am Geraet gegenpruefen: Loop slicen, aufbereiten, exportieren, Dateien auf die SD-Karte — passen Benennung und Reihenfolge auf dem Electribe-Display?",
+        "SampleSlicer.tsx (toter Code, 605 LOC): loeschen oder als zweite Ansicht anbinden? Entscheidung des Nutzers.",
+        "Offen aus der Vorwelle: Gegenprobe der Tabellen-Geometrie 0x0010 an einer echten Hacktribe-.all (Warnung 'offset-table geometry suspect' beachten); RAM-Timeout-Test 0xC00A80F0 Laenge 524; GitHub-Release muss der Nutzer selbst anstossen (403 auf beiden Wegen); E2S_MAX_TOTAL_PCM_BYTES 224 vs 24 MB; source_control-Kodierung; C-Handler OTP CMD 0x10; Device->Parametername-Tabelle.",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/sampleCleanup.ts",
+        "client/src/utils/sliceExport.ts",
+        "client/src/components/SampleEditor/SampleSliceEditor.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/sample-cleanup.test.ts",
+        "tests/features/slice-export.test.ts",
+        "tests/web/slice-cleanup-export.spec.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-27T08:20:00.000Z",
