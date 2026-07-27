@@ -37,7 +37,48 @@ export const OtpCmd = {
   ANALYSIS:       0x0C,
   PRESET:         0x0D,
   TRANSPORT:      0x0E,
+  // Sprint-135: FX-Preset & Groove. 0x10-0x7E waren frei.
+  // Spec: omnitribe/docs/midi/OTP_CMD_FX.md
+  FX:             0x10,
 } as const;
+
+// ─── CMD 0x10 FX Sub-Commands (Sprint-135) ──────────────────
+// 3-Quellen-Sync: dieselben Werte in C otp_protocol.h und Python otp_codec.py.
+export const FxSub = {
+  WRITE_IFX_PRESET: 0x00,
+  WRITE_MFX_PRESET: 0x01,
+  READ_PRESET_REQ:  0x02,
+  READ_PRESET_RESP: 0x03,
+  SET_PARAM:        0x04,
+  SET_CONTROL_MAP:  0x05,
+  WRITE_GROOVE:     0x06,
+  READ_GROOVE_REQ:  0x07,
+  READ_GROOVE_RESP: 0x08,
+} as const;
+
+export const FX_BANK_IFX = 0;
+export const FX_BANK_MFX = 1;
+
+/** Groesse eines FX-Presets bzw. Groove-Templates in Bytes. */
+export const FX_PRESET_SIZE = 524;
+export const FX_GROOVE_SIZE = 320;
+
+/** fx_slot = (part-1)*2 + slot fuer die Insert-FX; 0x20 = Master-FX. */
+export const FX_SLOT_MFX = 0x20;
+export const FX_SLOT_MAX = 0x20;
+
+/** Antwort auf einen FX-Preset-Request. */
+export interface FxPresetEvent {
+  bank: number;
+  slot: number;
+  preset: Uint8Array;
+}
+
+/** Antwort auf einen Groove-Request. */
+export interface FxGrooveEvent {
+  slot: number;
+  groove: Uint8Array;
+}
 
 // ─── CMD 0x03 STATE_DUMP Sub-Commands (Sprint-120a) ─────────
 // 3-source sync: same values in C otp_protocol.h and Python otp_codec.py.
@@ -445,6 +486,84 @@ export class OmniTribeBridge {
       }
     }
     this.send(OtpCmd.WAVETABLE, 0x00, data);
+  }
+
+  // ─── CMD 0x10 FX — Preset & Groove (Sprint-135) ────────────
+  //
+  // Ersetzt Hacktribes Weg ueber rohe AM1808-RAM-Adressen durch typisierte
+  // Kommandos: wir kopieren die API, nicht die Adressen. Byte-Layouts der Blobs
+  // stehen in omnitribe/docs/reverse/hacktribe_ram_and_formats.md §2 (Preset)
+  // und §3 (Groove) — diese Klasse transportiert sie, sie deutet sie nicht.
+
+  /**
+   * CMD 0x10 0x00/0x01: FX-Preset in einen Geraete-Slot schreiben.
+   *
+   * @param bank `FX_BANK_IFX` (96 Slots) oder `FX_BANK_MFX` (32 Slots)
+   * @param preset genau {@link FX_PRESET_SIZE} Bytes
+   */
+  writeFxPreset(bank: number, slot: number, preset: Uint8Array): void {
+    if (preset.length !== FX_PRESET_SIZE) {
+      throw new RangeError(`FX-Preset braucht ${FX_PRESET_SIZE} B, bekam ${preset.length}`);
+    }
+    const sub = bank === FX_BANK_MFX ? FxSub.WRITE_MFX_PRESET : FxSub.WRITE_IFX_PRESET;
+    const body = encode7Bit(preset);
+    const payload = new Uint8Array(1 + body.length);
+    payload[0] = slot & 0x7F;
+    payload.set(body, 1);
+    this.send(OtpCmd.FX, sub, payload);
+  }
+
+  /** CMD 0x10 0x02: FX-Preset anfordern — Antwort via `omnitribe:fxPreset`. */
+  requestFxPreset(bank: number, slot: number): void {
+    this.send(OtpCmd.FX, FxSub.READ_PRESET_REQ, [bank & 0x7F, slot & 0x7F]);
+  }
+
+  /**
+   * CMD 0x10 0x04: einzelnen FX-Parameter live setzen.
+   *
+   * `value` ist ein u16 und passt nicht in zwei Septets — uebertragen als drei,
+   * LSB zuerst (siehe OTP_CMD_FX.md §4).
+   */
+  setFxParam(fxSlot: number, param: number, value: number): void {
+    const v = Math.max(0, Math.min(0xFFFF, Math.round(value)));
+    this.send(OtpCmd.FX, FxSub.SET_PARAM, [
+      fxSlot & 0x7F, param & 0x7F,
+      v & 0x7F, (v >> 7) & 0x7F, (v >> 14) & 0x7F,
+    ]);
+  }
+
+  /**
+   * CMD 0x10 0x05: einen der zehn Zuweisungs-Slots eines FX-Presets setzen.
+   *
+   * Gegenstueck zu Hacktribes `map_fx_param`, das dafuer fuenf NRPN-Nachrichten
+   * braucht — bricht die Uebertragung dazwischen ab, bleibt dort eine halb
+   * geschriebene Zuweisung zurueck. Hier ist es eine Nachricht.
+   */
+  setFxControlMap(
+    fxSlot: number, mapSlot: number, source: number,
+    target: number, minValue: number, maxValue: number,
+  ): void {
+    this.send(OtpCmd.FX, FxSub.SET_CONTROL_MAP, [
+      fxSlot & 0x7F, mapSlot & 0x7F, source & 0x7F,
+      target & 0x7F, minValue & 0x7F, maxValue & 0x7F,
+    ]);
+  }
+
+  /** CMD 0x10 0x06: Groove-Template schreiben. */
+  writeGroove(slot: number, groove: Uint8Array): void {
+    if (groove.length !== FX_GROOVE_SIZE) {
+      throw new RangeError(`Groove braucht ${FX_GROOVE_SIZE} B, bekam ${groove.length}`);
+    }
+    const body = encode7Bit(groove);
+    const payload = new Uint8Array(1 + body.length);
+    payload[0] = slot & 0x7F;
+    payload.set(body, 1);
+    this.send(OtpCmd.FX, FxSub.WRITE_GROOVE, payload);
+  }
+
+  /** CMD 0x10 0x07: Groove anfordern — Antwort via `omnitribe:fxGroove`. */
+  requestGroove(slot: number): void {
+    this.send(OtpCmd.FX, FxSub.READ_GROOVE_REQ, [slot & 0x7F]);
   }
 
   /** CMD 0x08 0x00: Real-time Streams aktivieren (Bitfield). */
@@ -861,6 +980,26 @@ export class OmniTribeBridge {
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("omnitribe:chord-user-slot", {
           detail: { slotIndex, intervals },
+        }));
+      }
+    }
+    // Sprint-135: FX-Preset-Response (CMD 0x10 SUB 0x03) — bank ‖ slot ‖ preset.
+    if (cmd === OtpCmd.FX && sub === FxSub.READ_PRESET_RESP && payload.length >= 2) {
+      const preset = decode7Bit(Uint8Array.from(payload.slice(2))).slice(0, FX_PRESET_SIZE);
+      // Unvollstaendige Antwort NICHT weiterreichen: ein halb gefuellter Preset
+      // sieht wie ein echter aus und wuerde still falsch dekodiert.
+      if (preset.length === FX_PRESET_SIZE && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent<FxPresetEvent>("omnitribe:fxPreset", {
+          detail: { bank: payload[0], slot: payload[1], preset },
+        }));
+      }
+    }
+    // Sprint-135: Groove-Response (CMD 0x10 SUB 0x08) — slot ‖ groove.
+    if (cmd === OtpCmd.FX && sub === FxSub.READ_GROOVE_RESP && payload.length >= 1) {
+      const groove = decode7Bit(Uint8Array.from(payload.slice(1))).slice(0, FX_GROOVE_SIZE);
+      if (groove.length === FX_GROOVE_SIZE && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent<FxGrooveEvent>("omnitribe:fxGroove", {
+          detail: { slot: payload[0], groove },
         }));
       }
     }

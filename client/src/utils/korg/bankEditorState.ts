@@ -657,3 +657,31 @@ export function displayCategory(s: OpenedSlot): string {
   if (s.empty) return "";
   return E2S_CATEGORY_NAMES[s.category] ?? "User";
 }
+
+/**
+ * v3.286 — Filter für den Slot-Browser.
+ *
+ * Wurde nötig, als die Offset-Tabelle auf ihre volle Länge korrigiert wurde:
+ * eine Hacktribe-Bank hat ihre User-Samples ab Index 501, davor stehen
+ * hunderte leere Slots. Ohne Filter müsste man die durchscrollen.
+ *
+ * Reihenfolge bleibt die Slot-Reihenfolge — es wird nur weggelassen, nie
+ * umsortiert. `hideEmpty` wirkt nicht auf geänderte Slots: was man gerade
+ * bearbeitet hat, darf nicht unter dem Cursor verschwinden.
+ *
+ * Suche trifft den Index (`5`, `005`, `#5`) oder den Namen (case-insensitive).
+ */
+export function filterOpenedSlots(
+  slots: ReadonlyArray<OpenedSlot>,
+  query: string,
+  hideEmpty: boolean,
+): OpenedSlot[] {
+  const q = (query ?? "").trim().toLowerCase().replace(/^#/, "");
+  return slots.filter((s) => {
+    if (hideEmpty && s.empty && !s.isDirty) return false;
+    if (q.length === 0) return true;
+    const idxStr = String(s.slotIndex);
+    if (idxStr === q || idxStr.padStart(3, "0") === q) return true;
+    return s.name.toLowerCase().includes(q);
+  });
+}

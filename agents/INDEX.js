@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.283.0",
+    version: "3.286.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,55 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-26T15:05:00.000Z",
+      done: [
+        "Release v3.286.0 — Offset-Tabelle des .all-Containers korrigiert. E2S_ALL_OFFSET_TABLE_START 0x07E0 -> 0x0058, E2S_MAX_SLOTS 250 -> 1002 (utils/korg/constants.ts). Der Befund kommt aus PR #21 (Fremd-Session, jetzt geschlossen); die Aufloesung stand aber schon fertig im Python-Editor: Korg_ESX_E2S_Editor TASK-029 hat sie 2026-05-19 gegen die Werks-e2sSample.all von 2014 UND 13 Dumps echter Geraete geklaert. Synthstudios TS-Port war gegenueber seiner eigenen deklarierten SoT (constants.py) veraltet.",
+        "WARUM 0x07E0 plausibel aussah: die Werksdatei belegt die Tabellen-Indizes 482..492, und 0x0058 + 482*4 == 0x07E0 — der erste nicht-null-Eintrag landete genau dort, die 482 Nullen davor gingen als reserved padding durch. Dieselben Bytes, falsch geschnitten. Deshalb blieb der Round-Trip die ganze Zeit bit-exakt und kein Test hat gemeckert: alle E2S-Suiten pruefen die Geometrie SYMBOLISCH (START + i*4), also die Konsistenz von Reader und Builder, nie die Uebereinstimmung mit dem Geraet.",
+        "PRAKTISCHE FOLGE: Hacktribe legt User-Samples ab Index 501 ab. Mit 250 Slots war jede Hacktribe-Bank unlesbar und der Builder hat solche Slots als out-of-range verworfen. Ab jetzt adressierbar bis 1001 (E2S_SLOT_INDEX_MAX = 1000 als UI-Grenze, die 2 letzten Tabellen-Eintraege sind reserviert).",
+        "Neue Exact-Fit-Invariante im Builder: START + BYTES muss == E2S_ALL_SAMPLE_AREA_START sein. Genau diese Rechnung haette den Fehler gezeigt (0x07E0 + 1000 = 0x0BC8 != 0x1000) — sie steht jetzt als Laufzeit-Check im Code und als Test.",
+        "filterOpenedSlots (utils/korg/bankEditorState.ts) + Suche/Leere-verbergen im Slot-Browser. Erst durch die Korrektur noetig: 1002 Zeilen, davon bei einer Hacktribe-Bank die ersten ~500 leer. hideEmpty laesst DIRTY-Slots stehen — ein gerade geleerter Slot darf nicht mitsamt ungespeicherter Aenderung unter dem Cursor verschwinden. Index-Suche matcht exakt, nicht per Substring (sonst trifft '77' auch #777).",
+        "BEWUSST NICHT mitgezogen: E2S_MAX_TOTAL_PCM_BYTES. Die SoT fuehrt seit TASK-029 24 MB (echtes Geraete-Limit), wir behalten 224 MB. Ein Absenken wuerde Banken zurueckweisen, die sich bisher bauen liessen — das ist eine Produktentscheidung, keine Formatkorrektur. Als Abweichung in constants.ts dokumentiert.",
+        "Gates: pnpm check clean, volle Suite 454 files / 10706 passed / 75 skipped (+19 Unit-Tests in tests/features/e2s-offset-table-layout.test.ts, die die Zahlen absichtlich LITERAL nennen — ein symbolischer Test kann einen falschen Wert nicht bemerken). 2 neue Playwright-Smokes (tests/web/korg-bank-slot-filter.spec.ts) laden eine handgebaute .all mit Sample auf Slot 501 durch die ganze Kette Datei -> Parser -> UI."
+      ],
+      next: [
+        "Am Geraet zu pruefen: eine echte Hacktribe-.all oeffnen und gegenlesen, ob die Sample-Nummern im Slot-Browser mit der Geraete-Anzeige uebereinstimmen. Die 0x0058/1002-Geometrie ist gegen 14 Dumps belegt, aber nicht von uns selbst nachgemessen — in diesem Container liegt kein .all-Fixture.",
+        "Offen aus der Vorwelle, unveraendert: source_control-Kodierung (Preset-Datei 0x41-0x4A vs RAM 0x01-0x0A) am Geraet klaeren; C-Handler fuer OTP CMD 0x10 (GATE-001-blockiert); Device->Parametername-Tabelle (braucht ht_fx_preset_format.py, hier 403).",
+        "E2S_MAX_TOTAL_PCM_BYTES: entscheiden, ob 24 MB hart, 24 MB als Warnung oder 224 MB bleibt.",
+        "Offen aus der Vorplanung: TASK-274 (SampleBrowser ~5463 LOC) + TASK-275 (DrumMachine ~4333 LOC).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: [
+        "client/src/utils/korg/constants.ts",
+        "client/src/utils/korg/e2sBankBuilder.ts",
+        "client/src/utils/korg/e2sBankReader.ts",
+        "client/src/utils/korg/bankEditorState.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/e2s-offset-table-layout.test.ts",
+        "tests/web/korg-bank-slot-filter.spec.ts"
+      ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-07-26T12:40:00.000Z",
+      done: [
+        "Release v3.285.0 — drei Korg-Wellen nachtraeglich versioniert. package.json + project.version standen noch auf 3.283.0, waehrend die Modul-Koepfe der neuen Dateien bereits v3.284.0/v3.285.0 auswiesen. Kein CHANGELOG (Historie lebt hier).",
+        "Welle 1 (682a547, PR #22): Live-Sysex-Pattern-Transfer im Sequencer (utils/korg/e2NativeSysex.ts + audio/E2NativeSysexTransfer.ts). Senden ausschliesslich in den Edit-Buffer (CMD 0x40), NIE in einen Slot (0x4C) — ein Fehlgriff kann kein gespeichertes Pattern auf der Korg ueberschreiben. Empfangen auf ALLEN Inputs mit isE2SysexFrame-Filter, Senden auf konfiguriertem Out mit Namensheuristik. Dazu MIDI-Eingangsfilter (utils/midiInputFilter.ts + store/useMidiInputFilterStore.ts): pro Geraet (per NAME, nicht Port-ID — Web-MIDI vergibt IDs pro Session neu) und pro Nachrichtenklasse, greift als Erstes im Handler. VERHALTENSAENDERUNG: useMidi hoert jetzt per Default auf ALLEN Eingaengen (vorher genau einer) — ohne das ist Korg + Fader-Controller gleichzeitig unmoeglich und ein Pro-Geraet-Mute haette nichts zu muten. Plus 1.5 ms Voice-Fade-in gegen Start-Klicks (VOICE_ATTACK_SEC).",
+        "Welle 2 (682a547 → 59d22c2, PR #22): Korg-Remote-Regelwerk mit fuenf Ziel-Arten. cc (Stock-CC auf Part-Kanal, 18 Params, ohne Hacktribe) + vier NRPN-Ziele (utils/korg/hacktribeNrpn.ts): panel (10 Pad-Modi — Mute/Solo/Trigger am Geraet), fxParam (flacher Slot (part-1)*2+slot, MFX=0x20), globalParam (14-bit-Split), seqParam (der EINZIGE MIDI-Weg zu Motion-Steps). Altformat-Migration in makeKorgRemoteRule: persistierte {part,param}-Regeln werden auf ein cc-Ziel gehoben, EINES der beiden Felder genuegt — eine halb beschriebene Altregel darf nicht stillschweigend auf Part 1 fallen (von einem Test gefunden, nicht vom Konzept).",
+        "Welle 3 (4550e40, PR #23): Per-Voice-Gain in AudioEngine. volume enthaelt die Step-Velocity und stand auf nodes.input.gain — dem GETEILTEN Kanal-Eingang. Jeder neue Step verbog damit rueckwirkend alle noch klingenden Voices desselben Parts. Jetzt auf dem Voice-Gain (Sample-Pfade) bzw. einem Wrapper-Gain pro Note (Synth-Pfad via triggerNote-destination). KORREKTUR einer frueheren Diagnose: bei PAN gibt es das Problem NICHT — scheduled.pan ist part.pan, pro Part konstant. Pan bleibt am Kanal-Panner; die Unterscheidung ist in Code UND Test festgehalten, damit sie nicht spaeter 'vereinheitlicht' wird. Nebeneffekt: Volume-Parameter-Lock haelt jetzt (vorher vom naechsten Trigger ueberschrieben).",
+        "Welle 3 zusaetzlich: map_fx_param-Formular (verdrahtet Geraete-Regler dauerhaft mit FX-Parametern) + RAM-Werkzeug fuer Hacktribe-Sysex 0x52/0x53/0x54 (utils/korg/hacktribeRam.ts + audio/HacktribeRamTransfer.ts + DrumMachine/HacktribeRamPanel.tsx). Schutz: DDR2-Fenster hart begrenzt (Boot-Loader ab 0x80000000 wird ABGELEHNT, nicht mit Rueckfrage durchgelassen), zwei Bestaetigungen pro Write, Haeppchen a 0x100 B mit ACK, Read-Back nicht optional, Abbruch beim ersten Fehler mit Angabe der bereits geschriebenen Bytes. Flash (0x55/0x56), Execute (0x57), Loader (0x58) BEWUSST nicht angebunden — ein RAM-Fehler ist mit Power-Cycle behoben, ein Flash-Fehler nicht. Ein Test haelt fest, dass diese Kommandos nicht in RAM_CMD auftauchen.",
+        "Gates ueber alle drei Wellen: pnpm check clean, volle Suite 450 files / 10616 passed / 12 skipped (+220 neue Unit-Tests), 8 neue Playwright-Smokes im blockierenden Pfad. CI auf 4550e40: Type-Check + Unit-Tests gruen, Playwright Browser-Tests gruen."
+      ],
+      next: [
+        "Naechster Schritt Synthstudio: FX-Preset-Inspektor (utils/korg/e2FxPreset.ts). Das RAM-Werkzeug liefert heute nur Hex; map_fx_param ist schreibend aber NICHT nachpruefbar. Die 21 IFX- + 26 MFX-Device-IDs und das fx_control-Layout stehen in omnitribe/docs/reverse/hacktribe_ram_and_formats.md §2 — Param-NAMEN braeuchten ht_fx_preset_format.py (bangcorrupt, in dieser Sitzung nicht erreichbar: 403).",
+        "FALLSTRICK fuer den Inspektor: source_control hat ZWEI Kodierungen — Preset-Datei 0x41-0x4A, RAM 0x01-0x0A. Wir lesen aus RAM, also RAM als Default, bewiesen ist es nicht. Am Geraet zu klaeren: fxEditX per Formular setzen, Slot zuruecklesen, schauen ob 0x42 oder 0x02 im Byte steht.",
+        "Am Geraet ungeprueft: der gesamte Korg-Live-Pfad. Gefahrlosester Einstieg — einen IFX-Preset-Slot lesen (reiner Read), dann UNVERAENDERT zurueckschreiben; Read-Back muss 'identisch' melden. Prueft Chunking, ACK und Verifikation am Stueck ohne irgendetwas zu aendern.",
+        "Offen aus der Vorplanung: TASK-274 (SampleBrowser ~5463 LOC) + TASK-275 (DrumMachine ~4333 LOC, Kandidat makeE2sSampleResolver).",
+        "Audio/Sim-Playwright non-blocking rot (TASK-262-Env-Gate) — unveraendert bewusst akzeptiert."
+      ],
+      changed: []
+    },
     {
       agent:     "coordinator",
       timestamp: "2026-06-19T14:40:00.000Z",
