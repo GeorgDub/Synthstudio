@@ -49,7 +49,14 @@ function readManifest(): SyncManifest {
 }
 
 function sha256(path: string): string {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+  // Zeilenenden normalisieren (CRLF -> LF). Ohne das waere der Hash
+  // plattformabhaengig: unter Windows liegt die Arbeitskopie mit CRLF vor,
+  // git speichert und CI checkt LF aus — der Test schlug dann an, obwohl die
+  // Dateien inhaltlich identisch waren. Genau das ist in CI passiert.
+  const CR = String.fromCharCode(13);
+  const LF = String.fromCharCode(10);
+  const data = readFileSync(path, "utf8").split(CR + LF).join(LF);
+  return createHash("sha256").update(data, "utf8").digest("hex");
 }
 
 describe("OmniTribe-Spiegel: Drift-Gate", () => {
