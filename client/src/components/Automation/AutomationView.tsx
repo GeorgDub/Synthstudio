@@ -5,21 +5,43 @@
  * Jede Lane zeigt 16/32 Steps als klick-/ziehbare Balken.
  */
 import React, { useCallback, useRef, useState } from "react";
-import type { AutomationLane, AutomationTarget } from "@/store/useAutomationStore";
+import type {
+  AutomationLane,
+  AutomationTarget,
+} from "@/store/useAutomationStore";
 import type { PartData } from "@/audio/AudioEngine";
 
 // ─── Preset-Targets ───────────────────────────────────────────────────────────
 
-function buildTargetOptions(parts: PartData[]): Array<{ value: AutomationTarget; label: string; group: string }> {
-  const opts: Array<{ value: AutomationTarget; label: string; group: string }> = [
-    { value: "bpm",        label: "BPM",          group: "Global" },
-    { value: "master-vol", label: "Master Volume", group: "Global" },
-  ];
+function buildTargetOptions(
+  parts: PartData[]
+): Array<{ value: AutomationTarget; label: string; group: string }> {
+  const opts: Array<{ value: AutomationTarget; label: string; group: string }> =
+    [
+      { value: "bpm", label: "BPM", group: "Global" },
+      { value: "master-vol", label: "Master Volume", group: "Global" },
+    ];
   for (const p of parts) {
-    opts.push({ value: `vol:${p.id}`,      label: `${p.name} – Volume`,  group: "Kanäle" });
-    opts.push({ value: `pan:${p.id}`,      label: `${p.name} – Pan`,     group: "Kanäle" });
-    opts.push({ value: `send-rev:${p.id}`, label: `${p.name} – Reverb`,  group: "Sends" });
-    opts.push({ value: `send-dly:${p.id}`, label: `${p.name} – Delay`,   group: "Sends" });
+    opts.push({
+      value: `vol:${p.id}`,
+      label: `${p.name} – Volume`,
+      group: "Kanäle",
+    });
+    opts.push({
+      value: `pan:${p.id}`,
+      label: `${p.name} – Pan`,
+      group: "Kanäle",
+    });
+    opts.push({
+      value: `send-rev:${p.id}`,
+      label: `${p.name} – Reverb`,
+      group: "Sends",
+    });
+    opts.push({
+      value: `send-dly:${p.id}`,
+      label: `${p.name} – Delay`,
+      group: "Sends",
+    });
   }
   return opts;
 }
@@ -37,43 +59,66 @@ interface LaneEditorProps {
   onClear: () => void;
 }
 
-function LaneEditor({ lane, stepCount, currentStep, onSetPoint, onClearPoint, onToggleEnabled, onRemove, onClear }: LaneEditorProps) {
+function LaneEditor({
+  lane,
+  stepCount,
+  currentStep,
+  onSetPoint,
+  onClearPoint,
+  onToggleEnabled,
+  onRemove,
+  onClear,
+}: LaneEditorProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
   const valueToHeight = (v: number) =>
     Math.round(((v - lane.min) / (lane.max - lane.min)) * 100);
 
-  const posToValue = (clientX: number, clientY: number): { step: number; value: number } | null => {
+  const posToValue = (
+    clientX: number,
+    clientY: number
+  ): { step: number; value: number } | null => {
     const el = barRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     const step = Math.floor(((clientX - rect.left) / rect.width) * stepCount);
     const rawValue = 1 - (clientY - rect.top) / rect.height;
-    const value = lane.min + Math.max(0, Math.min(1, rawValue)) * (lane.max - lane.min);
+    const value =
+      lane.min + Math.max(0, Math.min(1, rawValue)) * (lane.max - lane.min);
     if (step < 0 || step >= stepCount) return null;
     return { step, value };
   };
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0 && e.button !== 2) return;
-    e.preventDefault();
-    dragging.current = true;
-    const pos = posToValue(e.clientX, e.clientY);
-    if (!pos) return;
-    if (e.button === 2) { onClearPoint(pos.step); return; }
-    onSetPoint(pos.step, pos.value);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0 && e.button !== 2) return;
+      e.preventDefault();
+      dragging.current = true;
+      const pos = posToValue(e.clientX, e.clientY);
+      if (!pos) return;
+      if (e.button === 2) {
+        onClearPoint(pos.step);
+        return;
+      }
+      onSetPoint(pos.step, pos.value);
 
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current) return;
-      const p = posToValue(ev.clientX, ev.clientY);
-      if (p) onSetPoint(p.step, p.value);
-    };
-    const onUp = () => { dragging.current = false; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lane, stepCount, onSetPoint, onClearPoint]);
+      const onMove = (ev: MouseEvent) => {
+        if (!dragging.current) return;
+        const p = posToValue(ev.clientX, ev.clientY);
+        if (p) onSetPoint(p.step, p.value);
+      };
+      const onUp = () => {
+        dragging.current = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [lane, stepCount, onSetPoint, onClearPoint]
+  );
 
   const formatValue = (v: number) => {
     if (lane.target === "bpm") return `${Math.round(v)}`;
@@ -88,16 +133,32 @@ function LaneEditor({ lane, stepCount, currentStep, onSetPoint, onClearPoint, on
         <button
           onClick={() => onToggleEnabled(!lane.enabled)}
           className={`w-3 h-3 rounded-full border-2 flex-shrink-0 transition-colors ${
-            lane.enabled ? "bg-accent-primary border-accent-primary" : "border-border-color bg-transparent"
+            lane.enabled
+              ? "bg-accent-primary border-accent-primary"
+              : "border-border-color bg-transparent"
           }`}
           title={lane.enabled ? "Deaktivieren" : "Aktivieren"}
         />
-        <span className="text-xs font-medium text-text-primary flex-1 truncate">{lane.label}</span>
+        <span className="text-xs font-medium text-text-primary flex-1 truncate">
+          {lane.label}
+        </span>
         <span className="text-[10px] text-text-dim font-mono">
           {lane.min} – {lane.max}
         </span>
-        <button onClick={onClear} title="Lane leeren" className="text-[10px] text-text-dim hover:text-accent-danger px-1">✕✕</button>
-        <button onClick={onRemove} title="Lane löschen" className="text-[10px] text-text-dim hover:text-accent-danger px-1">🗑</button>
+        <button
+          onClick={onClear}
+          title="Lane leeren"
+          className="text-[10px] text-text-dim hover:text-accent-danger px-1"
+        >
+          ✕✕
+        </button>
+        <button
+          onClick={onRemove}
+          title="Lane löschen"
+          className="text-[10px] text-text-dim hover:text-accent-danger px-1"
+        >
+          🗑
+        </button>
       </div>
 
       {/* Step Bars */}
@@ -116,19 +177,28 @@ function LaneEditor({ lane, stepCount, currentStep, onSetPoint, onClearPoint, on
           // Interpolierten Wert zeigen wenn kein direkter Punkt
           let interpPct: number | null = null;
           if (pct === null) {
-            const keys = Object.keys(lane.points).map(Number).sort((a, b) => a - b);
+            const keys = Object.keys(lane.points)
+              .map(Number)
+              .sort((a, b) => a - b);
             if (keys.length >= 2) {
               const prev = keys.filter(k => k < i).pop();
               const next = keys.find(k => k > i);
               if (prev !== undefined && next !== undefined) {
                 const t = (i - prev) / (next - prev);
-                interpPct = valueToHeight(lane.points[prev] + t * (lane.points[next] - lane.points[prev]));
+                interpPct = valueToHeight(
+                  lane.points[prev] +
+                    t * (lane.points[next] - lane.points[prev])
+                );
               }
             }
           }
 
           return (
-            <div key={i} className="flex-1 flex flex-col-reverse relative" style={{ minWidth: 4 }}>
+            <div
+              key={i}
+              className="flex-1 flex flex-col-reverse relative"
+              style={{ minWidth: 4 }}
+            >
               {/* Interpolierter Verlauf (gestrichelt) */}
               {interpPct !== null && (
                 <div
@@ -158,7 +228,10 @@ function LaneEditor({ lane, stepCount, currentStep, onSetPoint, onClearPoint, on
               )}
               {/* Playhead */}
               {isCurrentStep && (
-                <div className="absolute inset-0 border-l-2 border-accent-secondary pointer-events-none" style={{ opacity: 0.7 }} />
+                <div
+                  className="absolute inset-0 border-l-2 border-accent-secondary pointer-events-none"
+                  style={{ opacity: 0.7 }}
+                />
               )}
             </div>
           );
@@ -172,7 +245,7 @@ function LaneEditor({ lane, stepCount, currentStep, onSetPoint, onClearPoint, on
 
 export interface AutomationViewProps {
   lanes: AutomationLane[];
-  stepCount: 16 | 32 | 64;
+  stepCount: 16 | 32 | 64 | 128;
   currentStep?: number;
   parts: PartData[];
   recording: boolean;
@@ -187,8 +260,18 @@ export interface AutomationViewProps {
 }
 
 export function AutomationView({
-  lanes, stepCount, currentStep, parts, recording,
-  onAddLane, onRemoveLane, onSetPoint, onClearPoint, onClearLane, onToggleLane, onToggleRecording,
+  lanes,
+  stepCount,
+  currentStep,
+  parts,
+  recording,
+  onAddLane,
+  onRemoveLane,
+  onSetPoint,
+  onClearPoint,
+  onClearLane,
+  onToggleLane,
+  onToggleRecording,
 }: AutomationViewProps) {
   const [selectedTarget, setSelectedTarget] = useState<AutomationTarget>("bpm");
   const targetOptions = buildTargetOptions(parts);
@@ -202,7 +285,9 @@ export function AutomationView({
     <div className="h-full flex flex-col overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border-color bg-bg-panel flex-shrink-0">
-        <span className="text-xs font-bold text-text-dim uppercase tracking-widest">Automation</span>
+        <span className="text-xs font-bold text-text-dim uppercase tracking-widest">
+          Automation
+        </span>
 
         {/* Record-Button */}
         <button
@@ -231,7 +316,9 @@ export function AutomationView({
             return (
               <optgroup key={group} label={group}>
                 {opts.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
               </optgroup>
             );
@@ -251,7 +338,9 @@ export function AutomationView({
           <div className="flex flex-col items-center justify-center h-32 text-text-dim text-sm gap-2">
             <span className="text-2xl opacity-40">🎛</span>
             <span>Keine Automation-Lanes</span>
-            <span className="text-xs text-text-dim">Wähle einen Parameter und klicke "+ Lane"</span>
+            <span className="text-xs text-text-dim">
+              Wähle einen Parameter und klicke "+ Lane"
+            </span>
           </div>
         ) : (
           lanes.map(lane => (
@@ -272,7 +361,8 @@ export function AutomationView({
 
       {lanes.length > 0 && (
         <div className="px-3 py-1.5 border-t border-border-color bg-bg-panel text-[10px] text-text-dim flex-shrink-0">
-          Linksklick: Wert setzen · Rechtsklick: Punkt löschen · Ziehen: Verlauf zeichnen
+          Linksklick: Wert setzen · Rechtsklick: Punkt löschen · Ziehen: Verlauf
+          zeichnen
         </div>
       )}
     </div>

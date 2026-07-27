@@ -16,10 +16,34 @@ export interface ImportedPart {
   name: string;
   /** Optionaler Sample-Name (nicht-bindend, nur Metadata) */
   sampleName?: string;
+  /**
+   * Sample-Slot-Referenz aus dem Quellformat (ESX-1: part.sampleId ==
+   * EsxSample.index). Bleibt beim Load-Pfad erhalten, damit der Controller
+   * das PCM des passenden Bank-Slots als Blob-URL nachreichen kann.
+   */
+  sampleId?: number;
+  /**
+   * Blob-/Object-URL des zugeordneten Samples. Wird vom Import-Controller
+   * (Browser) via `attachSampleUrlsToImportResult` nachgereicht — dann spielt
+   * der Sequencer die importierten Steps HÖRBAR ab statt stumm.
+   */
+  sampleUrl?: string;
   /** Liste von Steps (i.d.R. 16 oder 32) */
   steps: ImportedStep[];
   volume?: number; // 0-1
-  pan?: number;    // -1..+1
+  pan?: number; // -1..+1
+  /** v3.287: Mute-Zustand (z.B. aus ESX-Pattern-muteStatus). Default false. */
+  muted?: boolean;
+  /**
+   * v3.293: Per-Part Filter aus dem Quellformat (ESX-1 verifiziert). Wird beim
+   * Load auf die ChannelFx des Parts angewandt. Undefined = kein/neutraler Filter.
+   */
+  filter?: {
+    enabled: boolean;
+    type: "lowpass" | "highpass" | "bandpass" | "notch";
+    freq: number;
+    q: number;
+  };
 }
 
 export interface ImportedPattern {
@@ -105,7 +129,10 @@ export interface ImportResult {
 }
 
 export class ImportError extends Error {
-  constructor(message: string, public format: string) {
+  constructor(
+    message: string,
+    public format: string
+  ) {
     super(message);
     this.name = "ImportError";
   }

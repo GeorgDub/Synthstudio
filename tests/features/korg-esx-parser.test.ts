@@ -63,7 +63,10 @@ function buildMinimalEsxBuffer(opts: {
 
   // PCM-Bereich Größe: alle frames * 2 bytes (mono) + alle frames * 4 bytes (stereo, L+R)
   const monoBytes = monoSamples.reduce((acc, s) => acc + s.pcmFrames * 2, 0);
-  const stereoBytes = stereoSamples.reduce((acc, s) => acc + s.pcmFrames * 4, 0);
+  const stereoBytes = stereoSamples.reduce(
+    (acc, s) => acc + s.pcmFrames * 4,
+    0
+  );
   const totalPcm = monoBytes + stereoBytes;
 
   const baseSize = ESX1_SIZE_FILE_MIN + totalPcm + 1024; // header + min + PCM + padding
@@ -83,16 +86,19 @@ function buildMinimalEsxBuffer(opts: {
   dv.setUint32(
     ESX1_ADDR_NUM_MONO_SAMPLES + 8,
     opts.declaredCurrentOffset ?? totalPcm,
-    false,
+    false
   );
 
   // Mono-Headers: setze die ersten N als belegt, Rest auf EMPTY_OFFSET
   let pcmCursor = 0;
   for (let i = 0; i < 256; i++) {
-    const off = ESX1_ADDR_SAMPLE_HEADER_MONO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
+    const off =
+      ESX1_ADDR_SAMPLE_HEADER_MONO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
     if (i < monoSamples.length) {
       const sm = monoSamples[i];
-      const nameBytes = new TextEncoder().encode(sm.name.padEnd(8, "\0")).subarray(0, 8);
+      const nameBytes = new TextEncoder()
+        .encode(sm.name.padEnd(8, "\0"))
+        .subarray(0, 8);
       buf.set(nameBytes, off);
       const lenBytes = sm.pcmFrames * 2;
       dv.setUint32(off + 8, pcmCursor, false); // off1Start
@@ -122,7 +128,9 @@ function buildMinimalEsxBuffer(opts: {
       ESX1_ADDR_SAMPLE_HEADER_STEREO + i * ESX1_CHUNKSIZE_SAMPLE_HEADER_STEREO;
     if (i < stereoSamples.length) {
       const ss = stereoSamples[i];
-      const nameBytes = new TextEncoder().encode(ss.name.padEnd(8, "\0")).subarray(0, 8);
+      const nameBytes = new TextEncoder()
+        .encode(ss.name.padEnd(8, "\0"))
+        .subarray(0, 8);
       buf.set(nameBytes, off);
       const channelLen = ss.pcmFrames * 2;
       const off1Start = pcmCursor;
@@ -146,7 +154,7 @@ function buildMinimalEsxBuffer(opts: {
       }
       // PCM R
       for (let k = 0; k < ss.pcmFrames; k++) {
-        const v = ((k * 200) + 5000) & 0x7fff;
+        const v = (k * 200 + 5000) & 0x7fff;
         buf[ESX1_ADDR_SAMPLE_DATA + off2Start + k * 2] = (v >> 8) & 0xff;
         buf[ESX1_ADDR_SAMPLE_DATA + off2Start + k * 2 + 1] = v & 0xff;
       }
@@ -215,9 +223,9 @@ describe("korg/esxParser — magic + sample-count validation", () => {
     buf[0] = 0x00;
     const bank = parseEsxBank(buf);
     expect(bank.monoSamples).toEqual([]);
-    expect(bank.warnings.some((w) => /variant header|unsupported variant/i.test(w))).toBe(
-      true,
-    );
+    expect(
+      bank.warnings.some(w => /variant header|unsupported variant/i.test(w))
+    ).toBe(true);
   });
 
   it("returns empty bank + warning on invalid sub-magic (v3.90.0: variant-format tolerance)", () => {
@@ -225,7 +233,9 @@ describe("korg/esxParser — magic + sample-count validation", () => {
     buf[ESX1_SUBMAGIC_OFFSET] = 0x00;
     const bank = parseEsxBank(buf);
     expect(bank.monoSamples).toEqual([]);
-    expect(bank.warnings.some((w) => /unsupported sub-format/i.test(w))).toBe(true);
+    expect(bank.warnings.some(w => /unsupported sub-format/i.test(w))).toBe(
+      true
+    );
   });
 
   it("throws when second magic is missing", () => {
@@ -289,8 +299,8 @@ describe("korg/esxParser — parse mono samples", () => {
     });
     const bank = parseEsxBank(buf);
     expect(bank.monoSamples).toHaveLength(3);
-    expect(bank.monoSamples.map((s) => s.name)).toEqual(["A", "B", "C"]);
-    expect(bank.monoSamples.map((s) => s.frames)).toEqual([50, 75, 100]);
+    expect(bank.monoSamples.map(s => s.name)).toEqual(["A", "B", "C"]);
+    expect(bank.monoSamples.map(s => s.frames)).toEqual([50, 75, 100]);
   });
 });
 
@@ -349,7 +359,8 @@ describe("korg/esxParser — defensive parsing", () => {
       monoSamples: [{ name: "OK", pcmFrames: 50 }],
     });
     // Schreibe Slot 1 (zweiter Mono-Slot) mit invertierten Offsets
-    const off2 = ESX1_ADDR_SAMPLE_HEADER_MONO + 1 * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
+    const off2 =
+      ESX1_ADDR_SAMPLE_HEADER_MONO + 1 * ESX1_CHUNKSIZE_SAMPLE_HEADER_MONO;
     const dv = new DataView(buf.buffer);
     dv.setUint32(off2 + 8, 100, false); // off1Start
     dv.setUint32(off2 + 12, 50, false); // off1End (kleiner als Start!)
@@ -368,12 +379,72 @@ describe("korg/esxParser — defensive parsing", () => {
   });
 });
 
+// ─── headersOnly Parse-Modus (v3.285) ────────────────────────────────────────
+
+describe("parseEsxBank — headersOnly", () => {
+  it("liest alle Metadaten, aber pcmData bleibt leer", () => {
+    const buf = buildMinimalEsxBuffer({
+      monoSamples: [
+        { name: "Kick", pcmFrames: 64, sampleRate: 44100 },
+        { name: "Snare", pcmFrames: 32, sampleRate: 32000 },
+      ],
+      stereoSamples: [{ name: "Loop", pcmFrames: 48, sampleRate: 48000 }],
+    });
+    const full = parseEsxBank(buf, "full");
+    const heads = parseEsxBank(buf, "heads", { headersOnly: true });
+
+    // Gleiche Slot-Zahlen + Metadaten
+    expect(heads.monoSamples).toHaveLength(full.monoSamples.length);
+    expect(heads.stereoSamples).toHaveLength(full.stereoSamples.length);
+    for (let i = 0; i < full.monoSamples.length; i++) {
+      expect(heads.monoSamples[i].name).toBe(full.monoSamples[i].name);
+      expect(heads.monoSamples[i].frames).toBe(full.monoSamples[i].frames);
+      expect(heads.monoSamples[i].sampleRate).toBe(
+        full.monoSamples[i].sampleRate
+      );
+      expect(heads.monoSamples[i].index).toBe(full.monoSamples[i].index);
+    }
+    expect(heads.stereoSamples[0].frames).toBe(full.stereoSamples[0].frames);
+
+    // pcmData ist im headersOnly-Modus leer, im Full-Modus gefüllt
+    for (const s of heads.monoSamples) expect(s.pcmData.length).toBe(0);
+    for (const s of heads.stereoSamples) expect(s.pcmData.length).toBe(0);
+    expect(full.monoSamples[0].pcmData.length).toBeGreaterThan(0);
+    expect(full.stereoSamples[0].pcmData.length).toBeGreaterThan(0);
+  });
+
+  it("frames stimmen exakt mit Full-Parse überein (mono + stereo)", () => {
+    const buf = buildMinimalEsxBuffer({
+      monoSamples: [{ name: "A", pcmFrames: 100 }],
+      stereoSamples: [{ name: "B", pcmFrames: 77 }],
+    });
+    const heads = parseEsxBank(buf, "heads", { headersOnly: true });
+    expect(heads.monoSamples[0].frames).toBe(100);
+    // Stereo: interleaved frames-count == per-channel frames
+    expect(heads.stereoSamples[0].frames).toBe(77);
+  });
+
+  it("headersOnly:false (default) verhält sich wie ohne opts", () => {
+    const buf = buildMinimalEsxBuffer({
+      monoSamples: [{ name: "X", pcmFrames: 16 }],
+    });
+    const a = parseEsxBank(buf, "s");
+    const b = parseEsxBank(buf, "s", { headersOnly: false });
+    expect(b.monoSamples[0].pcmData.length).toBe(
+      a.monoSamples[0].pcmData.length
+    );
+    expect(b.monoSamples[0].pcmData.length).toBeGreaterThan(0);
+  });
+});
+
 // ─── OPTIONAL: Real-File-Tests via fs (Korg ESX files/) ──────────────────────
 
 const REAL_FILES_DIR = path.resolve(__dirname, "../../Korg ESX files");
 const REAL_FILES_AVAILABLE = (() => {
   try {
-    return fs.existsSync(REAL_FILES_DIR) && fs.statSync(REAL_FILES_DIR).isDirectory();
+    return (
+      fs.existsSync(REAL_FILES_DIR) && fs.statSync(REAL_FILES_DIR).isDirectory()
+    );
   } catch {
     return false;
   }
@@ -383,15 +454,20 @@ const describeReal = REAL_FILES_AVAILABLE ? describe : describe.skip;
 
 describeReal("korg/esxParser — real-file Smoke (Korg ESX files/)", () => {
   it("parses at least one real .esx file without throwing", () => {
-    const files = fs.readdirSync(REAL_FILES_DIR).filter((f) =>
-      f.toLowerCase().endsWith(".esx"),
-    );
+    const files = fs
+      .readdirSync(REAL_FILES_DIR)
+      .filter(f => f.toLowerCase().endsWith(".esx"));
     if (files.length === 0) return; // no files → skip silently
     const filePath = path.join(REAL_FILES_DIR, files[0]);
     const bytes = fs.readFileSync(filePath);
-    const bank = parseEsxBank(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), files[0]);
+    const bank = parseEsxBank(
+      new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+      files[0]
+    );
     expect(bank.source).toBe(files[0]);
     // Real-File hat in der Regel zumindest einige Samples
-    expect(bank.monoSamples.length + bank.stereoSamples.length).toBeGreaterThanOrEqual(0);
+    expect(
+      bank.monoSamples.length + bank.stereoSamples.length
+    ).toBeGreaterThanOrEqual(0);
   });
 });

@@ -25,7 +25,13 @@
  * der Caller rendert sie an einer beliebigen Stelle (z.B. neben dem Slider).
  * Sie positioniert sich selbst absolut anhand der Klick-Koordinaten.
  */
-import { useCallback, useEffect, useState, type ReactNode, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+  type MouseEvent,
+} from "react";
 import {
   type MidiLearnTarget,
   type MidiState,
@@ -46,6 +52,8 @@ export interface UseMidiLearnResult {
   learn: () => void;
   /** Vorhandenes Mapping entfernen. */
   unbind: () => void;
+  /** MIDI-Kanal des bestehenden Mappings ändern (0 = alle, 1–16 = fest). */
+  setChannel: (channel: number) => void;
   /** ReactNode für die Context-Menu-Anzeige — vom Caller rendern lassen. */
   menu: ReactNode;
 }
@@ -58,13 +66,15 @@ export interface UseMidiLearnResult {
  */
 export function useMidiLearn(
   target: MidiLearnTarget,
-  midiOverride?: MidiState & MidiActions,
+  midiOverride?: MidiState & MidiActions
 ): UseMidiLearnResult {
   const contextMidi = useMidiContext();
   const midi = midiOverride ?? contextMidi;
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 
-  const existing = midi ? findMappingForTarget(midi.mappings, target) : undefined;
+  const existing = midi
+    ? findMappingForTarget(midi.mappings, target)
+    : undefined;
   const isMapped = !!existing;
   const mappedCC = existing?.cc ?? null;
 
@@ -81,11 +91,23 @@ export function useMidiLearn(
     setMenuPos(null);
   }, [midi, existing]);
 
-  const onContextMenu = useCallback((e: MouseEvent) => {
-    if (!midi || !midi.isEnabled) return; // ohne Web-MIDI keine Bind-Aktion
-    e.preventDefault();
-    setMenuPos({ x: e.clientX, y: e.clientY });
-  }, [midi]);
+  const setChannel = useCallback(
+    (channel: number) => {
+      if (!midi) return;
+      midi.setMappingChannel(target, channel);
+      // Menü offen lassen — der User will ggf. direkt den Kanal prüfen/ändern.
+    },
+    [midi, target]
+  );
+
+  const onContextMenu = useCallback(
+    (e: MouseEvent) => {
+      if (!midi || !midi.isEnabled) return; // ohne Web-MIDI keine Bind-Aktion
+      e.preventDefault();
+      setMenuPos({ x: e.clientX, y: e.clientY });
+    },
+    [midi]
+  );
 
   // Click-outside / Escape schließt das Menu
   useEffect(() => {
@@ -110,8 +132,11 @@ export function useMidiLearn(
   const menu: ReactNode = menuPos ? (
     <div
       className="fixed z-[200] bg-bg-panel border border-border-color rounded shadow-lg min-w-[180px] py-1 text-xs"
-      style={{ left: Math.min(menuPos.x, window.innerWidth - 220), top: Math.min(menuPos.y, window.innerHeight - 120) }}
-      onClick={(e) => e.stopPropagation()}
+      style={{
+        left: Math.min(menuPos.x, window.innerWidth - 220),
+        top: Math.min(menuPos.y, window.innerHeight - 120),
+      }}
+      onClick={e => e.stopPropagation()}
       data-testid="midi-learn-context-menu"
     >
       <div className="px-3 py-1.5 text-text-dim text-[10px] uppercase tracking-wider border-b border-border-color">
@@ -120,11 +145,33 @@ export function useMidiLearn(
       {isMapped ? (
         <>
           <div className="px-3 py-1.5 text-text-muted">
-            Gebunden: <span className="text-accent-secondary font-mono">CC{mappedCC}</span>
+            Gebunden:{" "}
+            <span className="text-accent-secondary font-mono">
+              CC{mappedCC}
+            </span>
             {existing && existing.channel > 0 && (
               <span className="text-text-dim ml-1">Ch{existing.channel}</span>
             )}
           </div>
+          {/* FL-Studio-artige Kanal-Wahl: das gelernte Mapping gezielt an ein
+              Gerät binden (z.B. den Kanal deiner Akai MIDImix) oder auf „alle"
+              Kanäle öffnen. */}
+          <label className="flex items-center gap-2 px-3 py-1.5 text-text-muted">
+            <span className="shrink-0">MIDI-Kanal:</span>
+            <select
+              value={existing?.channel ?? 0}
+              onChange={e => setChannel(Number(e.target.value))}
+              className="flex-1 bg-bg-elevated border border-border-color rounded px-1 py-0.5 text-text-primary"
+              data-testid="midi-learn-channel-select"
+            >
+              <option value={0}>Alle Kanäle</option>
+              {Array.from({ length: 16 }, (_, i) => i + 1).map(ch => (
+                <option key={ch} value={ch}>
+                  Kanal {ch}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             onClick={learn}
             className="w-full text-left px-3 py-1.5 hover:bg-accent-primary/20 text-text-primary"
@@ -149,5 +196,5 @@ export function useMidiLearn(
     </div>
   ) : null;
 
-  return { onContextMenu, isMapped, mappedCC, learn, unbind, menu };
+  return { onContextMenu, isMapped, mappedCC, learn, unbind, setChannel, menu };
 }

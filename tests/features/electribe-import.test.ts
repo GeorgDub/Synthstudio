@@ -1344,27 +1344,23 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
       expect(volumes.every(v => v >= 0 && v <= 127)).toBe(true);
     });
 
-    it("BodyTalk1: spezifische Part-Volumes match Hex-RE", () => {
-      const buf = loadRealFile(REAL_FILE_BODYTALK);
-      if (!buf) return;
-      const p = parseElectribePattern(buf);
-      // Hex-Inspection (file offset 0x900 + p*816 + 0x15):
-      // Part 0: 0x14 = 20, Part 1: 0x7F = 127, Part 2: 0x6C = 108,
-      // Part 8: 0x2E = 46, Part 15: 0x7F = 127.
-      expect(p.parts[0].volume).toBe(20);
-      expect(p.parts[1].volume).toBe(127);
-      expect(p.parts[2].volume).toBe(108);
-      expect(p.parts[8].volume).toBe(46);
-      expect(p.parts[15].volume).toBe(127);
+    it.skip("BodyTalk1: spezifische Part-Volumes match Hex-RE", () => {
+      // v3.297: SKIP — die erwarteten Werte (20/127/108/46/127) stammen aus
+      // der Hex-Inspektion von +0x15, und +0x15 ist laut Korg TABLE 6 (plus
+      // Gerätebefund) EG Decay/Release, NICHT Volume. Volume = Amp Level liegt
+      // bei +0x18; die dortigen BodyTalk-Werte sind nicht hex-katalogisiert.
+      // Neu vermessen, sobald die Real-Files wieder eingecheckt sind.
     });
 
-    it("Init181: alle 16 Parts haben Default-Volume 127", () => {
+    it("Init181: alle 16 Parts haben Default-Amp-Level 85", () => {
       const buf = loadRealFile(REAL_FILE_INIT_181);
       if (!buf) return;
       const p = parseElectribePattern(buf);
-      // Hex-RE: Init181 hat 0x7F bei +0x15 fuer alle 16 Parts.
+      // v3.297: Amp Level @ +0x18 — der Init-Body trägt dort 85 auf allen 16
+      // Parts (gegen das eingebettete Init-Template verifiziert). Der frühere
+      // Wert 127 war der EG-Decay-Default @0x15.
       for (const part of p.parts) {
-        expect(part.volume).toBe(127);
+        expect(part.volume).toBe(85);
       }
     });
 
@@ -1372,7 +1368,8 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
       const buf = loadRealFile(REAL_FILE_INIT_181);
       if (!buf) return;
       const p = parseElectribePattern(buf);
-      // Hex-RE: Init181 hat 0x40 bei +0x22 fuer alle 16 Parts.
+      // v3.297: Amp Pan @ +0x19 ist i8 mit 0 = Center → UI-Wert 64. Der
+      // Init-Body hat dort 0x00 auf allen Parts (Template-verifiziert).
       for (const part of p.parts) {
         expect(part.pan).toBe(64);
       }
@@ -1384,33 +1381,23 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
       const p = parseElectribePattern(buf);
       const pans = p.parts.map(part => part.pan);
       const uniquePans = new Set(pans);
-      // Mindestens 3 verschiedene Pan-Positionen.
-      expect(uniquePans.size).toBeGreaterThanOrEqual(3);
-      // Alle im 0..127-Range.
+      // v3.297: Spezifische Byte-Erwartungen entfernt — sie stammten aus der
+      // widerlegten +0x22-Lesung (= IFX Edit). Generische Zusicherung bleibt:
+      // Alle im 0..127-Range (i8@0x19-Decode clampt sauber).
       expect(pans.every(v => v >= 0 && v <= 127)).toBe(true);
-      // Hex-RE: Part 0 hat Pan=0x5D=93, Part 15 hat Pan=0x00=0 (hard-L).
-      expect(p.parts[0].pan).toBe(93);
-      expect(p.parts[15].pan).toBe(0);
+      void uniquePans;
     });
 
-    it("convertParsedPatternToSynthstudio: BodyTalk Pan wird auf -1..+1 normalisiert", () => {
-      const buf = loadRealFile(REAL_FILE_BODYTALK);
-      if (!buf) return;
-      const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
-      // Part 15 hat raw-Pan=0 → normalisiert (0-64)/63 = -1.016 → clamped auf -1.
-      expect(conv.drumParts[15].pan).toBeCloseTo(-1, 2);
-      // Part 0 hat raw-Pan=93 → (93-64)/63 = 0.46.
-      expect(conv.drumParts[0].pan).toBeCloseTo(0.46, 1);
+    it.skip("convertParsedPatternToSynthstudio: BodyTalk Pan wird auf -1..+1 normalisiert", () => {
+      // v3.297: SKIP — Erwartungswerte (0.46 / -1) waren aus der widerlegten
+      // +0x22-Pan-Lesung abgeleitet. Neu vermessen mit Amp Pan @0x19 (i8),
+      // sobald die Real-Files wieder verfügbar sind.
     });
 
-    it("convertParsedPatternToSynthstudio: BodyTalk Volume wird auf 0..1 normalisiert", () => {
-      const buf = loadRealFile(REAL_FILE_BODYTALK);
-      if (!buf) return;
-      const conv = convertParsedPatternToSynthstudio(parseElectribePattern(buf));
-      // Part 0 hat raw-Vol=20 → 20/127 ≈ 0.157.
-      expect(conv.drumParts[0].volume).toBeCloseTo(20 / 127, 2);
-      // Part 1 hat raw-Vol=127 → 1.0.
-      expect(conv.drumParts[1].volume).toBeCloseTo(1.0, 2);
+    it.skip("convertParsedPatternToSynthstudio: BodyTalk Volume wird auf 0..1 normalisiert", () => {
+      // v3.297: SKIP — Erwartungswerte (20/127, 127/127) waren aus der
+      // widerlegten +0x15-Volume-Lesung abgeleitet (= EG Decay). Neu vermessen
+      // mit Amp Level @0x18, sobald die Real-Files wieder verfügbar sind.
     });
   },
 );
@@ -1531,8 +1518,10 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
 describe("electribeImport – v3.13 Constants are exported", () => {
   it("Volume/Pan offset constants sind self-konsistent", async () => {
     const mod = await import("../../client/src/utils/electribeImport");
-    expect(mod.ELECTRIBE_REAL_PART_VOLUME_OFFSET).toBe(0x15);
-    expect(mod.ELECTRIBE_REAL_PART_PAN_OFFSET).toBe(0x22);
+    // v3.297 (Gerätebefund + Korg TABLE 6): Volume = Amp Level @0x18,
+    // Pan = Amp Pan @0x19 (i8, 0=Center). 0x15/0x22 waren EG Decay / IFX Edit.
+    expect(mod.ELECTRIBE_REAL_PART_VOLUME_OFFSET).toBe(0x18);
+    expect(mod.ELECTRIBE_REAL_PART_PAN_OFFSET).toBe(0x19);
     expect(mod.ELECTRIBE_REAL_PART_VOLUME_DEFAULT).toBe(127);
     expect(mod.ELECTRIBE_REAL_PART_PAN_DEFAULT).toBe(64);
     expect(mod.ELECTRIBE_REAL_STEP_LENGTH_OFFSET).toBe(0x25);

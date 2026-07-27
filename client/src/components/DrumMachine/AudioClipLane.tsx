@@ -23,7 +23,12 @@
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Play, Square, Sliders } from "lucide-react";
-import { AudioEngine, DEFAULT_CHANNEL_FX, type AudioTrackChannelData, type ChannelFx } from "@/audio/AudioEngine";
+import {
+  AudioEngine,
+  DEFAULT_CHANNEL_FX,
+  type AudioTrackChannelData,
+  type ChannelFx,
+} from "@/audio/AudioEngine";
 import {
   updateAudioTrack,
   setAudioTrackSoloed,
@@ -37,6 +42,7 @@ import {
   nextAudioTrackPlayState,
 } from "@/components/Mixer/AudioTrackStrip";
 import { FxPanelBody } from "@/components/DrumMachine/FxPanel";
+import { useMidiLearn } from "@/hooks/useMidiLearn";
 import { WaveformDisplay } from "@/components/WaveformDisplay/WaveformDisplay";
 import { resolveChannelColor } from "@/utils/channelColors";
 import {
@@ -93,9 +99,22 @@ export const AudioClipLane = memo(function AudioClipLane({
     laneStateOnGlobalChange(AudioEngine.isPlaying, {
       muted: track.muted,
       broken,
-    }),
+    })
   );
   const [pos01, setPos01] = useState(0);
+  // Right-Click-MIDI-Learn für Mute/Solo dieser Lane (Volume/Pan sitzen im
+  // Mixer-Strip). FX-Params sind bereits über FxPanelBody (fxParam-Target)
+  // lernbar. trackId ist "audiotrack:…" → useMidiEventBridge routet korrekt.
+  const muteLearn = useMidiLearn({
+    type: "audioTrackMute",
+    trackId: track.id,
+    trackName: track.name,
+  });
+  const soloLearn = useMidiLearn({
+    type: "audioTrackSolo",
+    trackId: track.id,
+    trackName: track.name,
+  });
   // TASK-268-FOLLOWUP: Insert-FX-Panel (collapsible) — gespiegelt vom Mixer-Strip.
   // NUR der Toggle ist component-local; die FX-WERTE leben in track.fx (Store),
   // damit Strip + Lane denselben State derselben Lane bidirektional teilen.
@@ -112,7 +131,7 @@ export const AudioClipLane = memo(function AudioClipLane({
   // Deps: muted/broken werden gelesen → MÜSSEN in der Dep-Liste stehen (sonst
   // stale-closure: erst muten, dann Global-Play würde fälschlich playing setzen).
   useEffect(() => {
-    const unsub = AudioEngine.onPlayStateChange((p) => {
+    const unsub = AudioEngine.onPlayStateChange(p => {
       setPlaying(laneStateOnGlobalChange(p, { muted: track.muted, broken }));
     });
     return unsub;
@@ -128,14 +147,14 @@ export const AudioClipLane = memo(function AudioClipLane({
     if (AudioEngine.isAudioTrackPlaying(track.id)) {
       setPos01(AudioEngine.getAudioTrackPosition(track.id));
     }
-    const unsub = AudioEngine.onAudioTrackPosition(track.id, (p) => setPos01(p));
+    const unsub = AudioEngine.onAudioTrackPosition(track.id, p => setPos01(p));
     return unsub;
   }, [track.id]);
 
   // onEnded → playing zurücksetzen (natürliches Track-Ende, kein Loop).
   useEffect(() => {
     const unsub = AudioEngine.onAudioTrackEnded(track.id, () => {
-      setPlaying((p) => nextAudioTrackPlayState(p, "ended"));
+      setPlaying(p => nextAudioTrackPlayState(p, "ended"));
     });
     return unsub;
   }, [track.id]);
@@ -176,7 +195,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       setAudioTrackSoloed(track.id, next, opts.shiftKey);
       AudioEngine.setAudioTrackSolo(track.id, next);
     },
-    [track.id, track.soloed],
+    [track.id, track.soloed]
   );
 
   // ── Seek (Klick in die Wellenform) ───────────────────────────────────────
@@ -186,7 +205,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       if (dur <= 0) return;
       AudioEngine.seekAudioTrack(track.id, pos * dur);
     },
-    [runtime.durationSec, track.id],
+    [runtime.durationSec, track.id]
   );
 
   // ── Insert-FX (TASK-268-FOLLOWUP) ────────────────────────────────────────
@@ -201,7 +220,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       setAudioTrackFx(track.id, partial);
       AudioEngine.setAudioTrackFx(track.id, partial);
     },
-    [track.id],
+    [track.id]
   );
 
   // ── Peaks für die Wellenform ─────────────────────────────────────────────
@@ -246,137 +265,145 @@ export const AudioClipLane = memo(function AudioClipLane({
     >
       {/* ── Obere Zeile: bestehende horizontale Row (Header/M/S/Play/FX/Waveform) ── */}
       <div className="flex items-center gap-1 px-2 py-1">
-      {/* ── Header-Spalte (gleiche Breite wie ChannelStrip: w-[88px]) ────── */}
-      <div className="w-[88px] flex-shrink-0">
-        <div className="flex items-center gap-1 leading-tight">
-          <span
-            className={[
-              "text-[10px] font-medium truncate flex-1 min-w-0",
-              labelColor,
-            ].join(" ")}
-            title={track.name}
+        {/* ── Header-Spalte (gleiche Breite wie ChannelStrip: w-[88px]) ────── */}
+        <div className="w-[88px] flex-shrink-0">
+          <div className="flex items-center gap-1 leading-tight">
+            <span
+              className={[
+                "text-[10px] font-medium truncate flex-1 min-w-0",
+                labelColor,
+              ].join(" ")}
+              title={track.name}
+            >
+              {track.name}
+            </span>
+            <span
+              className="text-[8px] px-1 rounded bg-bg-elevated text-accent-secondary flex-shrink-0"
+              title="Audio-Clip (continuous, kein Step-Grid)"
+            >
+              CLIP
+            </span>
+          </div>
+          <div
+            className="text-[9px] truncate leading-tight text-text-dim"
+            title={track.fileName}
           >
-            {track.name}
-          </span>
-          <span
-            className="text-[8px] px-1 rounded bg-bg-elevated text-accent-secondary flex-shrink-0"
-            title="Audio-Clip (continuous, kein Step-Grid)"
-          >
-            CLIP
-          </span>
+            {broken ? "⚠ Datei fehlt" : track.fileName || "—"}
+          </div>
         </div>
-        <div
-          className="text-[9px] truncate leading-tight text-text-dim"
-          title={track.fileName}
-        >
-          {broken ? "⚠ Datei fehlt" : (track.fileName || "—")}
-        </div>
-      </div>
 
-      {/* ── M / S ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-0.5 flex-shrink-0">
+        {/* ── M / S ────────────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <button
+            type="button"
+            data-testid={`audio-clip-lane-mute-${track.id}`}
+            onClick={e => {
+              e.stopPropagation();
+              handleMute();
+            }}
+            onContextMenu={muteLearn.onContextMenu}
+            disabled={broken}
+            aria-label="Mute"
+            aria-pressed={track.muted}
+            title="Mute — Rechtsklick: MIDI-Learn"
+            className={[
+              "w-5 h-4 rounded text-[8px] font-bold transition-colors",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              track.muted
+                ? "bg-accent-danger text-text-primary"
+                : "bg-bg-elevated text-text-dim hover:text-accent-danger",
+            ].join(" ")}
+          >
+            M
+          </button>
+          <button
+            type="button"
+            data-testid={`audio-clip-lane-solo-${track.id}`}
+            onClick={e => {
+              e.stopPropagation();
+              handleSolo({ shiftKey: e.shiftKey });
+            }}
+            onContextMenu={soloLearn.onContextMenu}
+            disabled={broken}
+            aria-label="Solo"
+            aria-pressed={track.soloed}
+            title="Solo — Shift+Click = exclusive · Rechtsklick: MIDI-Learn"
+            className={[
+              "w-5 h-4 rounded text-[8px] font-bold transition-colors",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              track.soloed
+                ? "bg-accent-primary text-text-primary"
+                : "bg-bg-elevated text-text-dim hover:text-accent-primary",
+            ].join(" ")}
+          >
+            S
+          </button>
+          {muteLearn.menu}
+          {soloLearn.menu}
+        </div>
+
+        {/* ── Play / Stop (eigener Lane-Transport) ─────────────────────────── */}
         <button
           type="button"
-          data-testid={`audio-clip-lane-mute-${track.id}`}
-          onClick={(e) => {
+          data-testid={`audio-clip-lane-play-${track.id}`}
+          onClick={e => {
             e.stopPropagation();
-            handleMute();
+            handlePlayStop();
           }}
           disabled={broken}
-          aria-label="Mute"
-          aria-pressed={track.muted}
-          title="Mute"
+          aria-label={effectivePlaying ? "Stop" : "Play"}
+          aria-pressed={effectivePlaying}
+          title={
+            effectivePlaying
+              ? "Stop (nur dieser Clip)"
+              : "Play (nur dieser Clip)"
+          }
           className={[
-            "w-5 h-4 rounded text-[8px] font-bold transition-colors",
+            "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
             "disabled:opacity-40 disabled:cursor-not-allowed",
-            track.muted
-              ? "bg-accent-danger text-text-primary"
-              : "bg-bg-elevated text-text-dim hover:text-accent-danger",
-          ].join(" ")}
-        >
-          M
-        </button>
-        <button
-          type="button"
-          data-testid={`audio-clip-lane-solo-${track.id}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSolo({ shiftKey: e.shiftKey });
-          }}
-          disabled={broken}
-          aria-label="Solo"
-          aria-pressed={track.soloed}
-          title="Solo — Shift+Click = exclusive (un-solo't andere Audio-Tracks)"
-          className={[
-            "w-5 h-4 rounded text-[8px] font-bold transition-colors",
-            "disabled:opacity-40 disabled:cursor-not-allowed",
-            track.soloed
+            effectivePlaying
               ? "bg-accent-primary text-text-primary"
               : "bg-bg-elevated text-text-dim hover:text-accent-primary",
           ].join(" ")}
         >
-          S
+          {effectivePlaying ? <Square size={11} /> : <Play size={11} />}
         </button>
-      </div>
 
-      {/* ── Play / Stop (eigener Lane-Transport) ─────────────────────────── */}
-      <button
-        type="button"
-        data-testid={`audio-clip-lane-play-${track.id}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          handlePlayStop();
-        }}
-        disabled={broken}
-        aria-label={effectivePlaying ? "Stop" : "Play"}
-        aria-pressed={effectivePlaying}
-        title={effectivePlaying ? "Stop (nur dieser Clip)" : "Play (nur dieser Clip)"}
-        className={[
-          "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
-          "disabled:opacity-40 disabled:cursor-not-allowed",
-          effectivePlaying
-            ? "bg-accent-primary text-text-primary"
-            : "bg-bg-elevated text-text-dim hover:text-accent-primary",
-        ].join(" ")}
-      >
-        {effectivePlaying ? <Square size={11} /> : <Play size={11} />}
-      </button>
+        {/* ── Insert-FX Toggle (TASK-268-FOLLOWUP) ─────────────────────────── */}
+        <button
+          type="button"
+          data-testid={`audio-clip-lane-fx-toggle-${track.id}`}
+          onClick={e => {
+            e.stopPropagation();
+            setFxOpen(v => !v);
+          }}
+          aria-label="FX"
+          aria-pressed={fxOpen}
+          title="Insert-FX (Filter, EQ, Comp, Delay, Reverb)"
+          className={[
+            "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
+            fxOpen
+              ? "bg-accent-secondary text-text-primary"
+              : "bg-bg-elevated text-text-dim hover:text-accent-secondary",
+          ].join(" ")}
+        >
+          <Sliders size={11} />
+        </button>
 
-      {/* ── Insert-FX Toggle (TASK-268-FOLLOWUP) ─────────────────────────── */}
-      <button
-        type="button"
-        data-testid={`audio-clip-lane-fx-toggle-${track.id}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setFxOpen((v) => !v);
-        }}
-        aria-label="FX"
-        aria-pressed={fxOpen}
-        title="Insert-FX (Filter, EQ, Comp, Delay, Reverb)"
-        className={[
-          "w-6 h-6 flex items-center justify-center rounded transition-colors flex-shrink-0",
-          fxOpen
-            ? "bg-accent-secondary text-text-primary"
-            : "bg-bg-elevated text-text-dim hover:text-accent-secondary",
-        ].join(" ")}
-      >
-        <Sliders size={11} />
-      </button>
-
-      {/* ── Continuous Waveform (füllt die restliche Breite) ─────────────── */}
-      <div className="flex-1 min-w-0">
-        <WaveformDisplay
-          peaks={peaks}
-          duration={runtime.durationSec ?? 0}
-          playbackPosition={pos01}
-          isPlaying={effectivePlaying}
-          onSeek={handleSeek}
-          height={40}
-          color={waveColor}
-          backgroundColor="var(--ss-bg-elevated)"
-          zoomEnabled={false}
-        />
-      </div>
+        {/* ── Continuous Waveform (füllt die restliche Breite) ─────────────── */}
+        <div className="flex-1 min-w-0">
+          <WaveformDisplay
+            peaks={peaks}
+            duration={runtime.durationSec ?? 0}
+            playbackPosition={pos01}
+            isPlaying={effectivePlaying}
+            onSeek={handleSeek}
+            height={40}
+            color={waveColor}
+            backgroundColor="var(--ss-bg-elevated)"
+            zoomEnabled={false}
+          />
+        </div>
       </div>
 
       {/* ── Insert-FX-Panel (TASK-268-FOLLOWUP) ──────────────────────────── */}
@@ -386,7 +413,7 @@ export const AudioClipLane = memo(function AudioClipLane({
       {fxOpen && (
         <div
           data-testid={`audio-clip-lane-fx-panel-${track.id}`}
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           className="w-full px-2 pb-2 pt-1"
         >
           <div className="px-1.5 py-2 rounded border border-border-subtle bg-bg-elevated/60">
@@ -409,25 +436,27 @@ export const AudioClipLane = memo(function AudioClipLane({
  * memoisierten DrumMachine (TASK-247-Constraint). Rendert nichts, wenn keine
  * Audio-Tracks vorhanden sind.
  */
-export const AudioClipLaneList = memo(function AudioClipLaneList(): React.ReactElement | null {
-  const { tracks } = useAudioTrackStore();
-  const lanes = resolveAudioLanes(tracks);
-  if (lanes.length === 0) return null;
-  return (
-    <div data-testid="audio-clip-lane-list">
-      {lanes.map((tr, i) => (
-        <AudioClipLane
-          key={tr.id}
-          track={tr}
-          // Runtime-State als frisches Objekt pro notify (getRuntimeState) —
-          // sonst würde der Memo-Comparator der Lane Peaks/Duration/broken-
-          // Updates blockieren (track-Ref bleibt unverändert).
-          runtime={getRuntimeState(tr.id)}
-          laneIndex={i}
-          // Solo-Dim: hörbar = nicht-gemutet UND (kein Solo aktiv ODER selbst soloed).
-          audible={isAudioLaneAudible(tr, lanes)}
-        />
-      ))}
-    </div>
-  );
-});
+export const AudioClipLaneList = memo(
+  function AudioClipLaneList(): React.ReactElement | null {
+    const { tracks } = useAudioTrackStore();
+    const lanes = resolveAudioLanes(tracks);
+    if (lanes.length === 0) return null;
+    return (
+      <div data-testid="audio-clip-lane-list">
+        {lanes.map((tr, i) => (
+          <AudioClipLane
+            key={tr.id}
+            track={tr}
+            // Runtime-State als frisches Objekt pro notify (getRuntimeState) —
+            // sonst würde der Memo-Comparator der Lane Peaks/Duration/broken-
+            // Updates blockieren (track-Ref bleibt unverändert).
+            runtime={getRuntimeState(tr.id)}
+            laneIndex={i}
+            // Solo-Dim: hörbar = nicht-gemutet UND (kein Solo aktiv ODER selbst soloed).
+            audible={isAudioLaneAudible(tr, lanes)}
+          />
+        ))}
+      </div>
+    );
+  }
+);

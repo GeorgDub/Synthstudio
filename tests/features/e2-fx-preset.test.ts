@@ -31,7 +31,7 @@ import {
   labelForSourceControl,
   parseFxControl,
   parseFxPreset,
-} from "@/utils/korg/e2FxPreset";
+} from "@/utils/korg/e2FxPresetInspect";
 import {
   FX_SOURCE_CONTROL,
   FX_SOURCE_CONTROL_KEYS,

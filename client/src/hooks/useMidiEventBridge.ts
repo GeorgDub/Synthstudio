@@ -43,7 +43,12 @@ import { useEffect } from "react";
 import type { MutableRefObject } from "react";
 import { AudioEngine } from "@/audio/AudioEngine";
 import type { ChannelFx } from "@/audio/AudioEngine";
-import { setAudioTrackFx } from "@/store/useAudioTrackStore";
+import {
+  setAudioTrackFx,
+  updateAudioTrack,
+  setAudioTrackSoloed,
+  getAllAudioTracks,
+} from "@/store/useAudioTrackStore";
 import {
   getBusById,
   setBusVolume,
@@ -74,7 +79,9 @@ export interface MidiBridgeDmActions {
   setPartMuted: (partId: string, muted: boolean) => void;
   setPartFx: (partId: string, fx: Partial<ChannelFx>) => void;
   setActivePattern: (id: string) => void;
-  getActivePattern: () => { parts: Array<{ id: string; muted: boolean; soloed: boolean }> } | undefined;
+  getActivePattern: () =>
+    | { parts: Array<{ id: string; muted: boolean; soloed: boolean }> }
+    | undefined;
   patterns: Array<{ id: string }>;
 }
 
@@ -88,7 +95,12 @@ export interface MidiBridgeRefs {
   dmRef: MutableRefObject<MidiBridgeDmActions>;
   projectRef: MutableRefObject<MidiBridgeProjectActions>;
   /** Optional override für Tests; produktiv ist es immer AudioEngine. */
-  audioEngine?: { setMasterVolume: (v: number) => void };
+  audioEngine?: {
+    setMasterVolume: (v: number) => void;
+    setAudioTrackVolume?: (id: string, v: number) => void;
+    setAudioTrackPan?: (id: string, p: number) => void;
+    setAudioTrackMute?: (id: string, muted: boolean) => void;
+  };
 }
 
 export interface MidiBridgeHandlers {
@@ -103,6 +115,11 @@ export interface MidiBridgeHandlers {
   handleStop: (e: Event) => void;
   handleMasterVolume: (e: Event) => void;
   handlePattern: (e: Event) => void;
+  // Audio-Track / Loop-Sampler Volume/Pan/Mute/Solo
+  handleAudioTrackVolume: (e: Event) => void;
+  handleAudioTrackPan: (e: Event) => void;
+  handleAudioTrackMute: (e: Event) => void;
+  handleAudioTrackSolo: (e: Event) => void;
   // v3.81.0: Sub-Mix-Bus-Controls
   handleSubMixBusVolume: (e: Event) => void;
   handleSubMixBusPan: (e: Event) => void;
@@ -129,32 +146,55 @@ export interface MidiBridgeHandlers {
  * Wird vom Hook für das tatsächliche window-Wiring genutzt — und von
  * Tests direkt aufgerufen.
  */
-export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers {
+export function makeMidiBridgeHandlers(
+  refs: MidiBridgeRefs
+): MidiBridgeHandlers {
   const { dmRef, projectRef } = refs;
   const audio = refs.audioEngine ?? AudioEngine;
 
   const handleVolume = (e: Event) => {
     const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
-    if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
-      dmRef.current.setPartVolume(detail.partId, Math.max(0, Math.min(1, detail.value)));
+    if (
+      detail &&
+      typeof detail.partId === "string" &&
+      typeof detail.value === "number"
+    ) {
+      dmRef.current.setPartVolume(
+        detail.partId,
+        Math.max(0, Math.min(1, detail.value))
+      );
     }
   };
   const handlePan = (e: Event) => {
     const detail = (e as CustomEvent<{ partId: string; value: number }>).detail;
-    if (detail && typeof detail.partId === "string" && typeof detail.value === "number") {
-      dmRef.current.setPartPan(detail.partId, Math.max(-1, Math.min(1, detail.value)));
+    if (
+      detail &&
+      typeof detail.partId === "string" &&
+      typeof detail.value === "number"
+    ) {
+      dmRef.current.setPartPan(
+        detail.partId,
+        Math.max(-1, Math.min(1, detail.value))
+      );
     }
   };
   const handleSolo = (e: Event) => {
     const partId = (e as CustomEvent<string>).detail;
     if (typeof partId !== "string") return;
     const pattern = dmRef.current.getActivePattern();
-    const part = pattern?.parts.find((p) => p.id === partId);
+    const part = pattern?.parts.find(p => p.id === partId);
     dmRef.current.setPartSoloed(partId, !(part?.soloed ?? false));
   };
   const handleFxParam = (e: Event) => {
-    const detail = (e as CustomEvent<{ partId: string; param: string; value: number }>).detail;
-    if (!detail || typeof detail.partId !== "string" || typeof detail.param !== "string") return;
+    const detail = (
+      e as CustomEvent<{ partId: string; param: string; value: number }>
+    ).detail;
+    if (
+      !detail ||
+      typeof detail.partId !== "string" ||
+      typeof detail.param !== "string"
+    )
+      return;
     const fxPatch = { [detail.param]: detail.value } as Partial<ChannelFx>;
     // TASK-268: Audio-Tracks teilen die `midi:fxParam`-Seam mit Drum-Parts, sind
     // aber an der `audiotrack:`-ID-Prefix erkennbar. Sie laufen NICHT durch den
@@ -167,16 +207,69 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     }
     dmRef.current.setPartFx(detail.partId, fxPatch);
   };
+  // Audio-Track / Loop-Sampler Volume/Pan/Mute/Solo. Dual-Call-Seam wie im
+  // Mixer-Strip: Store (persist) + Engine (audible). Solo läuft über
+  // setAudioTrackSoloed (exklusive Solo-Logik + Engine-Sync intern).
+  const handleAudioTrackVolume = (e: Event) => {
+    const detail = (e as CustomEvent<{ trackId: string; value: number }>)
+      .detail;
+    if (
+      !detail ||
+      typeof detail.trackId !== "string" ||
+      typeof detail.value !== "number"
+    )
+      return;
+    if (!Number.isFinite(detail.value)) return;
+    const v = Math.max(0, Math.min(2, detail.value));
+    updateAudioTrack(detail.trackId, { volume: v });
+    audio.setAudioTrackVolume?.(detail.trackId, v);
+  };
+  const handleAudioTrackPan = (e: Event) => {
+    const detail = (e as CustomEvent<{ trackId: string; value: number }>)
+      .detail;
+    if (
+      !detail ||
+      typeof detail.trackId !== "string" ||
+      typeof detail.value !== "number"
+    )
+      return;
+    if (!Number.isFinite(detail.value)) return;
+    const p = Math.max(-1, Math.min(1, detail.value));
+    updateAudioTrack(detail.trackId, { pan: p });
+    audio.setAudioTrackPan?.(detail.trackId, p);
+  };
+  const handleAudioTrackMute = (e: Event) => {
+    const trackId = (e as CustomEvent<string>).detail;
+    if (typeof trackId !== "string") return;
+    const track = getAllAudioTracks().find(t => t.id === trackId);
+    if (!track) return;
+    const next = !track.muted;
+    updateAudioTrack(trackId, { muted: next });
+    audio.setAudioTrackMute?.(trackId, next);
+  };
+  const handleAudioTrackSolo = (e: Event) => {
+    const trackId = (e as CustomEvent<string>).detail;
+    if (typeof trackId !== "string") return;
+    const track = getAllAudioTracks().find(t => t.id === trackId);
+    if (!track) return;
+    setAudioTrackSoloed(trackId, !track.soloed, false);
+  };
   const handleMute = (e: Event) => {
     const partId = (e as CustomEvent<string>).detail;
     if (typeof partId !== "string") return;
     const pattern = dmRef.current.getActivePattern();
-    const part = pattern?.parts.find((p) => p.id === partId);
+    const part = pattern?.parts.find(p => p.id === partId);
     dmRef.current.setPartMuted(partId, !(part?.muted ?? false));
   };
   const handleMuteSet = (e: Event) => {
-    const detail = (e as CustomEvent<{ partId: string; value: boolean }>).detail;
-    if (!detail || typeof detail.partId !== "string" || typeof detail.value !== "boolean") return;
+    const detail = (e as CustomEvent<{ partId: string; value: boolean }>)
+      .detail;
+    if (
+      !detail ||
+      typeof detail.partId !== "string" ||
+      typeof detail.value !== "boolean"
+    )
+      return;
     dmRef.current.setPartMuted(detail.partId, detail.value);
   };
   const handleBpm = (e: Event) => {
@@ -219,7 +312,10 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
         }
         return;
       }
-      if (typeof obj.patternId === "string" && patterns.some((p) => p.id === obj.patternId)) {
+      if (
+        typeof obj.patternId === "string" &&
+        patterns.some(p => p.id === obj.patternId)
+      ) {
         dmRef.current.setActivePattern(obj.patternId);
         return;
       }
@@ -230,13 +326,23 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
   // CustomEvents, hier landen sie auf den useSubMixStore-Settern.
   const handleSubMixBusVolume = (e: Event) => {
     const detail = (e as CustomEvent<{ busId: string; value: number }>).detail;
-    if (!detail || typeof detail.busId !== "string" || typeof detail.value !== "number") return;
+    if (
+      !detail ||
+      typeof detail.busId !== "string" ||
+      typeof detail.value !== "number"
+    )
+      return;
     if (!Number.isFinite(detail.value)) return;
     setBusVolume(detail.busId, detail.value);
   };
   const handleSubMixBusPan = (e: Event) => {
     const detail = (e as CustomEvent<{ busId: string; value: number }>).detail;
-    if (!detail || typeof detail.busId !== "string" || typeof detail.value !== "number") return;
+    if (
+      !detail ||
+      typeof detail.busId !== "string" ||
+      typeof detail.value !== "number"
+    )
+      return;
     if (!Number.isFinite(detail.value)) return;
     setBusPan(detail.busId, detail.value);
   };
@@ -274,7 +380,7 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     }
     const pattern = dmRef.current.getActivePattern();
     if (!pattern) return;
-    const allChannelIds = pattern.parts.map((p) => p.id);
+    const allChannelIds = pattern.parts.map(p => p.id);
     const currentMutes: Record<string, boolean> = {};
     for (const p of pattern.parts) currentMutes[p.id] = p.muted;
     soloGroupStoreAction(groupId, allChannelIds, currentMutes);
@@ -282,24 +388,37 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
 
   // Apply-Handlers: Store-Dispatch → DM.setPartMuted
   const handleGroupApplyMute = (e: Event) => {
-    const detail = (e as CustomEvent<{ groupId: string; channelIds: string[] }>).detail;
+    const detail = (e as CustomEvent<{ groupId: string; channelIds: string[] }>)
+      .detail;
     if (!detail || !Array.isArray(detail.channelIds)) return;
     for (const cid of detail.channelIds) {
       if (typeof cid === "string") dmRef.current.setPartMuted(cid, true);
     }
   };
   const handleGroupApplySolo = (e: Event) => {
-    const detail = (e as CustomEvent<{ groupId: string; target: Array<{ channelId: string; muted: boolean }> }>).detail;
+    const detail = (
+      e as CustomEvent<{
+        groupId: string;
+        target: Array<{ channelId: string; muted: boolean }>;
+      }>
+    ).detail;
     if (!detail || !Array.isArray(detail.target)) return;
     for (const { channelId, muted } of detail.target) {
-      if (typeof channelId === "string") dmRef.current.setPartMuted(channelId, muted);
+      if (typeof channelId === "string")
+        dmRef.current.setPartMuted(channelId, muted);
     }
   };
   const handleGroupApplyClearSolo = (e: Event) => {
-    const detail = (e as CustomEvent<{ groupId: string; target: Array<{ channelId: string; muted: boolean }> }>).detail;
+    const detail = (
+      e as CustomEvent<{
+        groupId: string;
+        target: Array<{ channelId: string; muted: boolean }>;
+      }>
+    ).detail;
     if (!detail || !Array.isArray(detail.target)) return;
     for (const { channelId, muted } of detail.target) {
-      if (typeof channelId === "string") dmRef.current.setPartMuted(channelId, muted);
+      if (typeof channelId === "string")
+        dmRef.current.setPartMuted(channelId, muted);
     }
   };
 
@@ -308,10 +427,15 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
   // Generic helper für (busId, value) → Setter mit numerischer Value.
   const dispatchBusFxValue = (
     e: Event,
-    apply: (busId: string, value: number) => void,
+    apply: (busId: string, value: number) => void
   ): void => {
     const detail = (e as CustomEvent<{ busId: string; value: number }>).detail;
-    if (!detail || typeof detail.busId !== "string" || typeof detail.value !== "number") return;
+    if (
+      !detail ||
+      typeof detail.busId !== "string" ||
+      typeof detail.value !== "number"
+    )
+      return;
     if (!Number.isFinite(detail.value)) return;
     apply(detail.busId, detail.value);
   };
@@ -331,17 +455,37 @@ export function makeMidiBridgeHandlers(refs: MidiBridgeRefs): MidiBridgeHandlers
     dispatchBusFxValue(e, (id, v) => setBusDelaySend(id, v));
 
   return {
-    handleVolume, handlePan, handleSolo, handleFxParam,
-    handleMute, handleMuteSet,
-    handleBpm, handlePlayStop, handleStop, handleMasterVolume,
+    handleVolume,
+    handlePan,
+    handleSolo,
+    handleFxParam,
+    handleMute,
+    handleMuteSet,
+    handleBpm,
+    handlePlayStop,
+    handleStop,
+    handleMasterVolume,
     handlePattern,
-    handleSubMixBusVolume, handleSubMixBusPan,
-    handleSubMixBusMute, handleSubMixBusSolo,
-    handleSubMixBusEqLowGain, handleSubMixBusEqMidGain, handleSubMixBusEqHighGain,
-    handleSubMixBusCompThreshold, handleSubMixBusCompRatio,
-    handleSubMixBusReverbSend, handleSubMixBusDelaySend,
-    handleMuteGroup, handleSoloGroup,
-    handleGroupApplyMute, handleGroupApplySolo, handleGroupApplyClearSolo,
+    handleAudioTrackVolume,
+    handleAudioTrackPan,
+    handleAudioTrackMute,
+    handleAudioTrackSolo,
+    handleSubMixBusVolume,
+    handleSubMixBusPan,
+    handleSubMixBusMute,
+    handleSubMixBusSolo,
+    handleSubMixBusEqLowGain,
+    handleSubMixBusEqMidGain,
+    handleSubMixBusEqHighGain,
+    handleSubMixBusCompThreshold,
+    handleSubMixBusCompRatio,
+    handleSubMixBusReverbSend,
+    handleSubMixBusDelaySend,
+    handleMuteGroup,
+    handleSoloGroup,
+    handleGroupApplyMute,
+    handleGroupApplySolo,
+    handleGroupApplyClearSolo,
   };
 }
 
@@ -364,22 +508,56 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
     window.addEventListener("midi:stop", h.handleStop);
     window.addEventListener("midi:masterVolume", h.handleMasterVolume);
     window.addEventListener("midi:pattern", h.handlePattern);
+    window.addEventListener("midi:audioTrackVolume", h.handleAudioTrackVolume);
+    window.addEventListener("midi:audioTrackPan", h.handleAudioTrackPan);
+    window.addEventListener("midi:audioTrackMute", h.handleAudioTrackMute);
+    window.addEventListener("midi:audioTrackSolo", h.handleAudioTrackSolo);
     window.addEventListener("midi:subMixBusVolume", h.handleSubMixBusVolume);
     window.addEventListener("midi:subMixBusPan", h.handleSubMixBusPan);
     window.addEventListener("midi:subMixBusMute", h.handleSubMixBusMute);
     window.addEventListener("midi:subMixBusSolo", h.handleSubMixBusSolo);
-    window.addEventListener("midi:subMixBusEqLowGain", h.handleSubMixBusEqLowGain);
-    window.addEventListener("midi:subMixBusEqMidGain", h.handleSubMixBusEqMidGain);
-    window.addEventListener("midi:subMixBusEqHighGain", h.handleSubMixBusEqHighGain);
-    window.addEventListener("midi:subMixBusCompThreshold", h.handleSubMixBusCompThreshold);
-    window.addEventListener("midi:subMixBusCompRatio", h.handleSubMixBusCompRatio);
-    window.addEventListener("midi:subMixBusReverbSend", h.handleSubMixBusReverbSend);
-    window.addEventListener("midi:subMixBusDelaySend", h.handleSubMixBusDelaySend);
+    window.addEventListener(
+      "midi:subMixBusEqLowGain",
+      h.handleSubMixBusEqLowGain
+    );
+    window.addEventListener(
+      "midi:subMixBusEqMidGain",
+      h.handleSubMixBusEqMidGain
+    );
+    window.addEventListener(
+      "midi:subMixBusEqHighGain",
+      h.handleSubMixBusEqHighGain
+    );
+    window.addEventListener(
+      "midi:subMixBusCompThreshold",
+      h.handleSubMixBusCompThreshold
+    );
+    window.addEventListener(
+      "midi:subMixBusCompRatio",
+      h.handleSubMixBusCompRatio
+    );
+    window.addEventListener(
+      "midi:subMixBusReverbSend",
+      h.handleSubMixBusReverbSend
+    );
+    window.addEventListener(
+      "midi:subMixBusDelaySend",
+      h.handleSubMixBusDelaySend
+    );
     window.addEventListener("midi:muteGroup", h.handleMuteGroup);
     window.addEventListener("midi:soloGroup", h.handleSoloGroup);
-    window.addEventListener("mute-solo-group:muteChannels", h.handleGroupApplyMute);
-    window.addEventListener("mute-solo-group:soloChannels", h.handleGroupApplySolo);
-    window.addEventListener("mute-solo-group:clearSolo", h.handleGroupApplyClearSolo);
+    window.addEventListener(
+      "mute-solo-group:muteChannels",
+      h.handleGroupApplyMute
+    );
+    window.addEventListener(
+      "mute-solo-group:soloChannels",
+      h.handleGroupApplySolo
+    );
+    window.addEventListener(
+      "mute-solo-group:clearSolo",
+      h.handleGroupApplyClearSolo
+    );
     return () => {
       window.removeEventListener("midi:partVolume", h.handleVolume);
       window.removeEventListener("midi:partPan", h.handlePan);
@@ -391,23 +569,63 @@ export function useMidiEventBridge(refs: MidiBridgeRefs): void {
       window.removeEventListener("midi:playStop", h.handlePlayStop);
       window.removeEventListener("midi:stop", h.handleStop);
       window.removeEventListener("midi:masterVolume", h.handleMasterVolume);
+      window.removeEventListener(
+        "midi:audioTrackVolume",
+        h.handleAudioTrackVolume
+      );
+      window.removeEventListener("midi:audioTrackPan", h.handleAudioTrackPan);
+      window.removeEventListener("midi:audioTrackMute", h.handleAudioTrackMute);
+      window.removeEventListener("midi:audioTrackSolo", h.handleAudioTrackSolo);
       window.removeEventListener("midi:pattern", h.handlePattern);
-      window.removeEventListener("midi:subMixBusVolume", h.handleSubMixBusVolume);
+      window.removeEventListener(
+        "midi:subMixBusVolume",
+        h.handleSubMixBusVolume
+      );
       window.removeEventListener("midi:subMixBusPan", h.handleSubMixBusPan);
       window.removeEventListener("midi:subMixBusMute", h.handleSubMixBusMute);
       window.removeEventListener("midi:subMixBusSolo", h.handleSubMixBusSolo);
-      window.removeEventListener("midi:subMixBusEqLowGain", h.handleSubMixBusEqLowGain);
-      window.removeEventListener("midi:subMixBusEqMidGain", h.handleSubMixBusEqMidGain);
-      window.removeEventListener("midi:subMixBusEqHighGain", h.handleSubMixBusEqHighGain);
-      window.removeEventListener("midi:subMixBusCompThreshold", h.handleSubMixBusCompThreshold);
-      window.removeEventListener("midi:subMixBusCompRatio", h.handleSubMixBusCompRatio);
-      window.removeEventListener("midi:subMixBusReverbSend", h.handleSubMixBusReverbSend);
-      window.removeEventListener("midi:subMixBusDelaySend", h.handleSubMixBusDelaySend);
+      window.removeEventListener(
+        "midi:subMixBusEqLowGain",
+        h.handleSubMixBusEqLowGain
+      );
+      window.removeEventListener(
+        "midi:subMixBusEqMidGain",
+        h.handleSubMixBusEqMidGain
+      );
+      window.removeEventListener(
+        "midi:subMixBusEqHighGain",
+        h.handleSubMixBusEqHighGain
+      );
+      window.removeEventListener(
+        "midi:subMixBusCompThreshold",
+        h.handleSubMixBusCompThreshold
+      );
+      window.removeEventListener(
+        "midi:subMixBusCompRatio",
+        h.handleSubMixBusCompRatio
+      );
+      window.removeEventListener(
+        "midi:subMixBusReverbSend",
+        h.handleSubMixBusReverbSend
+      );
+      window.removeEventListener(
+        "midi:subMixBusDelaySend",
+        h.handleSubMixBusDelaySend
+      );
       window.removeEventListener("midi:muteGroup", h.handleMuteGroup);
       window.removeEventListener("midi:soloGroup", h.handleSoloGroup);
-      window.removeEventListener("mute-solo-group:muteChannels", h.handleGroupApplyMute);
-      window.removeEventListener("mute-solo-group:soloChannels", h.handleGroupApplySolo);
-      window.removeEventListener("mute-solo-group:clearSolo", h.handleGroupApplyClearSolo);
+      window.removeEventListener(
+        "mute-solo-group:muteChannels",
+        h.handleGroupApplyMute
+      );
+      window.removeEventListener(
+        "mute-solo-group:soloChannels",
+        h.handleGroupApplySolo
+      );
+      window.removeEventListener(
+        "mute-solo-group:clearSolo",
+        h.handleGroupApplyClearSolo
+      );
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

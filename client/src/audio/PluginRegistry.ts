@@ -143,18 +143,17 @@ export function _resetPluginRegistry(): void {
 // ─── Built-In Manifests ──────────────────────────────────────────────────────
 
 /**
- * URL-Helper für Built-In-Worklet-Module. Im Browser/Electron resolved
- * `new URL(path, import.meta.url)` zu einer absoluten URL. In Node/Vitest
- * (Test-Env) ist `import.meta.url` ein file:// — die UI/AudioEngine ruft
- * `addModule(url)` nur wenn ein AudioContext vorhanden ist.
+ * URL-Helper für Built-In-Worklet-Module.
+ *
+ * v3.291: STABILE relative publicDir-URL (`./worklets/<file>`) statt
+ * `new URL(path, import.meta.url)`. Der import.meta.url-Weg liess Vite die
+ * kleinen Worklets als `data:text/javascript`-URLs inlinen; im gepackten
+ * Electron-Build blockt `script-src 'self'` `data:`-Worklet-Module →
+ * "Unable to load a worklet's module". PublicDir-Kopien sind gleich-origin
+ * file://-Scripts und laden zuverlässig unter 'self' (wie recorder-worklet).
  */
 function builtInWorkletUrl(filename: string): string {
-  try {
-    return new URL(`./worklets/${filename}`, import.meta.url).toString();
-  } catch {
-    // Fallback (Test-Env ohne import.meta.url): liefere relativen Pfad.
-    return `./worklets/${filename}`;
-  }
+  return `./worklets/${filename}`;
 }
 
 export const BUILT_IN_TAPE_SAT: PluginManifest = {

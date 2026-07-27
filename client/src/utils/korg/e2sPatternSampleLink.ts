@@ -43,3 +43,109 @@ export function countLinkableE2Parts(
 ): number {
   return sampleIds.reduce((n, id) => (map.has(id) ? n + 1 : n), 0);
 }
+
+/** Diagnose-Ergebnis für die Sample-Verknüpfung eines Patterns. */
+export interface E2sLinkDiagnosis {
+  /** Part-Sample-Nummern (> 0), die auf ein Sample verweisen wollen. */
+  requested: number[];
+  /** Davon in der Bank gefunden. */
+  matched: number[];
+  /** Davon NICHT in der Bank (z.B. Factory-Samples oder falsche Bank). */
+  missing: number[];
+  /** Alle Geräte-Nummern, die die Bank tatsächlich anbietet (sortiert). */
+  available: number[];
+}
+
+/**
+ * Erklärt, WARUM Parts (nicht) verlinkt wurden — Input für ein aussagekräftiges
+ * Toast. Ohne diese Diagnose sah der User nur "0 Spur(en) mit Sample" und
+ * konnte nicht unterscheiden zwischen "falsche/keine .all-Bank" und "Part
+ * verweist auf ein Factory-Sample, das nicht in der User-Bank liegt".
+ *
+ * `sampleIds` = die Part-Sample-Refs (0 = kein Sample → ignoriert).
+ */
+export function diagnoseE2sLink(
+  sampleIds: ReadonlyArray<number>,
+  map: ReadonlyMap<number, unknown>,
+): E2sLinkDiagnosis {
+  const requested: number[] = [];
+  const seen = new Set<number>();
+  for (const id of sampleIds) {
+    if (id > 0 && !seen.has(id)) {
+      seen.add(id);
+      requested.push(id);
+    }
+  }
+  const matched = requested.filter(id => map.has(id));
+  const missing = requested.filter(id => !map.has(id));
+  const available = Array.from(map.keys()).sort((a, b) => a - b);
+  return { requested, matched, missing, available };
+}
+
+/** Toast-Text für das Ergebnis der Sample-Verknüpfung eines Pattern-Imports. */
+export interface E2sSampleLinkMessage {
+  /** Kurzsuffix für den Erfolgs-Toast (z.B. ", 3/4 Spur(en) mit Sample"). */
+  summary: string;
+  /** Optionaler Hinweis-Toast, wenn etwas fehlt (kein Bank / keine Treffer). */
+  hint?: string;
+}
+
+/** Kürzt eine Zahlenliste für die Anzeige ("501, 502, 503, …"). */
+function previewNumbers(nums: ReadonlyArray<number>, max = 6): string {
+  if (nums.length === 0) return "—";
+  const head = nums.slice(0, max).join(", ");
+  return nums.length > max ? `${head}, … (+${nums.length - max})` : head;
+}
+
+/**
+ * Baut eine aussagekräftige Rückmeldung für den Electribe-Import. Ersetzt das
+ * frühere stumme "0 Spur(en) mit Sample", das dem User nicht sagte WARUM nichts
+ * verlinkt wurde. Drei Fälle:
+ *   1. Keine .all-Bank gewählt, aber Parts referenzieren Samples → Hinweis, die
+ *      e2sSample.all zusätzlich zu wählen (häufigste Ursache).
+ *   2. Bank gewählt, aber KEIN Part-Ref gefunden → nennt gesuchte vs. vorhandene
+ *      Geräte-Nummern (deckt "falsche Bank" / "Factory-Sample" auf).
+ *   3. Teil-Treffer → "X/Y verlinkt" + welche Nummern fehlen.
+ *
+ * @param hasBank   Ob eine .all-Sample-Bank mitgeladen wurde.
+ * @param requested Sample-Refs aktiver Parts (>0), Duplikate erlaubt.
+ * @param linked    Wie viele Parts tatsächlich ein Sample bekamen.
+ * @param map       Die Bank-Map (nur für die Diagnose); null wenn keine Bank.
+ */
+export function summarizeE2sSampleLink(
+  hasBank: boolean,
+  requested: ReadonlyArray<number>,
+  linked: number,
+  map: ReadonlyMap<number, unknown> | null,
+): E2sSampleLinkMessage {
+  const uniqueRequested = Array.from(new Set(requested.filter(id => id > 0)));
+
+  // Fall 1: keine Bank, aber Samples referenziert.
+  if (!hasBank || !map) {
+    if (uniqueRequested.length > 0) {
+      return {
+        summary: "",
+        hint:
+          `${uniqueRequested.length} Part(s) verweisen auf Samples ` +
+          `(Nr. ${previewNumbers(uniqueRequested)}). Wähle zusätzlich die ` +
+          `e2sSample.all-Sample-Bank (Mehrfachauswahl), damit sie zugewiesen werden.`,
+      };
+    }
+    return { summary: "" };
+  }
+
+  const diag = diagnoseE2sLink(requested, map);
+  const wanted = diag.requested.length;
+  const summary = `, ${linked}/${wanted} Spur(en) mit Sample`;
+
+  if (wanted === 0) return { summary: ", keine Sample-Refs" };
+  if (linked === wanted) return { summary };
+
+  // Teil- oder Null-Treffer: erklären, welche Nummern fehlen + was die Bank hat.
+  const hint =
+    `Sample-Zuweisung: ${linked}/${wanted} verlinkt. Nicht in der Bank: ` +
+    `Nr. ${previewNumbers(diag.missing)}. Die Bank enthält: ` +
+    `Nr. ${previewNumbers(diag.available)}. ` +
+    `(Passt die .all zur Pattern-Bank? Factory-Samples liegen nicht in der User-.all.)`;
+  return { summary, hint };
+}

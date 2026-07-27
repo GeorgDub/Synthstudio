@@ -42,8 +42,9 @@
  *     +0x022  2B   BPM × 10 (u16 LE)
  *     +0x025  1B   step-length code (16→0, 32→1, 64→3)
  *     +0x800  16×816B  parts
- *       part +0x15  volume (0..127)
- *       part +0x22  pan    (0..127, 64 = center)
+ *       part +0x01  mute   (u8, 0 = plays, 1 = muted)
+ *       part +0x18  volume = Amp Level (u8 0..127)   [v3.297: vorher falsch 0x15]
+ *       part +0x19  pan    = Amp Pan   (i8, 0=Center) [v3.297: vorher falsch 0x22]
  *       part +0x30  64×12B step records:
  *         byte 0  trigger     (1 = active, 0 = off)
  *         byte 1  note        (0x48 = C5 default)
@@ -61,22 +62,32 @@
 
 import { E2S_INIT_BODY_B64, E2S_GLST_BLOCK_B64 } from "./e2sExportAssets";
 import type { E2PatternInput } from "./electribePatternBuilder";
+// Gemeinsame Layout-Quelle (e2Layout.ts) — Werte an EINER Stelle; die
+// bestehenden E2S_*-Namen bleiben als Re-Export erhalten.
+import {
+  E2_PATTERN_BODY_SIZE,
+  E2_FILE_HEADER_SIZE,
+  E2_SINGLE_FILE_SIZE,
+  E2_ALLPAT_PATTERN_OFFSET,
+  E2_ALLPAT_SLOT_COUNT,
+  E2_ALLPAT_FILE_SIZE,
+  e2PanUiToDevice,
+} from "./korg/e2Layout";
 
 // ─── Layout constants (verified against real KORG files) ─────────────────────
 
 /** One PTST pattern body. */
-export const E2S_BODY_SIZE = 0x4000; // 16384
+export const E2S_BODY_SIZE = E2_PATTERN_BODY_SIZE; // 16384
 /** Standalone .e2spat file header. */
-export const E2S_FILE_HEADER_SIZE = 0x100; // 256
+export const E2S_FILE_HEADER_SIZE = E2_FILE_HEADER_SIZE; // 256
 /** Standalone .e2spat total size. */
-export const E2S_SINGLE_FILE_SIZE = E2S_FILE_HEADER_SIZE + E2S_BODY_SIZE; // 16640
+export const E2S_SINGLE_FILE_SIZE = E2_SINGLE_FILE_SIZE; // 16640
 /** .e2sallpat prefix (header + GLST block + 0xFF pad). */
-export const E2S_ALLPAT_PREFIX_SIZE = 0x10100; // 65792
+export const E2S_ALLPAT_PREFIX_SIZE = E2_ALLPAT_PATTERN_OFFSET; // 65792
 /** Pattern slots in a bank (hardware-fixed). */
-export const E2S_ALLPAT_SLOT_COUNT = 250;
+export const E2S_ALLPAT_SLOT_COUNT = E2_ALLPAT_SLOT_COUNT;
 /** .e2sallpat total size. */
-export const E2S_ALLPAT_FILE_SIZE =
-  E2S_ALLPAT_PREFIX_SIZE + E2S_ALLPAT_SLOT_COUNT * E2S_BODY_SIZE; // 4_161_792
+export const E2S_ALLPAT_FILE_SIZE = E2_ALLPAT_FILE_SIZE; // 4_161_792
 
 const GLST_OFFSET = 0x100;
 
@@ -90,8 +101,19 @@ const PART_STRIDE = 816; // 0x330
  *  values span 1..~500 (factory sample numbers), 0 = no/empty sample.
  *  (The read-side parser historically guessed +0x04, which is almost always 0.) */
 const PART_SAMPLE_OFF = 0x08;
-const PART_VOLUME_OFF = 0x15;
-const PART_PAN_OFF = 0x22;
+/** Per-part Mute flag (u8) @ part+0x01. 0 = OFF (plays), 1 = ON (muted).
+ *  Verified against Korg's official "electribe MIDI Implementation Rev 1.00"
+ *  (TABLE 6: Part Parameter, offset 1 = "Mute, 0/1 = OFF/ON"), cross-checked
+ *  byte-identical with keijiro/e2edit `struct Part { lastStep; mute; voiceAssign }`
+ *  and maks/elfer's generated PartType. Sits in the device-common sequencer
+ *  part header (bytes 0x00–0x07), directly after Last Step (@0x00). */
+const PART_MUTE_OFF = 0x01;
+/** Amp Level (u8) @ +0x18 — v3.297-Korrektur: vorher 0x15 (= EG Decay laut
+ *  TABLE 6); Gerätebefund: gepushte Patterns hatten falsche Lautstärken. */
+const PART_VOLUME_OFF = 0x18;
+/** Amp Pan (i8, 0 = Center) @ +0x19 — v3.297-Korrektur: vorher u8@0x22
+ *  (= IFX Edit). UI-0..127 wird via e2PanUiToDevice konvertiert. */
+const PART_PAN_OFF = 0x19;
 const PART_STEPS_OFF = 0x30;
 const STEP_RECORD_SIZE = 12;
 const STEPS_PER_PART = 64;
@@ -125,10 +147,19 @@ function b64ToBytes(b64: string): Uint8Array {
     return out;
   }
   // Node / SSR
-  return new Uint8Array((globalThis as { Buffer?: { from(s: string, e: string): Uint8Array } }).Buffer!.from(b64, "base64"));
+  return new Uint8Array(
+    (
+      globalThis as { Buffer?: { from(s: string, e: string): Uint8Array } }
+    ).Buffer!.from(b64, "base64")
+  );
 }
 
-function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+function clampInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number
+): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   const v = Math.floor(value);
   if (v < min) return min;
@@ -138,7 +169,12 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 
 /** Write `value` as printable ASCII into `bytes[offset..offset+length)`,
  *  NUL-padded after the content. Non-printable chars become '?'. */
-function writeAsciiNul(bytes: Uint8Array, offset: number, value: string, length: number): void {
+function writeAsciiNul(
+  bytes: Uint8Array,
+  offset: number,
+  value: string,
+  length: number
+): void {
   const safe = typeof value === "string" ? value : "";
   for (let i = 0; i < length; i++) {
     if (i < safe.length) {
@@ -181,10 +217,14 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
 
   // BPM × 10 @ +0x22 (u16 LE)
   const bpmX10 = clampInt(
-    Math.round((typeof input.bpm === "number" && Number.isFinite(input.bpm) ? input.bpm : 120) * 10),
+    Math.round(
+      (typeof input.bpm === "number" && Number.isFinite(input.bpm)
+        ? input.bpm
+        : 120) * 10
+    ),
     BPM_MIN_X10,
     BPM_MAX_X10,
-    1200,
+    1200
   );
   view.setUint16(BPM_OFF, bpmX10, true);
 
@@ -198,17 +238,30 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
     if (!part) continue; // leave template part untouched (inactive + valid config)
 
     const partStart = PARTS_OFF + p * PART_STRIDE;
+    // Mute flag @ part+0x01 (u8). Only overlaid when the caller supplies an
+    // explicit boolean; otherwise the template's value (0 = plays) is kept, so
+    // patterns without imported mute state stay audible.
+    if (typeof part.muted === "boolean") {
+      body[partStart + PART_MUTE_OFF] = part.muted ? 1 : 0;
+    }
     if (typeof part.volume === "number") {
       body[partStart + PART_VOLUME_OFF] = clampInt(part.volume, 0, 127, 127);
     }
     if (typeof part.pan === "number") {
-      body[partStart + PART_PAN_OFF] = clampInt(part.pan, 0, 127, 64);
+      // Gerät erwartet i8 mit 0 = Center (TABLE 6 Amp Pan) — UI liefert 0..127.
+      body[partStart + PART_PAN_OFF] = e2PanUiToDevice(
+        clampInt(part.pan, 0, 127, 64)
+      );
     }
     // Per-part sample reference @ +0x08 (u16 LE). Only written when the caller
     // provides one (e.g. repointing parts to imported user samples at 501+);
     // otherwise the template's factory sample assignment is preserved.
     if (typeof part.sampleId === "number" && Number.isFinite(part.sampleId)) {
-      view.setUint16(partStart + PART_SAMPLE_OFF, clampInt(part.sampleId, 0, 0xffff, 0), true);
+      view.setUint16(
+        partStart + PART_SAMPLE_OFF,
+        clampInt(part.sampleId, 0, 0xffff, 0),
+        true
+      );
     }
 
     const steps = Array.isArray(part.steps) ? part.steps : [];
@@ -218,7 +271,12 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
       if (step && step.active) {
         body[so + STEP_TRIGGER] = 0x01;
         body[so + STEP_NOTE] = clampInt(step.note, 0, 127, DEFAULT_NOTE);
-        body[so + STEP_VELOCITY] = clampInt(step.velocity, 0, 127, DEFAULT_VELOCITY);
+        body[so + STEP_VELOCITY] = clampInt(
+          step.velocity,
+          0,
+          127,
+          DEFAULT_VELOCITY
+        );
         body[so + STEP_GATE] = 0x01; // gate ON — required or the step is silent
         body[so + STEP_GATELEN] = DEFAULT_GATELEN;
       } else {
@@ -283,18 +341,31 @@ export function buildE2AllPatFile(patterns: E2PatternInput[]): ArrayBuffer {
 // ─── Structural validators (mirror the IPC-side checks) ─────────────────────────
 
 /** Quick structural sanity-check for a built `.e2sallpat` buffer. */
-export function looksLikeE2AllPatFile(buffer: ArrayBuffer | Uint8Array): boolean {
+export function looksLikeE2AllPatFile(
+  buffer: ArrayBuffer | Uint8Array
+): boolean {
   try {
     const u8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     if (u8.byteLength !== E2S_ALLPAT_FILE_SIZE) return false;
     // "KORG" @ 0x00
-    if (u8[0] !== 0x4b || u8[1] !== 0x4f || u8[2] !== 0x52 || u8[3] !== 0x47) return false;
+    if (u8[0] !== 0x4b || u8[1] !== 0x4f || u8[2] !== 0x52 || u8[3] !== 0x47)
+      return false;
     // "e2sa" @ 0x10
-    if (u8[0x10] !== 0x65 || u8[0x11] !== 0x32 || u8[0x12] !== 0x73 || u8[0x13] !== 0x61) {
+    if (
+      u8[0x10] !== 0x65 ||
+      u8[0x11] !== 0x32 ||
+      u8[0x12] !== 0x73 ||
+      u8[0x13] !== 0x61
+    ) {
       return false;
     }
     // "GLST" @ 0x100
-    if (u8[0x100] !== 0x47 || u8[0x101] !== 0x4c || u8[0x102] !== 0x53 || u8[0x103] !== 0x54) {
+    if (
+      u8[0x100] !== 0x47 ||
+      u8[0x101] !== 0x4c ||
+      u8[0x102] !== 0x53 ||
+      u8[0x103] !== 0x54
+    ) {
       return false;
     }
     // "PTST" @ first pattern slot (0x10100)

@@ -92,6 +92,19 @@ describe("CSP — Pflicht-Directives (TASK-107)", () => {
     expect(prod).toContain("wss:");
   });
 
+  it("connect-src erlaubt blob: + data: (v3.289: XHR-Sample-Load aus In-Memory-Blobs)", () => {
+    // Der AudioEngine lädt KORG-.esx-Import-Samples per XMLHttpRequest von
+    // blob:file:///…-URLs. XHR/fetch unterliegen connect-src; ohne blob:/data:
+    // blockt die strikte Prod-CSP den Load → 'XHR-Ladefehler', kein Ton.
+    const prod = getDirective(CSP_DIRECTIVES_PROD, "connect-src");
+    expect(prod).toContain("blob:");
+    expect(prod).toContain("data:");
+
+    const dev = getDirective(CSP_DIRECTIVES_DEV, "connect-src");
+    expect(dev).toContain("blob:");
+    expect(dev).toContain("data:");
+  });
+
   it("connect-src erlaubt api.openai.com + api.anthropic.com (BUG-024, v1.67)", () => {
     // AI-Script-Generator + Project-Analysis + Pattern-Generator rufen direkt
     // fetch() auf diese Hosts auf. Ohne diese Einträge blockt CSP den Call

@@ -6,7 +6,7 @@
  *
  * READ-ONLY-SCOPE für v3.3:
  *   - Magic-Check "e2s sample all\x1a\x00"
- *   - 1002-Entry Offset-Table (0x0058..0x1000)
+ *   - 1020-Entry Offset-Table @ 0x0010 (Oe2sSLE, Index == OSC_0index)
  *   - Pro Slot: RIFF/WAVE-Header + fmt + data + korg/esli Sub-Chunk
  *   - PCM-Decode (16-bit LE → Float32 [-1,+1])
  *   - Korg-Metadata (name, category, loop, slices skeleton)
@@ -80,7 +80,7 @@ export interface E2sSlice {
  * interleaved L,R,L,R,... (gleiche Konvention wie EsxSample).
  */
 export interface E2sSlot {
-  /** Index in der 1002-Entry-Offset-Table. */
+  /** Index in der 1020-Entry-Offset-Table (== esli.OSC_0index). */
   index: number;
   /** OSC_0index (esli +0x08) — vom Gerät angezeigte Sample-Nummer (z.B. 501+).
    *  Link-Key für E2-Pattern-Part-Refs (die ebenfalls diese Nummer tragen). */
@@ -109,6 +109,8 @@ export interface E2sSlot {
   level: number;
   /** +12 dB Gain-Flag aus korg-body. */
   gain12db: boolean;
+  /** OSC_SampleTune (esli +0x55, i8). Oe2sSLE-Range -63..+63; 0 = kein Tune. */
+  sampleTune: number;
   /** Bis zu 64 Slice-Records (leere am Ende getrimmt). */
   slices: E2sSlice[];
   /** 64-Byte Step-Pattern für Slice-Trigger (rohe Bytes). */
@@ -132,7 +134,7 @@ export interface E2sSlot {
 export interface E2sBank {
   /** Quelle (Filename oder "<bytes>"). */
   source: string;
-  /** Array Länge E2S_MAX_SLOTS (1002); null = leerer Slot. */
+  /** Array Länge E2S_MAX_SLOTS (1020); null = leerer Slot. */
   slots: Array<E2sSlot | null>;
   /** Rohe Offset-Table (für Diagnose / spätere Round-Trip-Writes). */
   offsetTable: Uint32Array;
@@ -160,7 +162,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 function safeSlice(buf: Uint8Array, off: number, len: number): Uint8Array {
   if (off < 0 || off + len > buf.length) {
     throw new E2sParseError(
-      `Out-of-bounds read at 0x${off.toString(16)} (length ${len}, file ${buf.length})`,
+      `Out-of-bounds read at 0x${off.toString(16)} (length ${len}, file ${buf.length})`
     );
   }
   return buf.subarray(off, off + len);
@@ -210,7 +212,7 @@ export function le16PcmToFloat32(raw: Uint8Array): Float32Array {
 function findSubchunk(
   body: Uint8Array,
   chunkId: Uint8Array,
-  slotIndex: number,
+  slotIndex: number
 ): Uint8Array | null {
   let pos = 4; // skip 'WAVE'
   while (pos + 8 <= body.length) {
@@ -221,7 +223,7 @@ function findSubchunk(
     const payloadEnd = payloadStart + ssize;
     if (payloadEnd > body.length) {
       throw new E2sParseError(
-        `slot ${slotIndex} sub-chunk size ${ssize} escapes RIFF body (len ${body.length})`,
+        `slot ${slotIndex} sub-chunk size ${ssize} escapes RIFF body (len ${body.length})`
       );
     }
     if (bytesEqual(sid, chunkId)) {
@@ -241,10 +243,14 @@ interface FmtFields {
 function parseFmt(fmtBody: Uint8Array | null, slotIndex: number): FmtFields {
   if (!fmtBody || fmtBody.length < 16) {
     throw new E2sParseError(
-      `slot ${slotIndex} fmt sub-chunk too small (${fmtBody?.length ?? 0} < 16)`,
+      `slot ${slotIndex} fmt sub-chunk too small (${fmtBody?.length ?? 0} < 16)`
     );
   }
-  const dv = new DataView(fmtBody.buffer, fmtBody.byteOffset, fmtBody.byteLength);
+  const dv = new DataView(
+    fmtBody.buffer,
+    fmtBody.byteOffset,
+    fmtBody.byteLength
+  );
   const audioFmt = dv.getUint16(0, true);
   const channels = dv.getUint16(2, true);
   const sampleRate = dv.getUint32(4, true);
@@ -252,22 +258,22 @@ function parseFmt(fmtBody: Uint8Array | null, slotIndex: number): FmtFields {
   const bps = dv.getUint16(14, true);
   if (audioFmt !== 1) {
     throw new E2sParseError(
-      `slot ${slotIndex} non-PCM audio_fmt=${audioFmt} (only 1 supported)`,
+      `slot ${slotIndex} non-PCM audio_fmt=${audioFmt} (only 1 supported)`
     );
   }
   if (channels !== 1 && channels !== 2) {
     throw new E2sParseError(
-      `slot ${slotIndex} unsupported channel count ${channels}`,
+      `slot ${slotIndex} unsupported channel count ${channels}`
     );
   }
   if (sampleRate <= 0) {
     throw new E2sParseError(
-      `slot ${slotIndex} non-positive sample_rate ${sampleRate}`,
+      `slot ${slotIndex} non-positive sample_rate ${sampleRate}`
     );
   }
   if (bps !== E2S_BIT_DEPTH) {
     throw new E2sParseError(
-      `slot ${slotIndex} bit_depth ${bps} != ${E2S_BIT_DEPTH}`,
+      `slot ${slotIndex} bit_depth ${bps} != ${E2S_BIT_DEPTH}`
     );
   }
   return { sampleRate, channels: channels as 1 | 2, bitsPerSample: bps };
@@ -280,6 +286,8 @@ interface KorgMeta {
   category: number;
   level: number;
   gain12db: boolean;
+  /** OSC_SampleTune (esli +0x55, i8): coarse tune, Oe2sSLE GUI-Range -63..+63. */
+  sampleTune: number;
   loopType: LoopType;
   loopStart: number;
   loopEnd: number;
@@ -297,6 +305,7 @@ function defaultKorgMeta(): KorgMeta {
     category: 0,
     level: 100,
     gain12db: false,
+    sampleTune: 0,
     loopType: LOOP_TYPE_ONESHOT,
     loopStart: 0,
     loopEnd: 0,
@@ -312,18 +321,18 @@ function parseKorgBody(
   body: Uint8Array,
   slotIndex: number,
   channels: 1 | 2,
-  warnings: string[],
+  warnings: string[]
 ): KorgMeta {
   const meta = defaultKorgMeta();
   if (body.length < KORG_SUBCHUNK_BODY_SIZE) {
     warnings.push(
-      `slot ${slotIndex} korg body ${body.length} < ${KORG_SUBCHUNK_BODY_SIZE} (some metadata defaulted)`,
+      `slot ${slotIndex} korg body ${body.length} < ${KORG_SUBCHUNK_BODY_SIZE} (some metadata defaulted)`
     );
   }
 
   if (body.length >= ESLI_NAME_OFFSET + ESLI_NAME_LEN) {
     meta.name = decodeAsciiName(
-      body.subarray(ESLI_NAME_OFFSET, ESLI_NAME_OFFSET + ESLI_NAME_LEN),
+      body.subarray(ESLI_NAME_OFFSET, ESLI_NAME_OFFSET + ESLI_NAME_LEN)
     );
   }
 
@@ -346,7 +355,9 @@ function parseKorgBody(
 
   if (body.length >= ESLI_PLAY_VOLUME_OFFSET + 2) {
     const playVolume = dv.getUint16(ESLI_PLAY_VOLUME_OFFSET, true);
-    let level = playVolume ? Math.min(127, Math.floor((playVolume * 127) / 0xffff)) : 0;
+    let level = playVolume
+      ? Math.min(127, Math.floor((playVolume * 127) / 0xffff))
+      : 0;
     if (level === 0 && playVolume === 0) level = 100; // device default
     meta.level = level;
   }
@@ -368,14 +379,18 @@ function parseKorgBody(
   if (body.length > ESLI_USE_CHAN1_OFFSET) {
     const useChan1 = body[ESLI_USE_CHAN1_OFFSET] !== 0;
     if (channels === 2 && !useChan1) {
-      warnings.push(`slot ${slotIndex} stereo but useChan1=0 (device plays mono)`);
+      warnings.push(
+        `slot ${slotIndex} stereo but useChan1=0 (device plays mono)`
+      );
     } else if (channels === 1 && useChan1) {
       warnings.push(`slot ${slotIndex} mono but useChan1=1 (ignored)`);
     }
   }
 
   if (body.length > ESLI_SAMPLE_TUNE_OFFSET) {
-    // i8 tune: nicht weiter genutzt aktuell, könnte später ins SlotModel
+    // OSC_SampleTune @ +0x55 (i8). Oe2sSLE schreibt/liest -63..+63; wir
+    // dekodieren den vollen signed-Bereich und clampen defensiv in [-64,+63].
+    meta.sampleTune = dv.getInt8(ESLI_SAMPLE_TUNE_OFFSET);
   }
 
   // Slice-Array (64 × 16B = 1024B)
@@ -394,7 +409,12 @@ function parseKorgBody(
     // Trim trailing all-zero slices
     while (decoded.length > 0) {
       const last = decoded[decoded.length - 1];
-      if (last.start === 0 && last.length === 0 && last.attackLength === 0 && last.amplitude === 0) {
+      if (
+        last.start === 0 &&
+        last.length === 0 &&
+        last.attackLength === 0 &&
+        last.amplitude === 0
+      ) {
         decoded.pop();
       } else break;
     }
@@ -403,7 +423,9 @@ function parseKorgBody(
 
   const stepsEnd = ESLI_SLICE_STEPS_OFFSET + ESLI_SLICE_STEPS_LEN;
   if (stepsEnd <= body.length) {
-    meta.sliceSteps = new Uint8Array(body.subarray(ESLI_SLICE_STEPS_OFFSET, stepsEnd));
+    meta.sliceSteps = new Uint8Array(
+      body.subarray(ESLI_SLICE_STEPS_OFFSET, stepsEnd)
+    );
   }
 
   if (body.length > ESLI_SLICING_NUM_STEPS_OFFSET) {
@@ -432,36 +454,48 @@ function parseSlot(
   buf: Uint8Array,
   slotIndex: number,
   fileOffset: number,
-  opts: ParseSlotOptions = {},
+  opts: ParseSlotOptions = {}
 ): { parsed: ParsedSlot; warnings: string[] } {
   const warnings: string[] = [];
 
   // RIFF Header (8 bytes)
   const headerBytes = safeSlice(buf, fileOffset, 8);
-  if (headerBytes[0] !== 0x52 || headerBytes[1] !== 0x49 || headerBytes[2] !== 0x46 || headerBytes[3] !== 0x46) {
+  if (
+    headerBytes[0] !== 0x52 ||
+    headerBytes[1] !== 0x49 ||
+    headerBytes[2] !== 0x46 ||
+    headerBytes[3] !== 0x46
+  ) {
     throw new E2sParseError(
-      `slot ${slotIndex} RIFF magic mismatch at 0x${fileOffset.toString(16)}`,
+      `slot ${slotIndex} RIFF magic mismatch at 0x${fileOffset.toString(16)}`
     );
   }
-  const riffSize = new DataView(headerBytes.buffer, headerBytes.byteOffset + 4, 4).getUint32(0, true);
+  const riffSize = new DataView(
+    headerBytes.buffer,
+    headerBytes.byteOffset + 4,
+    4
+  ).getUint32(0, true);
   if (riffSize < 4 || riffSize > E2S_MAX_RIFF_BYTES) {
     throw new E2sParseError(
-      `slot ${slotIndex} RIFF size ${riffSize} out of bounds [4, ${E2S_MAX_RIFF_BYTES}]`,
+      `slot ${slotIndex} RIFF size ${riffSize} out of bounds [4, ${E2S_MAX_RIFF_BYTES}]`
     );
   }
   const endPos = fileOffset + 8 + riffSize;
   if (endPos > buf.length) {
     throw new E2sParseError(
-      `slot ${slotIndex} RIFF chunk escapes file: ends at 0x${endPos.toString(16)}`,
+      `slot ${slotIndex} RIFF chunk escapes file: ends at 0x${endPos.toString(16)}`
     );
   }
 
   const body = safeSlice(buf, fileOffset + 8, riffSize);
   // body starts with 'WAVE'
-  if (body[0] !== 0x57 || body[1] !== 0x41 || body[2] !== 0x56 || body[3] !== 0x45) {
-    throw new E2sParseError(
-      `slot ${slotIndex} missing WAVE marker`,
-    );
+  if (
+    body[0] !== 0x57 ||
+    body[1] !== 0x41 ||
+    body[2] !== 0x56 ||
+    body[3] !== 0x45
+  ) {
+    throw new E2sParseError(`slot ${slotIndex} missing WAVE marker`);
   }
 
   const FMT_ID = new Uint8Array([0x66, 0x6d, 0x74, 0x20]); // "fmt "
@@ -471,13 +505,15 @@ function parseSlot(
   const dataBody = findSubchunk(body, DATA_ID, slotIndex);
   const korgBody = findSubchunk(body, KORG_SUBCHUNK_ID, slotIndex);
 
-  if (!fmtBody) throw new E2sParseError(`slot ${slotIndex} missing fmt sub-chunk`);
-  if (!dataBody) throw new E2sParseError(`slot ${slotIndex} missing data sub-chunk`);
+  if (!fmtBody)
+    throw new E2sParseError(`slot ${slotIndex} missing fmt sub-chunk`);
+  if (!dataBody)
+    throw new E2sParseError(`slot ${slotIndex} missing data sub-chunk`);
 
   const fmt = parseFmt(fmtBody, slotIndex);
   if (dataBody.length > MAX_BYTES_PER_SLOT) {
     throw new E2sParseError(
-      `slot ${slotIndex} pcm_data size ${dataBody.length} exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`,
+      `slot ${slotIndex} pcm_data size ${dataBody.length} exceeds per-slot cap ${MAX_BYTES_PER_SLOT}`
     );
   }
 
@@ -488,8 +524,10 @@ function parseSlot(
   const pcm = le16PcmToFloat32(dataBody);
   const frames = (pcm.length / fmt.channels) | 0;
   const bytesPerFrame = fmt.channels * (fmt.bitsPerSample / 8);
-  const loopStartFrames = bytesPerFrame > 0 ? Math.floor(meta.loopStart / bytesPerFrame) : 0;
-  const loopEndFrames = bytesPerFrame > 0 ? Math.floor(meta.loopEnd / bytesPerFrame) : 0;
+  const loopStartFrames =
+    bytesPerFrame > 0 ? Math.floor(meta.loopStart / bytesPerFrame) : 0;
+  const loopEndFrames =
+    bytesPerFrame > 0 ? Math.floor(meta.loopEnd / bytesPerFrame) : 0;
 
   // v3.6.0 — Optional raw RIFF preservation für Bit-Exact-Round-Trip.
   // Wir kopieren die kompletten 8+riffSize Bytes (inkl. RIFF-Header) in einen
@@ -519,6 +557,7 @@ function parseSlot(
         loopEnd: Math.max(0, Math.min(loopEndFrames, frames)),
         level: meta.level,
         gain12db: meta.gain12db,
+        sampleTune: meta.sampleTune,
         slices: meta.slices,
         sliceSteps: meta.sliceSteps,
         slicingNumSteps: meta.slicingNumSteps,
@@ -556,18 +595,18 @@ export interface ParseE2sBankOptions {
 export function parseE2sBank(
   input: ArrayBuffer | Uint8Array,
   source = "<bytes>",
-  opts: ParseE2sBankOptions = {},
+  opts: ParseE2sBankOptions = {}
 ): E2sBank {
   const buf = input instanceof Uint8Array ? input : new Uint8Array(input);
 
   if (buf.length < E2S_ALL_SAMPLE_AREA_START) {
     throw new E2sParseError(
-      `file too small to be a valid .all: ${buf.length} bytes (need >= ${E2S_ALL_SAMPLE_AREA_START})`,
+      `file too small to be a valid .all: ${buf.length} bytes (need >= ${E2S_ALL_SAMPLE_AREA_START})`
     );
   }
   if (buf.length > E2S_FILE_MAX_BYTES) {
     throw new E2sParseError(
-      `file size ${buf.length} exceeds max ${E2S_FILE_MAX_BYTES}`,
+      `file size ${buf.length} exceeds max ${E2S_FILE_MAX_BYTES}`
     );
   }
 
@@ -577,8 +616,7 @@ export function parseE2sBank(
     throw new E2sParseError(`signature mismatch at offset 0x0000`);
   }
 
-  // Offset-Table (1002 × u32 LE = 4008 bytes, 0x0058..0x1000 — v3.286 korrigiert,
-  // vorher fälschlich 250 Einträge ab 0x07E0; siehe constants.ts)
+  // Offset-Table (1020 × u32 LE @ 0x0010, Oe2sSLE)
   const offsetTable = new Uint32Array(E2S_MAX_SLOTS);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {
@@ -592,12 +630,12 @@ export function parseE2sBank(
     if (off === 0) continue;
     if (off < E2S_ALL_SAMPLE_AREA_START) {
       throw new E2sParseError(
-        `slot ${i} offset 0x${off.toString(16)} lies inside prelude (< 0x${E2S_ALL_SAMPLE_AREA_START.toString(16)})`,
+        `slot ${i} offset 0x${off.toString(16)} lies inside prelude (< 0x${E2S_ALL_SAMPLE_AREA_START.toString(16)})`
       );
     }
     if (off + 8 > buf.length) {
       throw new E2sParseError(
-        `slot ${i} offset 0x${off.toString(16)} + 8-byte RIFF header escapes file`,
+        `slot ${i} offset 0x${off.toString(16)} + 8-byte RIFF header escapes file`
       );
     }
   }
@@ -619,20 +657,67 @@ export function parseE2sBank(
       totalPcm += parsed.slot.pcmData.byteLength;
       if (totalPcm > E2S_MAX_TOTAL_PCM_BYTES) {
         throw new E2sParseError(
-          `cumulative PCM size ${totalPcm} bytes exceeds E2S total cap ${E2S_MAX_TOTAL_PCM_BYTES}`,
+          `cumulative PCM size ${totalPcm} bytes exceeds E2S total cap ${E2S_MAX_TOTAL_PCM_BYTES}`
         );
       }
     } catch (err) {
       // Defensive: einzelner kaputter Slot bricht nicht die ganze Bank ab,
       // nur wenn der Fehler die Datei verlässt oder Caps verletzt.
       if (err instanceof E2sParseError) {
-        if (err.message.includes("exceeds") || err.message.includes("escapes file")) {
+        if (
+          err.message.includes("exceeds") ||
+          err.message.includes("escapes file")
+        ) {
           throw err;
         }
         warnings.push(`slot ${i}: ${err.message}`);
         continue;
       }
       throw err;
+    }
+  }
+
+  // ── Selbstpruefung der Tabellen-Geometrie (v3.298) ─────────────────────────
+  //
+  // Die Datei traegt die Sample-Nummer doppelt: einmal als Position in der
+  // Offset-Tabelle, einmal als `OSC_0index` im korg/esli-Chunk des Slots. Bei
+  // korrektem `E2S_ALL_OFFSET_TABLE_START` sind beide gleich.
+  //
+  // Diese Redundanz ist das EINZIGE, was eine falsche Tabellen-Startadresse
+  // auffliegen laesst. Ein um n Eintraege verschobener Start liefert dieselben
+  // Offset-Werte, nur unter falschen Indizes — Plausibilitaetspruefungen wie
+  // "Offset >= 0x1000" oder "Anzahl nicht-null" koennen das prinzipiell nicht
+  // sehen. Genau daran sind hier schon zwei Werte gescheitert (0x07E0 und
+  // 0x0058); ohne diesen Abgleich faellt der naechste Irrtum wieder erst am
+  // Geraet auf, an verschobenen Sample-Nummern.
+  const mismatches: number[] = [];
+  for (let i = 0; i < E2S_MAX_SLOTS; i++) {
+    const s = slots[i];
+    if (s === null) continue;
+    if (s.sampleNumber !== i) mismatches.push(i);
+  }
+  if (mismatches.length > 0) {
+    const filled = slots.reduce<number>((n, s) => (s === null ? n : n + 1), 0);
+    const shifts = new Set(mismatches.map(i => (slots[i] as E2sSlot).sampleNumber - i));
+    // Ein Geometriefehler verschiebt AUSNAHMSLOS jeden Slot um denselben
+    // Betrag. Zwei einzelne krumme Slots ergeben trivial auch einen
+    // "konstanten" Versatz — deshalb muessen alle belegten Slots betroffen
+    // sein, und es muessen mehr als einer sein.
+    if (shifts.size === 1 && mismatches.length === filled && filled > 1) {
+      const shift = [...shifts][0];
+      warnings.push(
+        `offset-table geometry suspect: ALL ${mismatches.length} slots report ` +
+          `OSC_0index = index ${shift > 0 ? "+" : ""}${shift}. Ein konstanter ` +
+          `Versatz heisst in aller Regel: E2S_ALL_OFFSET_TABLE_START ist um ` +
+          `${Math.abs(shift) * 4} Bytes falsch (aktuell 0x${E2S_ALL_OFFSET_TABLE_START.toString(16)}).`
+      );
+    } else {
+      warnings.push(
+        `${mismatches.length} Slot(s) mit OSC_0index != Tabellen-Index ` +
+          `(z.B. Slot ${mismatches[0]} meldet ${(slots[mismatches[0]] as E2sSlot).sampleNumber}). ` +
+          `Kein konstanter Versatz — vermutlich einzelne Slots inkonsistent, ` +
+          `nicht die Tabellen-Geometrie.`
+      );
     }
   }
 

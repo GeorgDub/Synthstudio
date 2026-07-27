@@ -342,7 +342,9 @@ describe("v3.34: KORG-native encoding conventions", () => {
 // ─── 5. Volume + Pan round-trip ──────────────────────────────────────────────
 
 describe("Part-header Volume + Pan round-trip", () => {
-  it("writes Volume at part+0x15 and Pan at part+0x22", () => {
+  it("writes Volume (Amp Level) at part+0x18 and Pan (Amp Pan, i8) at part+0x19", () => {
+    // v3.297 (Gerätebefund + Korg TABLE 6): Volume=Amp Level@0x18, Pan=Amp
+    // Pan@0x19 als i8 mit 0 = Center (UI 0..127 → wert-64, geclampt ±63).
     const input = makeMinimalInput();
     input.parts[0].volume = 100;
     input.parts[0].pan = 30;
@@ -351,20 +353,20 @@ describe("Part-header Volume + Pan round-trip", () => {
 
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
-    expect(view.getUint8(0x900 + 0x15)).toBe(100); // part 0 volume
-    expect(view.getUint8(0x900 + 0x22)).toBe(30); // part 0 pan
-    expect(view.getUint8(0x900 + 5 * 816 + 0x15)).toBe(64); // part 5 volume
-    expect(view.getUint8(0x900 + 5 * 816 + 0x22)).toBe(96); // part 5 pan
+    expect(view.getUint8(0x900 + 0x18)).toBe(100); // part 0 volume (Amp Level)
+    expect(view.getInt8(0x900 + 0x19)).toBe(30 - 64); // part 0 pan → i8 -34
+    expect(view.getUint8(0x900 + 5 * 816 + 0x18)).toBe(64); // part 5 volume
+    expect(view.getInt8(0x900 + 5 * 816 + 0x19)).toBe(96 - 64); // part 5 pan → +32
   });
 
-  it("clamps Volume + Pan to 0..127", () => {
+  it("clamps Volume + Pan (Pan hart links → i8 -63)", () => {
     const input = makeMinimalInput();
     input.parts[0].volume = 500;
     input.parts[0].pan = -50;
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
-    expect(view.getUint8(0x900 + 0x15)).toBe(127);
-    expect(view.getUint8(0x900 + 0x22)).toBe(0);
+    expect(view.getUint8(0x900 + 0x18)).toBe(127);
+    expect(view.getInt8(0x900 + 0x19)).toBe(-63); // UI 0 → Geräte-Minimum
   });
 
   it("round-trips Volume + Pan through parseElectribePattern", () => {

@@ -12,7 +12,12 @@
 import React, { useCallback, useRef, useState } from "react";
 
 import { useElectron } from "../../../../electron/useElectron";
-import { importProjectFile, importResultToPatterns, ImportError, type ImportedMelodicPart } from "@/utils/imports";
+import {
+  importProjectFile,
+  importResultToPatterns,
+  ImportError,
+  type ImportedMelodicPart,
+} from "@/utils/imports";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -33,7 +38,7 @@ export interface ProjectManagerProps {
   onImportPatterns?: (
     patterns: ReturnType<typeof importResultToPatterns>,
     sourceFormat: string,
-    melodicParts?: ImportedMelodicPart[],
+    melodicParts?: ImportedMelodicPart[]
   ) => void;
 }
 
@@ -58,25 +63,34 @@ export function ProjectManager({
   const importInputRef = useRef<HTMLInputElement>(null);
 
   // ── Import (FL Studio / Ableton / Electribe) ──────────────────────────────
-  const handleImportFile = useCallback(async (file: File) => {
-    setIsImporting(true);
-    try {
-      const result = await importProjectFile(file);
-      const patterns = importResultToPatterns(result);
-      const warnings = result.warnings.length > 0
-        ? `\n\nHinweise:\n• ${result.warnings.join("\n• ")}`
-        : "";
-      alert(`Import erfolgreich: ${result.fileName}\nFormat: ${result.sourceFormat.toUpperCase()}\nPatterns: ${patterns.length}\nBPM: ${result.bpm ?? "—"}${warnings}`);
-      onImportPatterns?.(patterns, result.sourceFormat, result.melodicParts);
-    } catch (err) {
-      const msg = err instanceof ImportError
-        ? `Import-Fehler (${err.format}): ${err.message}`
-        : err instanceof Error ? err.message : "Unbekannter Fehler";
-      alert(msg);
-    } finally {
-      setIsImporting(false);
-    }
-  }, [onImportPatterns]);
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      setIsImporting(true);
+      try {
+        const result = await importProjectFile(file);
+        const patterns = importResultToPatterns(result);
+        const warnings =
+          result.warnings.length > 0
+            ? `\n\nHinweise:\n• ${result.warnings.join("\n• ")}`
+            : "";
+        alert(
+          `Import erfolgreich: ${result.fileName}\nFormat: ${result.sourceFormat.toUpperCase()}\nPatterns: ${patterns.length}\nBPM: ${result.bpm ?? "—"}${warnings}`
+        );
+        onImportPatterns?.(patterns, result.sourceFormat, result.melodicParts);
+      } catch (err) {
+        const msg =
+          err instanceof ImportError
+            ? `Import-Fehler (${err.format}): ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : "Unbekannter Fehler";
+        alert(msg);
+      } finally {
+        setIsImporting(false);
+      }
+    },
+    [onImportPatterns]
+  );
 
   // ── Speichern ─────────────────────────────────────────────────────────────
 
@@ -177,7 +191,11 @@ export function ProjectManager({
       {/* Öffnen */}
       <button
         onClick={onLoad}
-        title={electron.isElectron ? "Projekt öffnen – nativer Dialog (Ctrl+O)" : "Projekt öffnen (Ctrl+O)"}
+        title={
+          electron.isElectron
+            ? "Projekt öffnen – nativer Dialog (Ctrl+O)"
+            : "Projekt öffnen (Ctrl+O)"
+        }
         className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100"
       >
         Öffnen
@@ -187,7 +205,7 @@ export function ProjectManager({
       <input
         ref={importInputRef}
         type="file"
-        accept=".flp,.als,.esx,.elst,.e2spat,.e2sallpat"
+        accept=".flp,.als,.elst,.e2spat,.e2sallpat"
         className="hidden"
         onChange={e => {
           const file = e.target.files?.[0];
@@ -198,7 +216,7 @@ export function ProjectManager({
       <button
         onClick={() => importInputRef.current?.click()}
         disabled={isImporting}
-        title="FL Studio (.flp) / Ableton (.als) / KORG Electribe (.esx/.elst) importieren"
+        title="FL Studio (.flp) / Ableton (.als) / KORG Electribe (.elst) importieren — fuer Korg .esx/.all den Korg-Import-Button nutzen"
         className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100 disabled:opacity-50"
       >
         {isImporting ? "Importiere…" : "Import…"}
@@ -208,7 +226,11 @@ export function ProjectManager({
       <button
         onClick={handleSave}
         disabled={isSaving}
-        title={electron.isElectron ? "Projekt speichern – nativer Dialog (Ctrl+S)" : "Projekt speichern (Ctrl+S)"}
+        title={
+          electron.isElectron
+            ? "Projekt speichern – nativer Dialog (Ctrl+S)"
+            : "Projekt speichern (Ctrl+S)"
+        }
         className={[
           "px-2 py-1 text-xs rounded border transition-colors duration-100",
           isDirty
@@ -223,7 +245,11 @@ export function ProjectManager({
       {/* Exportieren */}
       <button
         onClick={handleExport}
-        title={electron.isElectron ? "Projekt exportieren – nativer Dialog (Ctrl+E)" : "Projekt exportieren (Ctrl+E)"}
+        title={
+          electron.isElectron
+            ? "Projekt exportieren – nativer Dialog (Ctrl+E)"
+            : "Projekt exportieren (Ctrl+E)"
+        }
         className="px-2 py-1 text-xs rounded bg-bg-elevated text-text-muted border border-border-color hover:text-text-primary transition-colors duration-100"
       >
         Export

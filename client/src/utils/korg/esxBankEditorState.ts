@@ -36,14 +36,15 @@
  */
 
 import type { EsxBank, EsxPattern, EsxSample } from "./esxParser";
-import {
-  patchEsxBankPatterns,
-  type EsxBankPatch,
-} from "./esxBankPatcher";
+import { patchEsxBankPatterns, type EsxBankPatch } from "./esxBankPatcher";
 import {
   patchEsxBankSample,
+  renameEsxBankSamples,
   type EsxSamplePatchInput,
+  type EsxSampleRename,
 } from "./esxSamplePatcher";
+
+export type { EsxSampleRename } from "./esxSamplePatcher";
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -91,11 +92,7 @@ export interface EsxEditorState {
 export function isInitPatternName(name: string): boolean {
   if (typeof name !== "string") return false;
   const lower = name.trim().toLowerCase();
-  return (
-    lower === "init pattern" ||
-    lower === "init pat" ||
-    lower === "init"
-  );
+  return lower === "init pattern" || lower === "init pat" || lower === "init";
 }
 
 /**
@@ -108,7 +105,7 @@ export function isInitPatternName(name: string): boolean {
  */
 export function buildEsxSlotOverview(
   bank: EsxBank,
-  totalSlots = 256,
+  totalSlots = 256
 ): EsxSlotRow[] {
   const byIndex = new Map<number, EsxPattern>();
   for (const p of bank.patterns) {
@@ -148,7 +145,7 @@ export function buildEsxSlotOverview(
 export function stageEsxPatch(
   pending: Map<number, ArrayBuffer>,
   index: number,
-  block: ArrayBuffer,
+  block: ArrayBuffer
 ): Map<number, ArrayBuffer> {
   if (
     typeof index !== "number" ||
@@ -162,7 +159,7 @@ export function stageEsxPatch(
     throw new Error(
       `stageEsxPatch: block must be ArrayBuffer of exactly 4280 bytes (got ${
         block instanceof ArrayBuffer ? `${block.byteLength}B` : typeof block
-      })`,
+      })`
     );
   }
   const next = new Map(pending);
@@ -173,7 +170,7 @@ export function stageEsxPatch(
 /** Remove a staged patch. Returns a new map. */
 export function unstageEsxPatch(
   pending: Map<number, ArrayBuffer>,
-  index: number,
+  index: number
 ): Map<number, ArrayBuffer> {
   if (!pending.has(index)) return pending;
   const next = new Map(pending);
@@ -184,7 +181,7 @@ export function unstageEsxPatch(
 /** Apply all staged patches to the loaded bank-buffer, producing a new buffer. */
 export function commitEsxPatches(
   bankBuffer: ArrayBuffer | Uint8Array,
-  pending: Map<number, ArrayBuffer>,
+  pending: Map<number, ArrayBuffer>
 ): ArrayBuffer {
   const patches: EsxBankPatch[] = [];
   // Sort by index for deterministic write order (also helps tests).
@@ -197,13 +194,15 @@ export function commitEsxPatches(
 }
 
 /** Returns true when at least one slot replacement is staged. */
-export function hasPendingEsxPatches(pending: Map<number, ArrayBuffer>): boolean {
+export function hasPendingEsxPatches(
+  pending: Map<number, ArrayBuffer>
+): boolean {
   return pending.size > 0;
 }
 
 /** Count of staged slot replacements. */
 export function countPendingEsxPatches(
-  pending: Map<number, ArrayBuffer>,
+  pending: Map<number, ArrayBuffer>
 ): number {
   return pending.size;
 }
@@ -220,10 +219,10 @@ export function filterEsxRows(
   rows: ReadonlyArray<EsxSlotRow>,
   query: string,
   hideInit: boolean,
-  hideEmpty: boolean,
+  hideEmpty: boolean
 ): EsxSlotRow[] {
   const q = (query ?? "").trim().toLowerCase();
-  return rows.filter((r) => {
+  return rows.filter(r => {
     if (hideEmpty && r.empty) return false;
     if (hideInit && !r.empty && isInitPatternName(r.name)) return false;
     if (q.length === 0) return true;
@@ -285,7 +284,7 @@ export interface EsxSamplePatchEntry {
  */
 export function buildEsxSampleSlotOverview(
   bank: EsxBank,
-  totalSlots = 256,
+  totalSlots = 256
 ): EsxSampleSlotRow[] {
   const byIndex = new Map<number, EsxSample>();
   for (const s of bank.monoSamples) {
@@ -326,7 +325,7 @@ export function buildEsxSampleSlotOverview(
 export function stageEsxSamplePatch(
   pending: Map<number, EsxSamplePatchEntry>,
   slot: number,
-  entry: EsxSamplePatchEntry,
+  entry: EsxSamplePatchEntry
 ): Map<number, EsxSamplePatchEntry> {
   if (
     typeof slot !== "number" ||
@@ -340,7 +339,9 @@ export function stageEsxSamplePatch(
     throw new Error("stageEsxSamplePatch: entry must be an object");
   }
   if (!(entry.pcmData instanceof Float32Array) || entry.pcmData.length === 0) {
-    throw new Error("stageEsxSamplePatch: entry.pcmData must be non-empty Float32Array");
+    throw new Error(
+      "stageEsxSamplePatch: entry.pcmData must be non-empty Float32Array"
+    );
   }
   if (entry.channels !== 1 && entry.channels !== 2) {
     throw new Error(`stageEsxSamplePatch: invalid channels ${entry.channels}`);
@@ -350,7 +351,9 @@ export function stageEsxSamplePatch(
     !Number.isFinite(entry.sampleRate) ||
     entry.sampleRate <= 0
   ) {
-    throw new Error(`stageEsxSamplePatch: invalid sampleRate ${entry.sampleRate}`);
+    throw new Error(
+      `stageEsxSamplePatch: invalid sampleRate ${entry.sampleRate}`
+    );
   }
   const next = new Map(pending);
   next.set(slot, entry);
@@ -360,7 +363,7 @@ export function stageEsxSamplePatch(
 /** Remove a staged sample-patch. Returns a new map (or SAME ref if absent). */
 export function unstageEsxSamplePatch(
   pending: Map<number, EsxSamplePatchEntry>,
-  slot: number,
+  slot: number
 ): Map<number, EsxSamplePatchEntry> {
   if (!pending.has(slot)) return pending;
   const next = new Map(pending);
@@ -370,14 +373,14 @@ export function unstageEsxSamplePatch(
 
 /** Returns true when at least one sample-slot replacement is staged. */
 export function hasPendingEsxSamplePatches(
-  pending: Map<number, EsxSamplePatchEntry>,
+  pending: Map<number, EsxSamplePatchEntry>
 ): boolean {
   return pending.size > 0;
 }
 
 /** Count of staged sample-slot replacements. */
 export function countPendingEsxSamplePatches(
-  pending: Map<number, EsxSamplePatchEntry>,
+  pending: Map<number, EsxSamplePatchEntry>
 ): number {
   return pending.size;
 }
@@ -390,12 +393,15 @@ export function countPendingEsxSamplePatches(
  */
 export function commitEsxSamplePatches(
   bankBuffer: ArrayBuffer | Uint8Array,
-  pending: Map<number, EsxSamplePatchEntry>,
+  pending: Map<number, EsxSamplePatchEntry>
 ): ArrayBuffer {
   if (pending.size === 0) {
     // Return a fresh copy so the caller can't mutate the input via the
     // returned buffer.
-    const src = bankBuffer instanceof Uint8Array ? bankBuffer : new Uint8Array(bankBuffer);
+    const src =
+      bankBuffer instanceof Uint8Array
+        ? bankBuffer
+        : new Uint8Array(bankBuffer);
     const out = new ArrayBuffer(src.byteLength);
     new Uint8Array(out).set(src);
     return out;
@@ -417,10 +423,10 @@ export function commitEsxSamplePatches(
   }
   return current instanceof ArrayBuffer
     ? current
-    : (current as Uint8Array).buffer.slice(
+    : ((current as Uint8Array).buffer.slice(
         (current as Uint8Array).byteOffset,
-        (current as Uint8Array).byteOffset + (current as Uint8Array).byteLength,
-      ) as ArrayBuffer;
+        (current as Uint8Array).byteOffset + (current as Uint8Array).byteLength
+      ) as ArrayBuffer);
 }
 
 /**
@@ -434,6 +440,7 @@ export function commitEsxPatchesAll(
   bankBuffer: ArrayBuffer | Uint8Array,
   patternPending: Map<number, ArrayBuffer>,
   samplePending: Map<number, EsxSamplePatchEntry>,
+  renamePending?: Map<string, EsxSampleRename>
 ): ArrayBuffer {
   // Step 1: apply pattern patches.
   let buf: ArrayBuffer = commitEsxPatches(bankBuffer, patternPending);
@@ -441,7 +448,95 @@ export function commitEsxPatchesAll(
   if (samplePending.size > 0) {
     buf = commitEsxSamplePatches(buf, samplePending);
   }
+  // Step 3: apply name-only renames LAST (surgical, bit-exact) so ein Rename
+  // einen frischen Sample-Patch-Namen desselben Slots überschreiben kann.
+  if (renamePending && renamePending.size > 0) {
+    buf = commitEsxSampleRenames(buf, renamePending);
+  }
   return buf;
+}
+
+// ─── Sample-Rename-Staging (v3.284 — name-only, bit-exakt) ───────────────────
+
+/**
+ * Stabiler Map-Key für einen Sample-Rename. Mono + Stereo teilen sich denselben
+ * Slot-Index, deshalb geht der Kanal in den Key ein (`"1:3"` vs `"2:3"`).
+ */
+export function esxSampleRenameKey(channels: 1 | 2, index: number): string {
+  return `${channels}:${index}`;
+}
+
+/**
+ * Staged einen Slot-Rename (last-write-wins). Ein leerer/gleichnamiger Rename
+ * wird trotzdem gestaged — der Caller entscheidet über Dedup via UI.
+ */
+export function stageEsxSampleRename(
+  pending: Map<string, EsxSampleRename>,
+  rename: EsxSampleRename
+): Map<string, EsxSampleRename> {
+  if (rename.channels !== 1 && rename.channels !== 2) {
+    throw new Error(
+      `stageEsxSampleRename: invalid channels ${rename.channels}`
+    );
+  }
+  if (
+    typeof rename.index !== "number" ||
+    !Number.isInteger(rename.index) ||
+    rename.index < 0
+  ) {
+    throw new Error(`stageEsxSampleRename: invalid index ${rename.index}`);
+  }
+  const next = new Map(pending);
+  next.set(esxSampleRenameKey(rename.channels, rename.index), rename);
+  return next;
+}
+
+/** Entfernt einen gestagten Rename. Gibt dieselbe Ref zurück, wenn nicht da. */
+export function unstageEsxSampleRename(
+  pending: Map<string, EsxSampleRename>,
+  channels: 1 | 2,
+  index: number
+): Map<string, EsxSampleRename> {
+  const key = esxSampleRenameKey(channels, index);
+  if (!pending.has(key)) return pending;
+  const next = new Map(pending);
+  next.delete(key);
+  return next;
+}
+
+/** Anzahl gestagter Renames. */
+export function countPendingEsxSampleRenames(
+  pending: Map<string, EsxSampleRename>
+): number {
+  return pending.size;
+}
+
+/** true, wenn mindestens ein Rename gestaged ist. */
+export function hasPendingEsxSampleRenames(
+  pending: Map<string, EsxSampleRename>
+): boolean {
+  return pending.size > 0;
+}
+
+/**
+ * Wendet alle gestagten Renames in einem Pass an (name-only, bit-exakt). Gibt
+ * bei leerer Map eine frische Kopie zurück, damit der Caller den Input nicht
+ * über den Rückgabe-Buffer mutieren kann.
+ */
+export function commitEsxSampleRenames(
+  bankBuffer: ArrayBuffer | Uint8Array,
+  pending: Map<string, EsxSampleRename>
+): ArrayBuffer {
+  if (pending.size === 0) {
+    const src =
+      bankBuffer instanceof Uint8Array
+        ? bankBuffer
+        : new Uint8Array(bankBuffer);
+    const out = new ArrayBuffer(src.byteLength);
+    new Uint8Array(out).set(src);
+    return out;
+  }
+  return renameEsxBankSamples(bankBuffer, Array.from(pending.values()));
 }
 
 /**
@@ -468,10 +563,10 @@ export function formatSampleLength(frames: number, sampleRate: number): string {
 export function filterEsxSampleRows(
   rows: ReadonlyArray<EsxSampleSlotRow>,
   query: string,
-  hideEmpty: boolean,
+  hideEmpty: boolean
 ): EsxSampleSlotRow[] {
   const q = (query ?? "").trim().toLowerCase();
-  return rows.filter((r) => {
+  return rows.filter(r => {
     if (hideEmpty && r.empty) return false;
     if (q.length === 0) return true;
     const idxStr = String(r.index);
@@ -523,7 +618,7 @@ export interface EsxStereoSampleSlotRow {
  */
 export function buildEsxStereoSampleSlotOverview(
   bank: EsxBank,
-  totalSlots = 128,
+  totalSlots = 128
 ): EsxStereoSampleSlotRow[] {
   const MONO_SLOTS = 256;
   const byIndex = new Map<number, EsxSample>();
@@ -570,7 +665,7 @@ export function buildEsxStereoSampleSlotOverview(
 export function stageEsxStereoSamplePatch(
   pending: Map<number, EsxSamplePatchEntry>,
   slot: number,
-  entry: EsxSamplePatchEntry,
+  entry: EsxSamplePatchEntry
 ): Map<number, EsxSamplePatchEntry> {
   if (
     typeof slot !== "number" ||
@@ -578,26 +673,36 @@ export function stageEsxStereoSamplePatch(
     slot < 0 ||
     slot >= 128
   ) {
-    throw new Error(`stageEsxStereoSamplePatch: invalid stereo-slot index ${slot}`);
+    throw new Error(
+      `stageEsxStereoSamplePatch: invalid stereo-slot index ${slot}`
+    );
   }
   if (!entry || typeof entry !== "object") {
     throw new Error("stageEsxStereoSamplePatch: entry must be an object");
   }
   if (!(entry.pcmData instanceof Float32Array) || entry.pcmData.length === 0) {
-    throw new Error("stageEsxStereoSamplePatch: entry.pcmData must be non-empty Float32Array");
+    throw new Error(
+      "stageEsxStereoSamplePatch: entry.pcmData must be non-empty Float32Array"
+    );
   }
   if (entry.channels !== 2) {
-    throw new Error(`stageEsxStereoSamplePatch: entry.channels must be 2 (got ${entry.channels})`);
+    throw new Error(
+      `stageEsxStereoSamplePatch: entry.channels must be 2 (got ${entry.channels})`
+    );
   }
   if (entry.pcmData.length % 2 !== 0) {
-    throw new Error("stageEsxStereoSamplePatch: stereo pcmData must have even length (L,R interleaved)");
+    throw new Error(
+      "stageEsxStereoSamplePatch: stereo pcmData must have even length (L,R interleaved)"
+    );
   }
   if (
     typeof entry.sampleRate !== "number" ||
     !Number.isFinite(entry.sampleRate) ||
     entry.sampleRate <= 0
   ) {
-    throw new Error(`stageEsxStereoSamplePatch: invalid sampleRate ${entry.sampleRate}`);
+    throw new Error(
+      `stageEsxStereoSamplePatch: invalid sampleRate ${entry.sampleRate}`
+    );
   }
   const next = new Map(pending);
   next.set(slot, entry);
@@ -607,7 +712,7 @@ export function stageEsxStereoSamplePatch(
 /** v3.32.0 — Remove a staged stereo-sample-patch. */
 export function unstageEsxStereoSamplePatch(
   pending: Map<number, EsxSamplePatchEntry>,
-  slot: number,
+  slot: number
 ): Map<number, EsxSamplePatchEntry> {
   if (!pending.has(slot)) return pending;
   const next = new Map(pending);
@@ -617,14 +722,14 @@ export function unstageEsxStereoSamplePatch(
 
 /** v3.32.0 — Returns true when at least one stereo-slot replacement is staged. */
 export function hasPendingEsxStereoSamplePatches(
-  pending: Map<number, EsxSamplePatchEntry>,
+  pending: Map<number, EsxSamplePatchEntry>
 ): boolean {
   return pending.size > 0;
 }
 
 /** v3.32.0 — Count of staged stereo-slot replacements. */
 export function countPendingEsxStereoSamplePatches(
-  pending: Map<number, EsxSamplePatchEntry>,
+  pending: Map<number, EsxSamplePatchEntry>
 ): number {
   return pending.size;
 }
@@ -636,10 +741,13 @@ export function countPendingEsxStereoSamplePatches(
  */
 export function commitEsxStereoSamplePatches(
   bankBuffer: ArrayBuffer | Uint8Array,
-  pending: Map<number, EsxSamplePatchEntry>,
+  pending: Map<number, EsxSamplePatchEntry>
 ): ArrayBuffer {
   if (pending.size === 0) {
-    const src = bankBuffer instanceof Uint8Array ? bankBuffer : new Uint8Array(bankBuffer);
+    const src =
+      bankBuffer instanceof Uint8Array
+        ? bankBuffer
+        : new Uint8Array(bankBuffer);
     const out = new ArrayBuffer(src.byteLength);
     new Uint8Array(out).set(src);
     return out;
@@ -651,7 +759,7 @@ export function commitEsxStereoSamplePatches(
     if (!entry) continue;
     if (entry.channels !== 2) {
       throw new Error(
-        `commitEsxStereoSamplePatches: entry at slot ${idx} has channels ${entry.channels}, expected 2`,
+        `commitEsxStereoSamplePatches: entry at slot ${idx} has channels ${entry.channels}, expected 2`
       );
     }
     const patch: EsxSamplePatchInput = {
@@ -666,10 +774,10 @@ export function commitEsxStereoSamplePatches(
   }
   return current instanceof ArrayBuffer
     ? current
-    : (current as Uint8Array).buffer.slice(
+    : ((current as Uint8Array).buffer.slice(
         (current as Uint8Array).byteOffset,
-        (current as Uint8Array).byteOffset + (current as Uint8Array).byteLength,
-      ) as ArrayBuffer;
+        (current as Uint8Array).byteOffset + (current as Uint8Array).byteLength
+      ) as ArrayBuffer);
 }
 
 /**
@@ -678,10 +786,10 @@ export function commitEsxStereoSamplePatches(
 export function filterEsxStereoSampleRows(
   rows: ReadonlyArray<EsxStereoSampleSlotRow>,
   query: string,
-  hideEmpty: boolean,
+  hideEmpty: boolean
 ): EsxStereoSampleSlotRow[] {
   const q = (query ?? "").trim().toLowerCase();
-  return rows.filter((r) => {
+  return rows.filter(r => {
     if (hideEmpty && r.empty) return false;
     if (q.length === 0) return true;
     const idxStr = String(r.index);
@@ -734,7 +842,7 @@ export function createEsxEditorHistory(): EsxEditorHistory {
  * — they are treated as immutable by convention in this module.
  */
 export function cloneEsxEditorSnapshot(
-  snap: EsxEditorSnapshot,
+  snap: EsxEditorSnapshot
 ): EsxEditorSnapshot {
   return {
     patternMap: new Map(snap.patternMap),
@@ -754,7 +862,7 @@ export function cloneEsxEditorSnapshot(
  */
 export function pushEsxHistory(
   history: EsxEditorHistory,
-  prevSnapshot: EsxEditorSnapshot,
+  prevSnapshot: EsxEditorSnapshot
 ): EsxEditorHistory {
   const snap = cloneEsxEditorSnapshot(prevSnapshot);
   const nextPast = [...history.past, snap];
@@ -774,7 +882,7 @@ export function pushEsxHistory(
  */
 export function undoEsxEditor(
   history: EsxEditorHistory,
-  currentSnapshot: EsxEditorSnapshot,
+  currentSnapshot: EsxEditorSnapshot
 ): { snapshot: EsxEditorSnapshot; history: EsxEditorHistory } | null {
   if (history.past.length === 0) return null;
   const nextPast = history.past.slice(0, -1);
@@ -798,7 +906,7 @@ export function undoEsxEditor(
  */
 export function redoEsxEditor(
   history: EsxEditorHistory,
-  currentSnapshot: EsxEditorSnapshot,
+  currentSnapshot: EsxEditorSnapshot
 ): { snapshot: EsxEditorSnapshot; history: EsxEditorHistory } | null {
   if (history.future.length === 0) return null;
   const nextFuture = history.future.slice(0, -1);
