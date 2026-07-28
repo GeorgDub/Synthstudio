@@ -15503,6 +15503,21 @@ const INDEX = {
       changed: [
         "agents/INDEX.js"
       ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-07-10T12:00:00.000Z",
+      done:      [
+        "Ist-Analyse License-System: Ed25519-offline-Validierung komplett gebaut (TASK-232 v2.97) ABER LICENSE_PUBLIC_KEY_HEX ist all-zero-Placeholder (licenseConfig.ts:42) -> echte Keys koennen NIE validieren; einziger Freischalt-Weg ist der hardcodierte MASTER_LICENSE_KEY '137924568' (licenseConfig.ts:49), der in Dev+Electron greift (preload.ts:44 exponiert isElectron) aber undokumentiert + Klartext im Bundle ist. Kein Keygen-Tooling vorhanden (nur Test-Helper signLicensePayload).",
+        "Ist-Analyse MIDI/Audio-Devices: useMidi.ts (WebMIDI) + electron/midi-native.ts (@julusian/midi) + 13 Templates (midiTemplates.ts/midiHardwareTemplates.ts) + Auto-Detection (midiDeviceDetection.ts:43-67). LUECKEN: kein Akai-MIDImix-Template, korg-electribe-2-Template ist generische GM-Ch10-Map (User hat E2 SAMPLER + Hacktribe, Port-Namen/Note-Map abweichend), KEINE Audio-Output-Device-Auswahl (kein setSinkId im Repo; Input-Auswahl existiert in useAudioInput.ts).",
+        "8 Tasks erstellt: TASK-276..279 (License, high: Keygen-CLI, echter Public-Key + Dev-Key, Master-Key-Removal+Security-Audit, Regression-Tests) + TASK-280..283 (MIDI/Audio, medium: MIDImix-Template, Hacktribe-Template+Port-Matching, setSinkId-Output-Auswahl, Tests)."
+      ],
+      next:      [
+        "Dispatch-Reihenfolge: TASK-276 -> TASK-277 -> (TASK-278 parallel TASK-279); TASK-280/281/282 untereinander parallelisierbar, TASK-283 danach.",
+        "Offene Produkt-Frage an User: Gumroad-Flow — offline Ed25519-Keys via Signier-Webhook/manuellem Minting vs. Gumroad License-Verify-API (online). Aktuelle Architektur ist offline-first; Entscheidung vor TASK-278-Finalisierung.",
+        "Hacktribe-Note-Map (TASK-281) braucht finale Hardware-Verifikation durch User (E2 Sampler am Geraet)."
+      ],
+      changed:   []
     }
   ],
 
@@ -15565,6 +15580,95 @@ const INDEX = {
   //     grep -L 'doneIn\|closedIn'
   // ───────────────────────────────────────────────────────
   openTasks: [
+        // ─── Runde 2026-07-10: License-Full-Version-Freischaltung (high) + MIDI-Hardware-Setup (medium). Coordinator-Analyse, siehe workLog. ───
+        {
+          id: "TASK-276",
+          type: "feature",
+          priority: "high",
+          agent: "backend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "License-Keygen-CLI (tools/license-keygen.mjs)",
+          description: "Node-CLI mit @noble/ed25519 (bereits Dependency): (a) --keypair generiert Ed25519-Keypair (Secret NIE committen, nur stdout), (b) --mint <secretHex> --email <e> [--expires <iso>] mintet Keys im Format base64url(payload).base64url(sig) via gleicher Logik wie signLicensePayload in client/src/utils/licenseValidator.ts:159. Gemintete Keys MUESSEN gegen validateLicenseKey (licenseValidator.ts:115) round-trippen. Akzeptanz: Keypair-Gen, perpetual+expiring Keys, Round-Trip-Test, README-Abschnitt im Tool-Header. Traegt spaeteren Gumroad-Webhook-Flow (gleiche Mint-Logik serverseitig).",
+        },
+        {
+          id: "TASK-277",
+          type: "bugfix",
+          priority: "high",
+          agent: "backend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Echten Ed25519-Public-Key einsetzen + Developer-Perpetual-Key ausstellen",
+          description: "LICENSE_PUBLIC_KEY_HEX in client/src/utils/licenseConfig.ts:42 ist all-zero-Placeholder -> echte Key-Validierung schlaegt IMMER fehl (Root-Cause: Owner kann Full Version nicht freischalten, TASK-232-FOLLOWUP-1). Mit TASK-276-CLI Keypair erzeugen, Public-Key-Hex in licenseConfig.ts einsetzen, Developer-Key (expiresAt:null, email dubrowskijgeorg@gmail.com) minten und dem User uebergeben. Secret-Key nur an User ausgeben, NICHT ins Repo. isUsingPlaceholderPublicKey-Hinweis in ActivationModal verschwindet automatisch. Abhaengigkeit: TASK-276.",
+        },
+        {
+          id: "TASK-278",
+          type: "security",
+          priority: "high",
+          agent: "security",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Master-Key 137924568 entfernen/absichern + License-IPC-Audit",
+          description: "MASTER_LICENSE_KEY '137924568' (licenseConfig.ts:49, isMasterLicenseKey:93) ist Klartext im Bundle — auch Electron-Bundles sind entpackbar, Key schaltet Pro in JEDER Desktop-Installation frei. Laut TODO(release) nach echtem Public-Key entfernen (Branch in useLicenseStore.activate():241 mit). Zusaetzlich license:read/license:write IPC (electron/preload.ts readLicense/writeLicense + main.ts Handler + ipcValidators) auditieren. Abhaengigkeit: TASK-277 (Developer braucht erst funktionierenden Ersatz-Key).",
+        },
+        {
+          id: "TASK-279",
+          type: "test",
+          priority: "high",
+          agent: "testing",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "License-Regression: Keygen-Round-Trip + Aktivierungs-E2E",
+          description: "tests/features/license.test.ts erweitern: CLI-gemintete Keys validieren (Round-Trip perpetual+expiring+abgelaufen+falscher productId), Master-Key-Env-Matrix nach TASK-278-Entscheidung anpassen. Playwright: Aktivierung ueber ActivationModal (unknown->pro, trial->pro, expired->pro via Settings/LicenseSection) mit echtem gemintetem Test-Key. Abhaengigkeiten: TASK-276, TASK-277.",
+        },
+        {
+          id: "TASK-280",
+          type: "feature",
+          priority: "medium",
+          agent: "frontend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Akai-MIDImix-Hardware-Template + Auto-Detection",
+          description: "User-Hardware: Akai MIDImix (24 Knobs, 9 Fader, 16 Buttons + Solo, feste Werks-CC-Map). Template in client/src/utils/midiTemplates.ts + midiHardwareTemplates.ts nach Muster nanokontrol2: 8 Kanal-Fader->volume part-0..7, Master-Fader->masterVolume, Knob-Reihe 3->pan, Knob-Reihen 1+2->macro 1-8 + fxParam-Vorschlaege, Mute-Buttons->mute, Rec-Arm->solo. Werks-CC-Map gegen Akai-Doku verifizieren (NICHT raten). Auto-Detection-Regex /midi\\s*mix/i in midiDeviceDetection.ts DEVICE_NAME_PATTERNS (~Z43-67). Tips-Array + Kategorie 'controller'.",
+        },
+        {
+          id: "TASK-281",
+          type: "feature",
+          priority: "medium",
+          agent: "frontend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Electribe-2-SAMPLER/Hacktribe-Template + breites Port-Matching (Pads->Part-Trigger)",
+          description: "User spielt E2 Sampler mit Hacktribe-Firmware; bestehendes korg-electribe-2-Template (midiTemplates.ts) nutzt generische GM-Map auf Ch10 — Sampler/Hacktribe sendet Noten je Part auf eigenen MIDI-Channels und Port-Namen variieren je Firmware. Quellen: G:/IdeaProjects/Omnitribe (KORG-MIDI-Verhaltens-Doku stock/hacktribe/omni) + client/src/audio/nrpn-map.ts. Eigenes Template korg-electribe-2-sampler-hacktribe mit korrekter Pad/Part-Note+Channel-Map, Detection-Regex fuer alle bekannten Port-Namen-Varianten verbreitern (auch 'e2 sampler', hacktribe-Namen), Tips fuer Hacktribe. Ziel: Pads triggern Parts/Channels wie in FL/Ableton. Finale Hardware-Verifikation durch User einplanen (pending-HW-Flag im doneNote).",
+        },
+        {
+          id: "TASK-282",
+          type: "feature",
+          priority: "medium",
+          agent: "backend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Audio-Output-Device-Auswahl (AudioContext.setSinkId) fuer Scarlett 2i2",
+          description: "Es existiert KEINE Output-Device-Auswahl (kein setSinkId im Repo); Input-Seite existiert (useAudioInput.ts enumerateDevices+deviceId-Constraint). AudioContext.setSinkId ist in Chromium>=110 verfuegbar (Electron 40 ok). Bauen: Helper in AudioEngine.ts (Feature-Detect + Fallback wenn nicht unterstuetzt, z.B. Firefox/Safari), enumerateDevices kind=audiooutput, Persistenz localStorage synthstudio:audio:outputDeviceId, Settings-UI-Section (Audio-Geraete: Output-Dropdown + bestehende Input-Auswahl buendeln), Device-Unplugged-Fallback auf default. Isomorph via useElectron-Pattern, keine hardcoded Farben. electron/permissions.ts pruefen (media-Permission fuer Labels).",
+        },
+        {
+          id: "TASK-283",
+          type: "test",
+          priority: "medium",
+          agent: "testing",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Tests fuer MIDImix/Hacktribe-Templates + Output-Device-Helper",
+          description: "Vitest: Template-Invarianten (keine CC-Kollisionen innerhalb Template, gueltige partIds/targets, Detection-Regexes matchen erwartete Port-Namen-Listen inkl. Hacktribe-Varianten und false-positive-frei gegen andere 13 Templates), sinkId-Helper pure Logik (Feature-Detect-Fallback, Persistenz-Sanitize). Playwright-Smoke: Settings zeigt Output-Dropdown, Template-Library listet MIDImix. Abhaengigkeiten: TASK-280, TASK-281, TASK-282.",
+        },
         {
           id: "TASK-267",
           type: "feature",
