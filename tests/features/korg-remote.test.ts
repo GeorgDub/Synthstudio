@@ -812,15 +812,17 @@ describe("FX_SOURCE_CONTROL-Metadaten", () => {
     expect(keys).toEqual(new Set(Object.keys(FX_SOURCE_CONTROL) as FxSourceControl[]));
   });
 
-  it("führt die Codes aus dem Preset-Format, nicht die des RAM-Formats", () => {
-    // ht_fx_preset_format.py: 0x41..0x4A. Das RAM-Format benutzt 0x01..0x0A für
-    // dieselben Elemente — wer die verwechselt, verdrahtet stillschweigend
+  it("führt die Codes aus dem RAM-Format, nicht die des Preset-Datei-Formats", () => {
+    // Am Gerät verifiziert (2026-07-28, E2S/Hacktribe): der NRPN-Handler
+    // schreibt den gesendeten Wert roh in die Control-Map des FX-Edit-Buffers
+    // (RAM-Format, 0x01..0x0A). Die Preset-*Datei*-Kodierung 0x41..0x4A landet
+    // dort als ungültiger Code — wer die verwechselt, verdrahtet stillschweigend
     // falsche Bedienelemente.
     expect(FX_SOURCE_CONTROL.none).toBe(0x00);
-    expect(FX_SOURCE_CONTROL.fxOn).toBe(0x41);
-    expect(FX_SOURCE_CONTROL.fxEditX).toBe(0x42);
-    expect(FX_SOURCE_CONTROL.fxEditY).toBe(0x43);
-    expect(FX_SOURCE_CONTROL.pressPlay).toBe(0x4a);
+    expect(FX_SOURCE_CONTROL.fxOn).toBe(0x01);
+    expect(FX_SOURCE_CONTROL.fxEditX).toBe(0x02);
+    expect(FX_SOURCE_CONTROL.fxEditY).toBe(0x03);
+    expect(FX_SOURCE_CONTROL.pressPlay).toBe(0x0a);
   });
 
   it("liefert für jedes Element ein Label", () => {
