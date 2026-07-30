@@ -87,6 +87,14 @@ import {
   assessE2sCapacity,
   describeE2sCapacity,
 } from "@/utils/korg/e2sCapacity";
+import { BulkProgressBar } from "@/components/SampleBrowser/BulkProgressBar";
+// v3.305 — Klangprofil des Slots (sieben Bänder + EQ-Hinweis)
+import {
+  analyzeSlotSpectrum,
+  describeSlotSpectrum,
+} from "@/utils/korg/korgSlotSpectrum";
+// v3.305 — Massenaktion im Sample-Picker (ein State-Update, geplante Indizes)
+import { describeBulkAdd, planBulkSlotAdd } from "@/utils/korg/bulkSlotAdd";
 // v3.304 — 3-Band-EQ auf dem Slot (letzter Teil der Mastering-Kette)
 import {
   KORG_EQ_PRESETS,
@@ -276,6 +284,12 @@ export function KorgBankEditor({
 
   // "edit" mode state
   const [openedSlots, setOpenedSlots] = useState<OpenedSlot[]>([]);
+  /**
+   * v3.305 — Fortschritt beim Dekodieren vor dem Export. Vorher gab es nur
+   * einen Statustext ("Decodiere Samples…"); bei 100 Samples sah das aus wie
+   * ein Hänger, weil sich minutenlang nichts bewegte.
+   */
+  const [decodeProgress, setDecodeProgress] = useState<{ current: number; total: number } | null>(null);
   /** v3.301 — Nummerierungs-Befund der geladenen Bank (für Warnung + Reparatur). */
   const [loadedNumbering, setLoadedNumbering] = useState<E2sSlotNumbering | null>(null);
   // v3.284 — die geparste E2S-Bank behalten, damit „Samples als WAV" das
@@ -883,6 +897,44 @@ export function KorgBankEditor({
       status: "pending",
     };
     setNewSlots(prev => [...prev, slot]);
+  }
+
+  /**
+   * v3.305 — alle angebotenen Samples auf einmal anhängen.
+   *
+   * Ein einziges `setNewSlots`: der Plan wird vorher berechnet, damit
+   * fortlaufende Indizes und eindeutige Zeilen-IDs entstehen. Eine Schleife
+   * über {@link addSampleAsSlot} könnte das nicht — sie sähe in jedem
+   * Durchlauf denselben State.
+   */
+  function addAllSamplesAsSlots(): void {
+    const plan = planBulkSlotAdd(
+      new Set(newSlots.map(s => s.source.id)),
+      newSlots.length,
+      availableSamples,
+      E2S_MAX_SLOTS,
+      String(Date.now()),
+    );
+    if (plan.toAdd.length === 0) {
+      toast(describeBulkAdd(plan), { kind: "warning" });
+      return;
+    }
+    setNewSlots(prev => [
+      ...prev,
+      ...plan.toAdd.map(p => ({
+        rowId: p.rowId,
+        slotIndex: p.slotIndex,
+        source: p.source,
+        name: p.source.name.replace(/\.[^.]+$/, "").slice(0, 16),
+        category: 0,
+        oneshot: true,
+        status: "pending" as const,
+      })),
+    ]);
+    toast(describeBulkAdd(plan), {
+      kind: plan.skippedFull > 0 ? "warning" : "success",
+      duration: 5000,
+    });
   }
 
   function removeNewSlot(rowId: string): void {
@@ -1707,11 +1759,21 @@ export function KorgBankEditor({
 
   async function decodeAllPendingNew(): Promise<NewModeSlot[]> {
     const updated: NewModeSlot[] = [];
+    // Nur die noch offenen zählen — bereits dekodierte Slots kosten keine Zeit,
+    // und sie mitzuzählen ließe den Balken bei einer Teil-Aktualisierung
+    // scheinbar in der Mitte starten.
+    const pendingTotal = newSlots.filter(s => s.status !== "ready").length;
+    let done = 0;
+    setDecodeProgress(pendingTotal > 0 ? { current: 0, total: pendingTotal } : null);
     for (const slot of newSlots) {
       if (slot.status === "ready") {
         updated.push(slot);
         continue;
       }
+      // Vor dem Dekodieren setzen: `await decodeSample` gibt den Thread frei,
+      // React kann also dazwischen neu zeichnen.
+      setDecodeProgress({ current: done, total: pendingTotal });
+      done++;
       try {
         const dec = await decodeSample(slot.source);
         const processed = convertToE2sSpec(
@@ -1751,6 +1813,7 @@ export function KorgBankEditor({
       }
     }
     setNewSlots(updated);
+    setDecodeProgress(null);
     return updated;
   }
 
@@ -2066,6 +2129,18 @@ export function KorgBankEditor({
     () => openedSlots.find(s => s.rowId === selectedRowId) ?? null,
     [openedSlots, selectedRowId]
   );
+  /**
+   * v3.305 — Klangprofil des ausgewählten Slots.
+   *
+   * Goertzel über sieben Bänder läuft einmal je Slot-Auswahl, nicht bei jedem
+   * Render: die Auswertung geht über alle Samples.
+   */
+  const selectedSpectrum = useMemo(() => {
+    const s = openedSlots.find(x => x.rowId === selectedRowId);
+    if (!s || s.empty || !s.pcmData || !s.channels || !s.sampleRate) return null;
+    return analyzeSlotSpectrum(s.pcmData, s.channels, s.sampleRate);
+  }, [openedSlots, selectedRowId]);
+
   const visibleOpenedSlots = useMemo(
     () => filterOpenedSlots(openedSlots, openedSearch, openedHideEmpty),
     [openedSlots, openedSearch, openedHideEmpty],
@@ -2296,6 +2371,16 @@ export function KorgBankEditor({
               : renderEsxModeBody()}
         </div>
 
+        {/* v3.305 — Fortschritt beim Dekodieren. Bewusst dieselbe Leiste wie im
+            SampleBrowser statt einer zweiten Eigenbau-Anzeige. */}
+        {decodeProgress && (
+          <BulkProgressBar
+            testId="korg-bank-decode-progress"
+            label="Dekodiere Samples"
+            current={decodeProgress.current}
+            total={decodeProgress.total}
+          />
+        )}
         {/* Footer */}
         <footer className="px-4 py-3 border-t border-border-color flex items-center justify-between flex-shrink-0 gap-2 flex-wrap">
           <div className="text-xs text-text-muted flex items-center gap-2 flex-wrap">
@@ -2458,9 +2543,25 @@ export function KorgBankEditor({
       <>
         {/* Left — Sample Picker */}
         <div className="md:w-1/3 border-r border-border-color overflow-y-auto p-3 space-y-2">
-          <h3 className="text-xs font-semibold text-text-primary mb-1">
-            Verfügbare Samples ({availableSamples.length})
-          </h3>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <h3 className="text-xs font-semibold text-text-primary">
+              Verfügbare Samples ({availableSamples.length})
+            </h3>
+            {/* v3.305 — Massenaktion. Bewusst EIN State-Update über einen
+                geplanten Anhang: eine Schleife über addSampleAsSlot würde
+                allen Zeilen denselben Index und dieselbe ID geben. */}
+            {availableSamples.length > 0 && (
+              <button
+                data-testid="korg-bank-editor-pick-all"
+                onClick={addAllSamplesAsSlots}
+                disabled={busy || newSlots.length >= E2S_MAX_SLOTS}
+                title={`Alle ${availableSamples.length} Samples anhängen`}
+                className="text-[10px] px-2 py-1 rounded bg-bg-elevated text-text-muted hover:text-accent-primary transition-colors disabled:opacity-40"
+              >
+                + alle ({availableSamples.length})
+              </button>
+            )}
+          </div>
           {availableSamples.length === 0 ? (
             <p className="text-xs text-text-muted">
               Alle Project-Samples sind bereits in der Bank, oder die
@@ -3000,6 +3101,37 @@ export function KorgBankEditor({
                     Mastering-Kette im Gerätepfad. Normalisiert bewusst NICHT
                     selbst — bei Übersteuerung weist die Rückmeldung auf „Korg
                     Match" hin, damit der Eingriff nachvollziehbar bleibt. */}
+                {/* v3.305 — Klangprofil. Steht bewusst UEBER den EQ-Knoepfen:
+                    wer sieht, wo die Energie sitzt, weiss welcher Knopf passt,
+                    statt zu raten. Der Hinweis ist zurueckhaltend gehalten —
+                    einer bei jedem Sample waere wertlos. */}
+                {selectedSpectrum && selectedSpectrum.dominant && (
+                  <div className="pt-1 space-y-1" data-testid="korg-slot-spectrum">
+                    <div className="flex items-end gap-0.5 h-6">
+                      {selectedSpectrum.bands.map(b => (
+                        <div
+                          key={b.frequencyHz}
+                          title={`${b.label} (${b.frequencyHz} Hz): ${Math.round(b.relative * 100)} %`}
+                          className="flex-1 bg-accent-primary/40 rounded-t"
+                          style={{ height: `${Math.max(4, b.relative * 100)}%` }}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-text-dim">
+                      {describeSlotSpectrum(selectedSpectrum)}
+                    </p>
+                    {selectedSpectrum.hint && (
+                      <button
+                        data-testid="korg-slot-spectrum-hint"
+                        onClick={() => editSlotEq(selectedSlot.rowId, selectedSpectrum.hint!.preset)}
+                        disabled={busy}
+                        className="text-[10px] px-2 py-1 rounded bg-accent-warning/15 text-accent-warning hover:bg-accent-warning/25 transition-colors disabled:opacity-40"
+                      >
+                        Vorschlag anwenden
+                      </button>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <span className="text-xs text-text-muted">EQ:</span>
                   {KORG_EQ_PRESETS.map(p => (
