@@ -95,6 +95,8 @@ import {
   validatePackSamplePath,
   validatePackSampleFileSize,
 } from "./ipcValidators";
+// v3.301 — rotierende Sicherung vor dem Überschreiben einer .all-Bank
+import { rotateBankBackups, nodeBackupFs } from "./korgBankBackup";
 import {
   startCollabServer,
   stopCollabServer,
@@ -3054,11 +3056,37 @@ function registerIpcHandlers(): void {
         return { success: false as const, error: "Nur .all-Endung erlaubt" };
       }
 
+      // ── 4. Auto-Backup vor dem Überschreiben ──────────────────────────────
+      // Eine `.all` ist nicht rekonstruierbar: sie enthält die Samples in
+      // Gerätekodierung, und ohne die Quell-WAVs ist ihr Inhalt weg. Ein
+      // Fehlgriff im Dialog kostete bisher eine ganze Bank.
+      // Scheitert die Sicherung, wird NICHT geschrieben — sonst wäre das
+      // Backup ein Versprechen, das genau dann bricht, wenn es zählt.
+      let backupFile: string | null = null;
+      try {
+        const rotated = await rotateBankBackups(
+          resolvedPath,
+          nodeBackupFs(fs.promises),
+        );
+        if (rotated.created && rotated.backupPath) {
+          backupFile = path.basename(rotated.backupPath);
+        }
+      } catch (err) {
+        console.error("[IPC korg:save-bank-as] backup failed:", err);
+        return {
+          success: false as const,
+          error:
+            "Sicherung der bestehenden Bank fehlgeschlagen — es wurde nichts " +
+            "überschrieben. Schreibrechte im Zielordner prüfen.",
+        };
+      }
+
       await fs.promises.writeFile(resolvedPath, buf);
       return {
         success: true as const,
         filePath: resolvedPath,
         bytesWritten: buf.byteLength,
+        backupFile,
       };
     } catch (err) {
       console.error("[IPC korg:save-bank-as] error:", err);

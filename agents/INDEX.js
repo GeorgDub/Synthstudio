@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.300.0",
+    version: "3.302.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,63 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T13:00:00.000Z",
+      done: [
+        "v3.302.0 — 'Korg Match': drei Ein-Klick-Profile (Clean / Loud / Hardtekk), die ein Sample geraetetauglich machen. Zweite Stufe aus dem ModernKorgManager-Vergleich; MKM hat genau diese drei Profile, wir hatten alle Bausteine — aber app-weit im SampleBrowser und einzeln zu bedienen, nicht im Geraetepfad.",
+        "REINE KOMPOSITION, kein neues DSP: cleanupSample (DC + Rumpeln) -> applyCompressor -> applySaturator -> autoNormalizeSample -> Safety-Limiter. Die Reihenfolge ist der eigentliche Inhalt: Cleanup MUSS zuerst (sonst verstaerkt jeder Schritt den Gleichanteil mit), Kompressor VOR dem Normalisieren (sonst greift er anders als sein Preset erwartet), Limiter ZULETZT. Genau diese Reihenfolge vergisst man beim manuellen Zusammenklicken — deshalb ein Profil und keine Checkliste.",
+        "Die Obergrenze liegt bewusst unter 1.0 (0.891 / 0.966): bei exakt 1.0 kippt die Rundung nach 16-Bit-Ganzzahl beim .all-Schreiben ueber und erzeugt genau den Knack, den der Limiter verhindern soll. Als Test festgeschrieben, auch fuer bereits uebersteuertes Eingangsmaterial (1.8 linear).",
+        "makeupGainDb ist in jedem Kompressor-Preset 0 — der Normalisier-Schritt legt den Endpegel fest, Make-up waere doppelt. Eigener Test darauf, weil es beim Preset-Tuning leicht wieder reinrutscht.",
+        "Bruecke zum Slot-Format: .all-PCM liegt INTERLEAVED, die Kette arbeitet kanalweise. interleavedToBuffer/bufferToInterleaved mit Round-Trip-Test und einem Test 'links bleibt links' — vertauschte Kanaele fallen bei symmetrischem Testmaterial nicht auf.",
+        "Stille Samples werden NICHT hochgezogen (sonst wird Rauschen unter der Hoerschwelle hoerbar); leere Puffer laufen durch; ungerade Stereo-Laengen werfen nicht. 25 Tests.",
+        "UI: drei Knoepfe im Slot-Detail des Bank-Editors, Tooltip = Profilbeschreibung, Rueckmeldung nennt die tatsaechlich gelaufenen Schritte (inkl. begrenzter Spitzen) statt nur 'fertig'. Alles per Revert ruecknehmbar."
+      ],
+      next: [
+        "Naechste Stufe: restliche Mastering-Kette (EQ) im Slot-Editor — sampleEqualizer3Band.ts existiert als Pure-Helper mit Tests, hat aber noch keinen UI-Consumer.",
+        "Eigener Sprint: MIDI-Datei -> Pattern mit Bar/Step-Auswahl (midiParser.js faltet ueber 'step % stepCount' alles in einen Takt; smfParser.ts liegt ungenutzt bereit).",
+        "Kleinkram: 'Alle hinzufuegen'-Massenaktion, Fortschrittsbalken beim .all-Export, RMS neben Peak, Spectrum pro Sample.",
+        "Offen aus v3.301: Korg Editor/constants.py steht laut Omnitribe-Doku noch auf der alten Offset-Konstante."
+      ],
+      changed: [
+        "client/src/utils/korg/korgMatch.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/korg-match.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T12:00:00.000Z",
+      done: [
+        "v3.301.0 — Bank-Sicherheit: drei stille Fehlerquellen im .all-Pfad geschlossen. Anlass war ein Vergleich mit ModernKorgManager (binary-only, keine Lizenz => nur Funktionsideen uebernommen, kein Code) PLUS der Geraete-Befund vom 2026-07-28.",
+        "BEFUND 1 (der wichtigste, kommt NICHT von MKM) — e2sBankReader erkannte einen konstanten Slot-Versatz korrekt, DEUTETE ihn aber falsch: die Meldung lautete 'E2S_ALL_OFFSET_TABLE_START ist um N Bytes falsch'. Am Geraet ist inzwischen bewiesen, dass 0x0010 STIMMT (Anzeige == Pattern-Ref == Tabellen-Index == OSC_0index, eine Zaehlung; omnitribe/docs/hwtest/e2s_native_layer_bringup.md §1). Ein Versatz heisst also: die BANK ist fehlnummeriert. Die alte Formulierung schickte Entwickler auf die Jagd nach unserer Konstante, waehrend der Nutzer seine Bank neu bauen musste. Neu: bank.slotNumbering (ok | constant-shift | scattered) als maschinenlesbarer Befund, damit die UI nicht Warntexte parsen muss. Verifiziert gegen drei echte Baenke: neue e2sSample.all (device-verifiziert) -> ok, luknkicks.all -> constant-shift +1, htb1.all -> +482 — identisch zum Python-Tool e2s_geometry_check.py.",
+        "BEFUND 2 — 'Nummerierung reparieren' war noetig, weil bloss Neu-Speichern NICHT reicht: der Bit-exakt-Passthrough reicht das originale RIFF und damit dessen falsche OSC_0index weiter. Das war zuerst eine Vermutung und ist jetzt als Test festgeschrieben (e2s-slot-numbering-repair.test.ts, erster Fall). repairSlotNumbering markiert nur die betroffenen Slots als dirty, damit der Builder sie neu kodiert; POSITIONEN bleiben unangetastet (sonst zeigten bestehende Patterns ploetzlich auf andere Samples), und saubere Baenke verlieren ihre Bit-Exaktheit nicht.",
+        "BEFUND 3 — Kapazitaet: die 24-MiB-Geraetegrenze existierte im Builder, landete aber nur in console.warn. Wer zu gross exportierte, merkte es erst, wenn die Electribe die Bank nicht lud. Neu utils/korg/e2sCapacity.ts (rein) + Ampel im Footer + Build-Warnungen als Toast. Genau am Limit = 'tight', nicht 'over' — die groesste gemessene reale Bank liegt bei 24.037.610 B, knapp darunter.",
+        "BEFUND 4 — Auto-Backup: korg:save-bank-as ueberschrieb ohne Sicherung. Eine .all ist nicht rekonstruierbar (Samples in Geraetekodierung; ohne Quell-WAVs ist der Inhalt weg). Neu electron/korgBankBackup.ts mit rotierender .bak/.bak2/.bak3-Kette, injizierbares Dateisystem => 13 Tests ohne Platten-I/O. Rotation laeuft von HINTEN nach vorn, sonst ueberschreibt die Kette sich selbst (eigener Test). copy statt rename, damit ein Absturz die Originaldatei nie verschwinden laesst. Scheitert die Sicherung, wird NICHT geschrieben — ein Backup, das genau dann bricht, wenn es zaehlt, waere schlimmer als keins.",
+        "Theme-Purity: erste Fassung nutzte bg-amber-500/text-red-400 usw. und fiel bei theme-class-purity.test.ts durch (511 Dateien pruefend). Auf die semantischen Tokens accent-warning/-danger/-success umgestellt."
+      ],
+      next: [
+        "Naechste Stufe aus dem MKM-Vergleich (docs in omnitribe/docs/vergleich_modern_korg_manager.md): 'Korg Match'-Presets (Clean/Loud/Hardtekk) — alle Bausteine liegen vor (sampleAutoNormalize, sampleCompressor-Presets, sampleSaturator), es fehlt die Buendelung.",
+        "Danach Mastering-Kette in den .all-Slot-Editor durchreichen: die komplette Transform-Pipeline existiert app-weit, greift aber nicht auf geoeffnete Slots.",
+        "Eigener Sprint: MIDI-Datei -> Pattern mit Bar/Step-Auswahl. Der aktuelle midiParser.js faltet ueber 'step % stepCount' ALLES in einen Takt; ein sauberer zweiter SMF-Parser (smfParser.ts) liegt ungenutzt im Repo.",
+        "Offen und bewusst nicht angefasst: 'Alle hinzufuegen'-Massenaktion im Sample-Picker, echter Fortschrittsbalken beim .all-Export (BulkProgressBar existiert im SampleBrowser), RMS neben Peak anzeigen."
+      ],
+      changed: [
+        "client/src/utils/korg/e2sBankReader.ts",
+        "client/src/utils/korg/e2sCapacity.ts",
+        "client/src/utils/korg/bankEditorState.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "electron/korgBankBackup.ts",
+        "electron/main.ts",
+        "electron/preload.ts",
+        "electron/types.d.ts",
+        "electron/useElectron.ts",
+        "tests/features/e2s-offset-table-layout.test.ts",
+        "tests/features/e2s-capacity.test.ts",
+        "tests/features/e2s-slot-numbering-repair.test.ts",
+        "tests/electron/korg-bank-backup.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-27T09:30:00.000Z",

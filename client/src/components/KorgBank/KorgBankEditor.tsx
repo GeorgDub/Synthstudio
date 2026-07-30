@@ -47,6 +47,7 @@ import {
   parseE2sBank,
   E2sParseError,
   type E2sBank,
+  type E2sSlotNumbering,
 } from "@/utils/korg/e2sBankReader";
 import { bundleE2sSamplesToZip } from "@/utils/korg/e2sSampleExport";
 import { trimE2sSlotPcm, stereoToMonoE2s } from "@/utils/korg/e2sSampleEdit";
@@ -64,6 +65,8 @@ import {
 import {
   bankToOpenedSlots,
   countDirtySlots,
+  totalPcmBytes,
+  repairSlotNumbering,
   countFilledSlots,
   deleteSlot,
   displayCategory,
@@ -79,6 +82,20 @@ import {
   setSlotSlices,
   type OpenedSlot,
 } from "@/utils/korg/bankEditorState";
+// v3.301 — Kapazitätsanzeige gegen das Gerätelimit (24 MiB)
+import {
+  assessE2sCapacity,
+  describeE2sCapacity,
+} from "@/utils/korg/e2sCapacity";
+// v3.301 — Korg Match: Mastering-Kette direkt auf dem .all-Slot
+import {
+  KORG_MATCH_PROFILES,
+  applyKorgMatch,
+  bufferToInterleaved,
+  interleavedToBuffer,
+  korgMatchProfile,
+  type KorgMatchId,
+} from "@/utils/korg/korgMatch";
 // v3.29.0 — ESX-1 Bank Pattern-Patch
 import {
   parseEsxBank,
@@ -252,6 +269,8 @@ export function KorgBankEditor({
 
   // "edit" mode state
   const [openedSlots, setOpenedSlots] = useState<OpenedSlot[]>([]);
+  /** v3.301 — Nummerierungs-Befund der geladenen Bank (für Warnung + Reparatur). */
+  const [loadedNumbering, setLoadedNumbering] = useState<E2sSlotNumbering | null>(null);
   // v3.284 — die geparste E2S-Bank behalten, damit „Samples als WAV" das
   // originale PCM exportieren kann (Oe2sSLE „Export sample to WAV").
   const [e2sSourceBank, setE2sSourceBank] = useState<E2sBank | null>(null);
@@ -375,6 +394,7 @@ export function KorgBankEditor({
     if (!open) {
       setNewSlots([]);
       setOpenedSlots([]);
+      setLoadedNumbering(null);
       setE2sSourceBank(null);
       setOpenedSourceName("");
       setSelectedRowId(null);
@@ -606,6 +626,7 @@ export function KorgBankEditor({
       setNewSlots([]);
     } else if (mode === "edit") {
       setOpenedSlots([]);
+      setLoadedNumbering(null);
       setE2sSourceBank(null);
       setOpenedSourceName("");
       setSelectedRowId(null);
@@ -778,7 +799,27 @@ export function KorgBankEditor({
           `Bank geladen: ${filledCount} Slot(s) — ${bank.warnings.length} Warnungen`,
           { kind: "success", duration: 4000 }
         );
-        setResultMsg(`${filledCount} Slot(s) bereit zur Bearbeitung`);
+        // v3.301 — Fehlnummerierung eigens melden. Sie steckte bisher nur im
+        // Warnungs-ZÄHLER, und gerade der leiseste Fall (Versatz 1) ist der
+        // teuerste: die Bank lädt, klingt aber am Gerät falsch, weil Patterns
+        // die Nachbar-Samples treffen. Am Gerät verifiziert (2026-07-28).
+        const num = bank.slotNumbering;
+        setLoadedNumbering(num);
+        if (num.kind === "constant-shift") {
+          toast(
+            `Diese Bank ist fehlnummeriert: alle ${num.affected} Slots liegen ` +
+              `${num.shift! > 0 ? "+" : ""}${num.shift} neben ihrer Sample-Nummer. ` +
+              `Am Gerät greifen Patterns damit auf die falschen Samples. ` +
+              `„Nummerierung reparieren" unten behebt das — bloßes Neu-Speichern ` +
+              `reicht nicht, weil unveränderte Slots bit-exakt durchgereicht werden.`,
+            { kind: "warning", duration: 12000 }
+          );
+        }
+        setResultMsg(
+          num.kind === "constant-shift"
+            ? `${filledCount} Slot(s) — ⚠ fehlnummeriert (Versatz ${num.shift})`
+            : `${filledCount} Slot(s) bereit zur Bearbeitung`
+        );
       } catch (err) {
         const msg =
           err instanceof E2sParseError
@@ -907,6 +948,39 @@ export function KorgBankEditor({
       const mono = stereoToMonoE2s(slot.pcmData, 0);
       return patchOpenedSlot(prev, rowId, { pcmData: mono, channels: 1 });
     });
+  }
+
+  /**
+   * v3.301 — Korg-Match-Profil auf einen Slot anwenden.
+   *
+   * Das PCM im Slot liegt interleaved; die Kette arbeitet kanalweise, deshalb
+   * die Brücke über `interleavedToBuffer` / `bufferToInterleaved` statt eigener
+   * Umsortierung an dieser Stelle (dort entstehen Kanalvertauschungen).
+   *
+   * Die Frame-Zahl kann sich ändern — das Cleanup darf trimmen —, also wird sie
+   * mitgeschrieben, sonst zeigt die Anzeige eine veraltete Länge.
+   */
+  function editSlotKorgMatch(rowId: string, id: KorgMatchId): void {
+    const slot = openedSlots.find(s => s.rowId === rowId);
+    if (!slot || !slot.pcmData || !slot.channels || !slot.sampleRate) {
+      toast("Kein dekodiertes Audio in diesem Slot.", { kind: "warning" });
+      return;
+    }
+    const res = applyKorgMatch(
+      interleavedToBuffer(slot.pcmData, slot.channels, slot.sampleRate),
+      id,
+    );
+    const pcm = bufferToInterleaved(res.buffer);
+    setOpenedSlots(prev =>
+      patchOpenedSlot(prev, rowId, {
+        pcmData: pcm,
+        frames: Math.floor(pcm.length / (slot.channels ?? 1)),
+      }),
+    );
+    toast(
+      `${korgMatchProfile(id).name}: ${res.steps.join(" · ")}`,
+      { kind: "success", duration: 7000 },
+    );
   }
 
   async function editSlotReplaceSample(
@@ -1747,6 +1821,35 @@ export function KorgBankEditor({
     }
   }
 
+  /**
+   * v3.301 — Sample-Nummern auf die Slot-Positionen ziehen.
+   *
+   * Setzt die betroffenen Slots auf `isDirty`, damit der Builder sie neu
+   * kodiert und dabei `OSC_0index = slotIndex` schreibt. Positionen bleiben
+   * unverändert — bestehende Patterns zeigen danach also weiter auf dieselben
+   * Samples, nur trägt jedes Sample jetzt die Nummer, unter der das Gerät es
+   * führt (am Gerät verifiziert 2026-07-28).
+   */
+  function handleRepairNumbering(): void {
+    const { slots, changed } = repairSlotNumbering(openedSlots);
+    if (changed === 0) {
+      toast("Nichts zu reparieren — die Nummerierung ist stimmig.", {
+        kind: "info",
+      });
+      return;
+    }
+    setOpenedSlots(slots);
+    // Der Befund ist erledigt, sobald gespeichert wird; die Warnung soll aber
+    // nicht schon vor dem Speichern verschwinden, sonst sieht es aus, als sei
+    // die Datei bereits repariert. Deshalb Hinweis statt Zurücksetzen.
+    toast(
+      `${changed} Slot(s) zur Neu-Kodierung markiert. Jetzt speichern — ` +
+        `danach trägt jedes Sample die Nummer seines Slots.`,
+      { kind: "success", duration: 8000 }
+    );
+    setResultMsg(`${changed} Slot(s) markiert — zum Reparieren speichern`);
+  }
+
   async function handleSaveAs(): Promise<void> {
     if (!requireProFeature(PRO_FEATURE_KORG_BANK_WRITE)) return;
 
@@ -1821,6 +1924,18 @@ export function KorgBankEditor({
       const result = buildE2sBank(inputs, { preserveRawRiff: true });
       if (result.warnings.length > 0) {
         console.warn("[KorgBankEditor] build warnings:", result.warnings);
+        // v3.301: Build-Warnungen landeten bisher NUR in der Konsole. Die
+        // wichtigste davon ist die Gerätespeicher-Grenze — eine zu große Bank
+        // baut sich fehlerfrei und scheitert erst am Gerät. Deshalb sichtbar
+        // machen, statt sie stillschweigend zu verschlucken.
+        for (const w of result.warnings.slice(0, 3)) {
+          toast(w, { kind: "warning", duration: 8000 });
+        }
+        if (result.warnings.length > 3) {
+          toast(`… und ${result.warnings.length - 3} weitere Warnung(en) (Konsole)`, {
+            kind: "warning",
+          });
+        }
       }
       const buf = result.buffer;
 
@@ -1843,10 +1958,18 @@ export function KorgBankEditor({
           return;
         }
         toast(
-          `E2S Bank gespeichert: ${saveResult.filePath} (${savedMsgDetail})`,
-          { kind: "success", duration: 4000 }
+          `E2S Bank gespeichert: ${saveResult.filePath} (${savedMsgDetail})` +
+            (saveResult.backupFile
+              ? ` · vorige Fassung gesichert als ${saveResult.backupFile}`
+              : ""),
+          { kind: "success", duration: 5000 }
         );
         setResultMsg(`Gespeichert: ${saveResult.filePath}`);
+        // Die geschriebene Datei ist jetzt korrekt nummeriert (der Builder
+        // schreibt OSC_0index = slotIndex für alles, was er neu kodiert).
+        setLoadedNumbering(prev =>
+          prev ? { ...prev, kind: "ok", shift: null, affected: 0 } : prev
+        );
       } else {
         const blob = new Blob([buf], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
@@ -1885,6 +2008,17 @@ export function KorgBankEditor({
   const totalBytesNew = useMemo(
     () => newSlots.reduce((sum, s) => sum + (s.pcmBytes ?? 0), 0),
     [newSlots]
+  );
+
+  // v3.301 — Kapazität gegen das Gerätelimit. Die Zahl gab es im Builder schon,
+  // sie landete aber nur in der Konsole; wer zu groß exportierte, merkte es
+  // erst, wenn die Electribe die Bank nicht lud.
+  const capacity = useMemo(
+    () =>
+      assessE2sCapacity(
+        mode === "new" ? totalBytesNew : totalPcmBytes(openedSlots),
+      ),
+    [mode, totalBytesNew, openedSlots],
   );
 
   const availableSamples = useMemo(
@@ -2136,16 +2270,58 @@ export function KorgBankEditor({
 
         {/* Footer */}
         <footer className="px-4 py-3 border-t border-border-color flex items-center justify-between flex-shrink-0 gap-2 flex-wrap">
-          <p className="text-xs text-text-muted">
-            {mode === "new"
-              ? `Total: ${newSlots.length} Slots · ${(totalBytesNew / 1024 / 1024).toFixed(2)} MB PCM`
-              : mode === "edit"
-                ? `${filledCountOpened} Slots · ${dirtyCountOpened} geändert / ${filledCountOpened - dirtyCountOpened} bit-exakt`
-                : esxBankBuffer
-                  ? `${esxFilledCount}/256 Pat · ${esxSampleFilledCount}/256 Smp · ${esxTotalPendingCount} Patch(es) ausstehend · Rest bit-exakt`
-                  : "Keine ESX-Bank geladen"}
-          </p>
+          <div className="text-xs text-text-muted flex items-center gap-2 flex-wrap">
+            <span>
+              {mode === "new"
+                ? `Total: ${newSlots.length} Slots · ${(totalBytesNew / 1024 / 1024).toFixed(2)} MB PCM`
+                : mode === "edit"
+                  ? `${filledCountOpened} Slots · ${dirtyCountOpened} geändert / ${filledCountOpened - dirtyCountOpened} bit-exakt`
+                  : esxBankBuffer
+                    ? `${esxFilledCount}/256 Pat · ${esxSampleFilledCount}/256 Smp · ${esxTotalPendingCount} Patch(es) ausstehend · Rest bit-exakt`
+                    : "Keine ESX-Bank geladen"}
+            </span>
+            {/* v3.301 — Gerätespeicher-Ampel. Nur im .all-Pfad sinnvoll (ESX hat
+                ein anderes Limit), und nur wenn überhaupt Daten da sind. */}
+            {mode !== "esx" && capacity.usedBytes > 0 && (
+              <span
+                data-testid="korg-bank-capacity"
+                title={describeE2sCapacity(capacity)}
+                className={
+                  capacity.level === "over"
+                    ? "px-1.5 py-0.5 rounded bg-accent-danger/15 text-accent-danger font-medium"
+                    : capacity.level === "tight"
+                      ? "px-1.5 py-0.5 rounded bg-accent-warning/15 text-accent-warning"
+                      : "px-1.5 py-0.5 rounded bg-accent-success/10 text-accent-success"
+                }
+              >
+                {capacity.level === "over"
+                  ? "⚠ Gerätespeicher überschritten"
+                  : capacity.level === "tight"
+                    ? `Gerätespeicher knapp · ${Math.round(capacity.ratio * 100)} %`
+                    : `Gerätespeicher ${Math.round(capacity.ratio * 100)} %`}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
+            {/* v3.301 — Nummerierung reparieren. Nur sichtbar, wenn es etwas zu
+                reparieren gibt; erzwingt Neu-Kodierung der betroffenen Slots,
+                weil der Bit-exakt-Passthrough die falsche Nummer sonst
+                weiterreicht (belegt in e2s-slot-numbering-repair.test.ts). */}
+            {mode === "edit" && loadedNumbering?.kind === "constant-shift" && (
+              <button
+                data-testid="korg-bank-repair-numbering"
+                onClick={handleRepairNumbering}
+                disabled={busy}
+                title={
+                  `Setzt die Sample-Nummern der ${loadedNumbering.affected} betroffenen ` +
+                  `Slots auf ihre Slot-Position. Die Samples bleiben, wo sie sind — ` +
+                  `nur die Nummer wird korrigiert. Danach speichern.`
+                }
+                className="px-3 py-1 rounded text-xs bg-accent-warning/15 text-accent-warning hover:bg-accent-warning/25 transition-colors disabled:opacity-40"
+              >
+                Nummerierung reparieren
+              </button>
+            )}
             <button
               data-testid="korg-bank-editor-cancel"
               onClick={onClose}
@@ -2771,6 +2947,25 @@ export function KorgBankEditor({
                       ⇥ Stereo → Mono
                     </button>
                   )}
+                </div>
+                {/* v3.301 — Korg Match: die Mastering-Kette, die es app-weit
+                    schon gab, jetzt direkt auf dem Slot. Ohne sie geht ein
+                    Sample so aufs Gerät, wie es ist — die Electribe hat keinen
+                    Limiter. Jeder Schritt ist per Revert rückgängig. */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-xs text-text-muted">Korg Match:</span>
+                  {KORG_MATCH_PROFILES.map(p => (
+                    <button
+                      key={p.id}
+                      data-testid={`korg-match-${p.id}`}
+                      onClick={() => editSlotKorgMatch(selectedSlot.rowId, p.id)}
+                      disabled={busy}
+                      title={p.description}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
                 </div>
                 {/* #Num verschieben/tauschen (Oe2sSLE Move/Exchange) */}
                 <label className="flex items-center gap-2 text-xs text-text-muted pt-1">
