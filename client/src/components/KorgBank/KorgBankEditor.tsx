@@ -87,6 +87,15 @@ import {
   assessE2sCapacity,
   describeE2sCapacity,
 } from "@/utils/korg/e2sCapacity";
+// v3.301 — Korg Match: Mastering-Kette direkt auf dem .all-Slot
+import {
+  KORG_MATCH_PROFILES,
+  applyKorgMatch,
+  bufferToInterleaved,
+  interleavedToBuffer,
+  korgMatchProfile,
+  type KorgMatchId,
+} from "@/utils/korg/korgMatch";
 // v3.29.0 — ESX-1 Bank Pattern-Patch
 import {
   parseEsxBank,
@@ -939,6 +948,39 @@ export function KorgBankEditor({
       const mono = stereoToMonoE2s(slot.pcmData, 0);
       return patchOpenedSlot(prev, rowId, { pcmData: mono, channels: 1 });
     });
+  }
+
+  /**
+   * v3.301 — Korg-Match-Profil auf einen Slot anwenden.
+   *
+   * Das PCM im Slot liegt interleaved; die Kette arbeitet kanalweise, deshalb
+   * die Brücke über `interleavedToBuffer` / `bufferToInterleaved` statt eigener
+   * Umsortierung an dieser Stelle (dort entstehen Kanalvertauschungen).
+   *
+   * Die Frame-Zahl kann sich ändern — das Cleanup darf trimmen —, also wird sie
+   * mitgeschrieben, sonst zeigt die Anzeige eine veraltete Länge.
+   */
+  function editSlotKorgMatch(rowId: string, id: KorgMatchId): void {
+    const slot = openedSlots.find(s => s.rowId === rowId);
+    if (!slot || !slot.pcmData || !slot.channels || !slot.sampleRate) {
+      toast("Kein dekodiertes Audio in diesem Slot.", { kind: "warning" });
+      return;
+    }
+    const res = applyKorgMatch(
+      interleavedToBuffer(slot.pcmData, slot.channels, slot.sampleRate),
+      id,
+    );
+    const pcm = bufferToInterleaved(res.buffer);
+    setOpenedSlots(prev =>
+      patchOpenedSlot(prev, rowId, {
+        pcmData: pcm,
+        frames: Math.floor(pcm.length / (slot.channels ?? 1)),
+      }),
+    );
+    toast(
+      `${korgMatchProfile(id).name}: ${res.steps.join(" · ")}`,
+      { kind: "success", duration: 7000 },
+    );
   }
 
   async function editSlotReplaceSample(
@@ -2905,6 +2947,25 @@ export function KorgBankEditor({
                       ⇥ Stereo → Mono
                     </button>
                   )}
+                </div>
+                {/* v3.301 — Korg Match: die Mastering-Kette, die es app-weit
+                    schon gab, jetzt direkt auf dem Slot. Ohne sie geht ein
+                    Sample so aufs Gerät, wie es ist — die Electribe hat keinen
+                    Limiter. Jeder Schritt ist per Revert rückgängig. */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-xs text-text-muted">Korg Match:</span>
+                  {KORG_MATCH_PROFILES.map(p => (
+                    <button
+                      key={p.id}
+                      data-testid={`korg-match-${p.id}`}
+                      onClick={() => editSlotKorgMatch(selectedSlot.rowId, p.id)}
+                      disabled={busy}
+                      title={p.description}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
                 </div>
                 {/* #Num verschieben/tauschen (Oe2sSLE Move/Exchange) */}
                 <label className="flex items-center gap-2 text-xs text-text-muted pt-1">

@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.301.0",
+    version: "3.302.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T13:00:00.000Z",
+      done: [
+        "v3.302.0 — 'Korg Match': drei Ein-Klick-Profile (Clean / Loud / Hardtekk), die ein Sample geraetetauglich machen. Zweite Stufe aus dem ModernKorgManager-Vergleich; MKM hat genau diese drei Profile, wir hatten alle Bausteine — aber app-weit im SampleBrowser und einzeln zu bedienen, nicht im Geraetepfad.",
+        "REINE KOMPOSITION, kein neues DSP: cleanupSample (DC + Rumpeln) -> applyCompressor -> applySaturator -> autoNormalizeSample -> Safety-Limiter. Die Reihenfolge ist der eigentliche Inhalt: Cleanup MUSS zuerst (sonst verstaerkt jeder Schritt den Gleichanteil mit), Kompressor VOR dem Normalisieren (sonst greift er anders als sein Preset erwartet), Limiter ZULETZT. Genau diese Reihenfolge vergisst man beim manuellen Zusammenklicken — deshalb ein Profil und keine Checkliste.",
+        "Die Obergrenze liegt bewusst unter 1.0 (0.891 / 0.966): bei exakt 1.0 kippt die Rundung nach 16-Bit-Ganzzahl beim .all-Schreiben ueber und erzeugt genau den Knack, den der Limiter verhindern soll. Als Test festgeschrieben, auch fuer bereits uebersteuertes Eingangsmaterial (1.8 linear).",
+        "makeupGainDb ist in jedem Kompressor-Preset 0 — der Normalisier-Schritt legt den Endpegel fest, Make-up waere doppelt. Eigener Test darauf, weil es beim Preset-Tuning leicht wieder reinrutscht.",
+        "Bruecke zum Slot-Format: .all-PCM liegt INTERLEAVED, die Kette arbeitet kanalweise. interleavedToBuffer/bufferToInterleaved mit Round-Trip-Test und einem Test 'links bleibt links' — vertauschte Kanaele fallen bei symmetrischem Testmaterial nicht auf.",
+        "Stille Samples werden NICHT hochgezogen (sonst wird Rauschen unter der Hoerschwelle hoerbar); leere Puffer laufen durch; ungerade Stereo-Laengen werfen nicht. 25 Tests.",
+        "UI: drei Knoepfe im Slot-Detail des Bank-Editors, Tooltip = Profilbeschreibung, Rueckmeldung nennt die tatsaechlich gelaufenen Schritte (inkl. begrenzter Spitzen) statt nur 'fertig'. Alles per Revert ruecknehmbar."
+      ],
+      next: [
+        "Naechste Stufe: restliche Mastering-Kette (EQ) im Slot-Editor — sampleEqualizer3Band.ts existiert als Pure-Helper mit Tests, hat aber noch keinen UI-Consumer.",
+        "Eigener Sprint: MIDI-Datei -> Pattern mit Bar/Step-Auswahl (midiParser.js faltet ueber 'step % stepCount' alles in einen Takt; smfParser.ts liegt ungenutzt bereit).",
+        "Kleinkram: 'Alle hinzufuegen'-Massenaktion, Fortschrittsbalken beim .all-Export, RMS neben Peak, Spectrum pro Sample.",
+        "Offen aus v3.301: Korg Editor/constants.py steht laut Omnitribe-Doku noch auf der alten Offset-Konstante."
+      ],
+      changed: [
+        "client/src/utils/korg/korgMatch.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/korg-match.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-30T12:00:00.000Z",
