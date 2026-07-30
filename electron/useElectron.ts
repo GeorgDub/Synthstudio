@@ -91,7 +91,13 @@ const browserAPI = {
   saveKorgBankAs: async (
     _suggestedFilename: string,
     _data: ArrayBuffer | Uint8Array,
-  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> => ({
+  ): Promise<{
+    success: boolean;
+    filePath?: string;
+    bytesWritten?: number;
+    backupFile?: string | null;
+    error?: string;
+  }> => ({
     success: false,
     error: "Nicht in Electron – nutze Blob-Download-Fallback",
   }),

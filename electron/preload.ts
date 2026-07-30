@@ -251,7 +251,14 @@ const electronAPI = {
   saveKorgBankAs: (
     suggestedFilename: string,
     data: ArrayBuffer | Uint8Array,
-  ): Promise<{ success: boolean; filePath?: string; bytesWritten?: number; error?: string }> =>
+  ): Promise<{
+    success: boolean;
+    filePath?: string;
+    bytesWritten?: number;
+    /** v3.301 — Dateiname der angelegten Sicherung; `null`, wenn neu geschrieben. */
+    backupFile?: string | null;
+    error?: string;
+  }> =>
     ipcRenderer.invoke(
       "korg:save-bank-as",
       suggestedFilename,
