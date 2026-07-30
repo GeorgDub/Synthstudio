@@ -12,12 +12,12 @@
  *      - High      > 4 kHz  (Hi-Hats, Luft)
  *   5. Jeden Stem als neues Sample im Projekt speichern
  */
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useAudioInput } from "@/hooks/useAudioInput";
 import type { Sample } from "@/store/useProjectStore";
 import {
   trimBuffer, reverseBuffer, normalizeBuffer,
-  fadeIn, fadeOut, applyGain, getPeak, getRms, cutSelection,
+  fadeIn, fadeOut, applyGain, getPeak, getRms, toDbfs, cutSelection,
 } from "@/utils/audioEdit";
 
 // ─── Typen ────────────────────────────────────────────────────────────────────
@@ -268,6 +268,18 @@ const MAX_UNDO_STEPS = 10;
 
 export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null);
+  /**
+   * v3.305 — Peak und RMS einmal je Buffer.
+   *
+   * Beide Funktionen laufen ueber SAEMTLICHE Samples. Sie standen bisher
+   * direkt im Render (zwei Stellen), liefen also bei jedem Zustandswechsel neu
+   * — bei einem Minuten-Sample sind das Millionen Schleifendurchlaeufe pro
+   * Tastendruck. RMS zusaetzlich ungemessen dazuzunehmen haette das verdoppelt.
+   */
+  const levels = useMemo(
+    () => (buffer ? { peak: getPeak(buffer), rms: getRms(buffer) } : null),
+    [buffer],
+  );
   const [fileName, setFileName] = useState<string | null>(null);
   const [stems, setStems] = useState<StemResult[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -756,7 +768,7 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-accent-primary">📈 Normalize</span>
                 <span className="text-[10px] text-text-dim font-mono">
-                  Aktuell Peak: {(20 * Math.log10(Math.max(getPeak(buffer), 1e-6))).toFixed(1)} dB
+                  Aktuell Peak: {toDbfs(levels!.peak)} dB
                 </span>
               </div>
 
@@ -808,8 +820,18 @@ export function AudioWorkbench({ onSamplesAdded }: AudioWorkbenchProps) {
           )}
 
           {/* ── Peak/RMS Info ──────────────────────────────────────────── */}
-          <div className="text-[10px] text-text-dim font-mono px-1">
-            Peak: {(getPeak(buffer) * 100).toFixed(1)}% · Länge: {buffer.duration.toFixed(2)}s · {buffer.sampleRate}Hz
+          {/* v3.305: RMS wurde bereits importiert, aber nie angezeigt — obwohl
+              die Ueberschrift ihn versprach. Peak sagt, ob etwas uebersteuert;
+              RMS sagt, wie laut es tatsaechlich wirkt. Beide zusaetzlich in
+              dBFS, weil sich Prozentwerte zweier Groessen nicht vergleichen
+              lassen. */}
+          <div
+            data-testid="workbench-levels"
+            className="text-[10px] text-text-dim font-mono px-1"
+          >
+            Peak: {(levels!.peak * 100).toFixed(1)}% ({toDbfs(levels!.peak)} dB)
+            {" · "}RMS: {toDbfs(levels!.rms)} dB
+            {" · "}Länge: {buffer.duration.toFixed(2)}s · {buffer.sampleRate}Hz
           </div>
 
           <button

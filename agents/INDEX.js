@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.304.0",
+    version: "3.305.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T18:45:00.000Z",
+      done: [
+        "v3.305.0 — Feinschliff: die vier Kleinkram-Punkte aus dem ModernKorgManager-Vergleich (Punkt 7). Damit ist die Liste komplett abgearbeitet.",
+        "ALLE HINZUFUEGEN im Sample-Picker: NICHT als Schleife ueber addSampleAsSlot gebaut — die liest newSlots.length fuer den Slot-Index und Date.now() fuer die Zeilen-ID, saehe in jedem Durchlauf denselben gebuendelten React-State und dieselbe Millisekunde. Alle Zeilen bekaemen Index 0 und dieselbe ID; bei zwei Samples faellt das nicht auf, bei zwanzig zerlegt es die Liste. Stattdessen utils/korg/bulkSlotAdd.ts (rein): plant den kompletten Anhang, der Aufrufer setzt den State genau einmal. Trennt ausserdem 'schon in der Liste' von 'kein Platz mehr' — eine gemeinsame Zahl waere eine irrefuehrende Ursache.",
+        "FORTSCHRITT beim .all-Export: decodeAllPendingNew meldete nichts, bei 100 Samples sah das aus wie ein Haenger. Wiederverwendet die bestehende BulkProgressBar statt einer zweiten Eigenbau-Anzeige; deren data-testid ist jetzt ueberschreibbar (Default unveraendert, bestehende Tests greifen weiter). Gezaehlt werden nur die NOCH OFFENEN Slots — bereits dekodierte mitzuzaehlen liesse den Balken bei einer Teil-Aktualisierung scheinbar in der Mitte starten.",
+        "RMS neben Peak: getRms war importiert und die Ueberschrift versprach 'Peak/RMS Info', angezeigt wurde nur Peak. Beim Nachruesten fiel auf, dass getPeak an zwei Stellen DIREKT im Render ueber alle Samples laeuft — RMS ungemessen dazuzunehmen haette das verdoppelt. Jetzt beide einmal je Buffer via useMemo, also nebenbei schneller als vorher. Neu toDbfs() in audioEdit.ts: log10(0) waere -Infinity in der Oberflaeche gelandet, jetzt '-∞'; Uebersteuerung wird bewusst als positiver Wert gezeigt statt abgeschnitten.",
+        "KLANGPROFIL pro Slot: sampleSpectrumPeak.ts (Goertzel ueber 7 Baender) lag mit Tests ohne UI-Consumer da. Neu utils/korg/korgSlotSpectrum.ts (rein) + Balkenanzeige im Slot-Detail, bewusst UEBER den EQ-Knoepfen platziert — wer sieht wo die Energie sitzt, weiss welcher EQ-Knopf passt. Dazu ein zurueckhaltender EQ-Vorschlag mit BEGRUENDUNG und Ein-Klick-Anwendung. Schwellen absichtlich grosszuegig: ein Hinweis bei jedem zweiten Sample wird ignoriert und ist damit wertlos (eigener Test auf 'haelt sich bei ausgewogenem Material zurueck'). Bei Stille kein Schwerpunkt und kein Hinweis — eine Empfehlung auf Grundlage von Rauschen waere schlimmer als keine.",
+        "34 neue Tests (13 bulkSlotAdd, 8 toDbfs, 13 Klangprofil). Ein Test war zuerst selbst falsch: /\S{10,}/ verlangt zehn Zeichen OHNE Leerzeichen, die Begruendung ist aber ein Satz — Assertion auf die gemeinte Aussage umgestellt statt den Code anzupassen."
+      ],
+      next: [
+        "MKM-Vergleich vollstaendig abgearbeitet (alle 7 Punkte, v3.301-v3.305).",
+        "Am Geraet weiterhin offen (brauchen den Nutzer): §3-UI-Teil (Push/Pull-Buttons in der DrumMachine einmal fahren) und §4 (Sample-Link hoerbar pruefen) aus omnitribe/docs/hwtest/e2s_native_layer_bringup.md.",
+        "Denkbare Fortsetzung ohne Geraet: Piano-Roll-Vorschau im MIDI->Bank-Werkzeug; der Bericht deckt den Informationsbedarf bisher ab.",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI)."
+      ],
+      changed: [
+        "client/src/utils/korg/bulkSlotAdd.ts",
+        "client/src/utils/korg/korgSlotSpectrum.ts",
+        "client/src/utils/audioEdit.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "client/src/components/AudioWorkbench/AudioWorkbench.tsx",
+        "client/src/components/SampleBrowser/BulkProgressBar.tsx",
+        "tests/features/korg-bulk-slot-add.test.ts",
+        "tests/features/audio-level-display.test.ts",
+        "tests/features/korg-slot-spectrum.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-30T15:10:00.000Z",
