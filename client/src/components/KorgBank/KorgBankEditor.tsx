@@ -87,6 +87,13 @@ import {
   assessE2sCapacity,
   describeE2sCapacity,
 } from "@/utils/korg/e2sCapacity";
+// v3.304 — 3-Band-EQ auf dem Slot (letzter Teil der Mastering-Kette)
+import {
+  KORG_EQ_PRESETS,
+  applyKorgEqPreset,
+  describeKorgEq,
+  type KorgEqPresetId,
+} from "@/utils/korg/korgSlotEq";
 // v3.301 — Korg Match: Mastering-Kette direkt auf dem .all-Slot
 import {
   KORG_MATCH_PROFILES,
@@ -981,6 +988,27 @@ export function KorgBankEditor({
       `${korgMatchProfile(id).name}: ${res.steps.join(" · ")}`,
       { kind: "success", duration: 7000 },
     );
+  }
+
+  /**
+   * v3.304 — EQ-Voreinstellung auf einen Slot anwenden.
+   *
+   * Anders als „Korg Match" wird hier **nicht** normalisiert: ein EQ, der
+   * heimlich den Pegel nachzieht, ist nicht nachvollziehbar. Bei Übersteuerung
+   * sagt die Rückmeldung, dass „Korg Match" das aufräumt.
+   */
+  function editSlotEq(rowId: string, id: KorgEqPresetId): void {
+    const slot = openedSlots.find(s => s.rowId === rowId);
+    if (!slot || !slot.pcmData || !slot.channels || !slot.sampleRate) {
+      toast("Kein dekodiertes Audio in diesem Slot.", { kind: "warning" });
+      return;
+    }
+    const res = applyKorgEqPreset(slot.pcmData, slot.channels, slot.sampleRate, id);
+    setOpenedSlots(prev => patchOpenedSlot(prev, rowId, { pcmData: res.pcm }));
+    toast(describeKorgEq(id, res), {
+      kind: res.clipped ? "warning" : "success",
+      duration: res.clipped ? 9000 : 5000,
+    });
   }
 
   async function editSlotReplaceSample(
@@ -2959,6 +2987,26 @@ export function KorgBankEditor({
                       key={p.id}
                       data-testid={`korg-match-${p.id}`}
                       onClick={() => editSlotKorgMatch(selectedSlot.rowId, p.id)}
+                      disabled={busy}
+                      title={p.description}
+                      className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+                {/* v3.304 — 3-Band-EQ. Der Helfer lag mit Tests im Projekt, hatte
+                    aber keinen UI-Consumer; das war der letzte offene Teil der
+                    Mastering-Kette im Gerätepfad. Normalisiert bewusst NICHT
+                    selbst — bei Übersteuerung weist die Rückmeldung auf „Korg
+                    Match" hin, damit der Eingriff nachvollziehbar bleibt. */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-xs text-text-muted">EQ:</span>
+                  {KORG_EQ_PRESETS.map(p => (
+                    <button
+                      key={p.id}
+                      data-testid={`korg-eq-${p.id}`}
+                      onClick={() => editSlotEq(selectedSlot.rowId, p.id)}
                       disabled={busy}
                       title={p.description}
                       className="px-3 py-1 rounded text-xs bg-bg-elevated text-text-primary hover:text-accent-primary transition-colors disabled:opacity-40"

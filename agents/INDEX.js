@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.303.0",
+    version: "3.304.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,28 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T15:10:00.000Z",
+      done: [
+        "v3.304.0 — 3-Band-EQ im .all-Slot-Editor. Damit ist der LETZTE Punkt aus dem ModernKorgManager-Vergleich geschlossen (Punkt 4, MKMs 'Node EQ'). sampleEqualizer3Band.ts lag mit Tests im Projekt, hatte aber KEINEN UI-Consumer — dasselbe Muster wie bei der uebrigen Mastering-Kette: die Faehigkeit war da, die Verdrahtung fehlte.",
+        "NEU utils/korg/korgSlotEq.ts (rein): Formatbruecke auf interleavtes Slot-PCM (wiederverwendet interleavedToBuffer/bufferToInterleaved aus korgMatch) + fuenf benannte Voreinstellungen. Kein eigenes DSP; die Biquads bleiben im Helfer.",
+        "Voreinstellungen sind auf das GERAET hin gewaehlt, nicht auf ein Mischpult: 'Mumpf raus' (-4.5 dB um 300 Hz, wo sich mehrere Samples zumatschen), 'Druck' (+4 dB ab 120 Hz fuer Kicks), 'Hoehen auf' (+4.5 dB ab 6 kHz, hilft auf 22 kHz heruntergerechneten Samples), 'Telefon' (Effekt fuer Vocal-Schnipsel), 'Sub weg' (-12 dB unter 80 Hz; spart Kopfraum, den die Electribe unten nicht wiedergibt).",
+        "BEWUSSTE ENTSCHEIDUNG: der EQ normalisiert NICHT selbst. Ein EQ, der heimlich den Pegel nachzieht, ist nicht nachvollziehbar. Stattdessen meldet das Ergebnis 'clipped' samt Hinweis, dass 'Korg Match' das aufraeumt — eigener Test darauf, damit es nicht spaeter 'hilfsbereit' nachgeruestet wird.",
+        "17 Tests. Geprueft wird nicht die Biquad-Mathematik (die hat eigene Tests), sondern was durch die Anbindung dazukommt: dass jede Voreinstellung die Frequenz trifft, die ihr Name verspricht (RMS der zweiten Signalhaelfte, um den Filter-Einschwinger auszulassen), dass Stereo-Kanaele nicht zusammengeruehrt werden (rechts stumm bleibt stumm), und dass Uebersteuerung gemeldet statt verschluckt wird.",
+        "Test-Stolperstein am Rande: deutsche Anfuehrungszeichen in Testtiteln — schliessendes ASCII-Quote beendete den JS-String und esbuild brach ab. Auf einfache Anfuehrungszeichen umgestellt."
+      ],
+      next: [
+        "Alle 7 Punkte des MKM-Vergleichs sind damit abgearbeitet (1,2,3,5 in v3.301/v3.302, 6 in v3.303, 4 hier).",
+        "Kleinkram bleibt offen: 'Alle hinzufuegen'-Massenaktion im Sample-Picker, echter Fortschrittsbalken beim .all-Export (BulkProgressBar existiert im SampleBrowser), RMS neben Peak (getRms wird schon importiert, aber nicht angezeigt), Spectrum pro Sample (sampleSpectrumPeak.ts hat nur Tests).",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI, Datei fehlt dort)."
+      ],
+      changed: [
+        "client/src/utils/korg/korgSlotEq.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/korg-slot-eq.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-30T15:00:00.000Z",
