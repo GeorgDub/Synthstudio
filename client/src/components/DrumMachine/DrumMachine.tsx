@@ -1557,8 +1557,14 @@ function DrumMachineInner({
             Array(stepCount).fill(100)
           );
 
+          // v3.303 — mitzählen, was das `% stepCount` unten zusammenfaltet.
+          // Dieser Import füllt bewusst EIN Pattern; bei mehrtaktigem Material
+          // überlagern sich die Takte dabei aber, und das war vorher unsichtbar.
+          let maxStepAbs = 0;
           for (const { note, velocity, absTick } of noteOns) {
-            const step = Math.round(absTick / ticksPerStep) % stepCount;
+            const stepAbs = Math.round(absTick / ticksPerStep);
+            if (stepAbs > maxStepAbs) maxStepAbs = stepAbs;
+            const step = stepAbs % stepCount;
             const partIdx = noteToPartIdx[note] ?? note % pattern.parts.length;
             if (partIdx < pattern.parts.length) {
               newSteps[partIdx][step] = true;
@@ -1568,9 +1574,15 @@ function DrumMachineInner({
           pattern.parts.forEach((part, i) =>
             dm.setPartSteps(part.id, newSteps[i], newVels[i])
           );
-          toast(`MIDI importiert: ${file.name} (${noteOns.length} Notes)`, {
-            kind: "success",
-          });
+          const foldedBars = Math.floor(maxStepAbs / stepCount) + 1;
+          toast(
+            `MIDI importiert: ${file.name} (${noteOns.length} Notes)` +
+              (foldedBars > 1
+                ? ` — ⚠ ${foldedBars} Takte liegen jetzt übereinander auf diesem einen ` +
+                  `Pattern. Taktweise übernehmen: Tools → „🎼 MIDI→Bank".`
+                : ""),
+            { kind: "success", duration: foldedBars > 1 ? 9000 : 4000 }
+          );
         } catch (err) {
           console.error("[MIDI Import]", err);
           const msg = err instanceof Error ? err.message : String(err);
