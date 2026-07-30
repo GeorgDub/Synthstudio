@@ -13,10 +13,12 @@
  * verifiziert gegen `hacktribe-editor/utils/ht_fx_preset_format.py`.
  *
  * ⚠️ **Zwei Kodierungen für `source_control`.** Das Preset-*Datei*-Format
- * benutzt `0x41`–`0x4A`, das **RAM**-Format `0x01`–`0x0A` für dieselben
- * Bedienelemente. Wir lesen aus RAM, also ist RAM die Vorgabe — bewiesen ist es
- * nicht (siehe {@link FxSourceEncoding}). Deshalb ist die Kodierung ein
- * Parameter und keine Annahme, und beide Tabellen sind exportiert.
+ * benutzt `0x41`–`0x4A` ({@link FX_SOURCE_CONTROL_PRESET}), das **RAM**-Format
+ * `0x01`–`0x0A` ({@link FX_SOURCE_CONTROL_RAM}). Am Gerät verifiziert
+ * (2026-07-28): der NRPN-Handler legt Werte roh im RAM-Format ab — RAM ist
+ * die belegte Vorgabe fürs Lesen aus dem Gerät; die Preset-Kodierung gilt nur
+ * für `.e2fx`-*Dateien*. Die Kodierung bleibt ein Parameter, beide Tabellen
+ * sind exportiert.
  *
  * Was hier **nicht** dekodiert wird: die device-abhängigen Parameter-Structs
  * (`ifx_1_params` @ `0x135` usw.). Deren Feldnamen stehen ausschließlich in
@@ -24,7 +26,6 @@
  * Die Rohbytes werden mitgeliefert, damit sie sichtbar sind statt zu fehlen.
  */
 import {
-  FX_SOURCE_CONTROL,
   labelForFxSourceControl,
   type FxSourceControl,
 } from "./hacktribeNrpn";
@@ -148,8 +149,10 @@ export const CHAIN_INDEX: Readonly<Record<number, string>> = {
 /**
  * `source_control` im **RAM**-Format (`ht_fx_ram_format.py`).
  *
- * Dieselben Bedienelemente wie {@link FX_SOURCE_CONTROL}, aber mit den Werten
- * `0x01`–`0x0A` statt `0x41`–`0x4A`.
+ * Identisch mit {@link FX_SOURCE_CONTROL} aus `hacktribeNrpn.ts` — die
+ * NRPN-Sende-Tabelle IST die RAM-Kodierung (am Gerät verifiziert 2026-07-28).
+ * Hier bewusst eigenständig gepinnt, damit der Datei-Inspektor nicht an der
+ * Sende-Tabelle hängt.
  */
 export const FX_SOURCE_CONTROL_RAM: Readonly<Record<FxSourceControl, number>> = {
   none: 0x00,
@@ -166,12 +169,33 @@ export const FX_SOURCE_CONTROL_RAM: Readonly<Record<FxSourceControl, number>> = 
 };
 
 /**
+ * `source_control` im Preset-*Datei*-Format (`ht_fx_preset_format.py`).
+ *
+ * Gilt NUR für `.e2fx`-Dateien: dieselben Bedienelemente wie
+ * {@link FX_SOURCE_CONTROL_RAM}, jeweils um `0x40` versetzt. Zum Senden über
+ * NRPN nie benutzen — der Handler schreibt roh ins RAM-Format.
+ */
+export const FX_SOURCE_CONTROL_PRESET: Readonly<Record<FxSourceControl, number>> = {
+  none: 0x00,
+  fxOn: 0x41,
+  fxEditX: 0x42,
+  fxEditY: 0x43,
+  fxEditXHi: 0x44,
+  fxEditXLo: 0x45,
+  fxEditYHi: 0x46,
+  fxEditYLo: 0x47,
+  keyPart: 0x48,
+  keyGlobal: 0x49,
+  pressPlay: 0x4a,
+};
+
+/**
  * Welche der beiden Kodierungen gilt.
  *
- * `"ram"` ist die Vorgabe, weil wir aus dem RAM lesen — **belegt ist das
- * nicht.** Die Gegenprobe am Gerät: eine Zuweisung mit `fxEditX` senden, den
- * Slot zurücklesen und nachsehen, ob `0x42` (Preset) oder `0x02` (RAM) im Byte
- * steht.
+ * `"ram"` ist die Vorgabe fürs Lesen aus dem Gerät — **am Gerät belegt**
+ * (2026-07-28): eine mit `0x42` gesendete Zuweisung landete roh als ungültiges
+ * `0x42`, erst `0x02` ergab beim Zurücklesen `fxEditX`. `"preset"` bleibt für
+ * `.e2fx`-Dateien.
  */
 export type FxSourceEncoding = "ram" | "preset";
 
@@ -210,7 +234,7 @@ export function labelForSourceControl(value: number, encoding: FxSourceEncoding)
 
 /** Der Schlüssel zu einem Rohwert, oder `null` bei unbekanntem Code. */
 function sourceKeyFor(value: number, encoding: FxSourceEncoding): FxSourceControl | null {
-  const table = encoding === "ram" ? FX_SOURCE_CONTROL_RAM : FX_SOURCE_CONTROL;
+  const table = encoding === "ram" ? FX_SOURCE_CONTROL_RAM : FX_SOURCE_CONTROL_PRESET;
   return (Object.keys(table) as FxSourceControl[]).find((k) => table[k] === value) ?? null;
 }
 

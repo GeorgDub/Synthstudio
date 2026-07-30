@@ -1,10 +1,11 @@
 {
   "name": "synthstudio",
-  "version": "3.301.0",
+  "version": "3.306.0",
   "type": "module",
   "license": "MIT",
   "main": "electron-dist/main.cjs",
   "scripts": {
+    "license:keygen": "node scripts/license-keygen.mjs",
     "gen:sandbox": "node scripts/generate-sandbox-source.mjs",
     "predev": "pnpm gen:sandbox",
     "prebuild": "pnpm gen:sandbox",

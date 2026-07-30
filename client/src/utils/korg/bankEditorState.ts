@@ -98,6 +98,15 @@ export interface OpenedSlotSnapshot {
   rawRiff?: Uint8Array;
   /** v3.8.0 — Snapshot der Slices für Revert. */
   slices: E2sSlice[];
+  /**
+   * v3.301 — `OSC_0index`, wie er in der geladenen Datei stand.
+   *
+   * Nicht redundant zu `slotIndex`: bei einer korrekt gebauten Bank sind beide
+   * gleich, bei einer fehlnummerierten nicht — und genau diese Differenz ist
+   * das einzige, woran `repairSlotNumbering` erkennt, welche Slots neu kodiert
+   * werden müssen.
+   */
+  sampleNumber: number;
 }
 
 // ─── Bank → OpenedSlot[] ──────────────────────────────────────────────────────
@@ -163,6 +172,7 @@ export function bankToOpenedSlots(
       frames: src.frames,
       rawRiff: src.rawRiff,
       slices: slicesCopy.map(s => ({ ...s })),
+      sampleNumber: src.sampleNumber,
     };
     out.push({
       rowId: `${keyPrefix}-${i}`,
@@ -642,6 +652,65 @@ export function countDirtySlots(slots: OpenedSlot[]): number {
   return n;
 }
 
+/**
+ * PCM-Gesamtgröße der belegten Slots in Bytes — Eingabe für die
+ * Kapazitätsanzeige (`assessE2sCapacity`).
+ *
+ * Zwei Quellen, weil ein geöffneter Slot in zwei Zuständen vorkommt:
+ * bearbeitet (dann liegt dekodiertes PCM vor → `frames × Kanäle × 2`, denn das
+ * Gerät speichert 16 Bit) oder bit-exakt durchgereicht (dann ist nur das rohe
+ * RIFF da, und dessen Länge ist die beste verfügbare Schätzung — inklusive
+ * Header, also minimal zu hoch). Ohne den `rawRiff`-Zweig erschiene eine
+ * unveränderte Bank als 0 MB — also genau im häufigsten Fall nichts.
+ */
+export function totalPcmBytes(slots: OpenedSlot[]): number {
+  let total = 0;
+  for (const s of slots) {
+    if (s.empty) continue;
+    if (s.frames && s.channels) {
+      total += s.frames * s.channels * 2;
+    } else if (s.rawRiff) {
+      total += s.rawRiff.byteLength;
+    }
+  }
+  return total;
+}
+
+/**
+ * Repariert eine fehlnummerierte Bank — durch **Erzwingen der Neu-Kodierung**
+ * der betroffenen Slots, nicht durch Verschieben.
+ *
+ * Warum das nötig ist: der Builder schreibt `OSC_0index = slotIndex`, aber nur
+ * für Slots, die er neu kodiert. Ein nicht-dirty Slot geht über den
+ * Bit-exakt-Passthrough und nimmt seine **falsche** Nummer mit. Ein reines
+ * „nochmal speichern" heilt die Bank deshalb nicht — genau das prüft
+ * `tests/features/e2s-slot-numbering-repair.test.ts` ab.
+ *
+ * Positionen bleiben unangetastet: repariert wird die Nummer im Sample, nicht
+ * der Platz in der Tabelle. Würde man stattdessen verschieben, zeigten
+ * bestehende Patterns plötzlich auf andere Samples.
+ *
+ * Saubere Slots werden nicht angefasst, damit die Bit-Exaktheit erhalten bleibt
+ * (`changed === 0` heißt: es gab nichts zu tun).
+ *
+ * @returns neue Slot-Liste + Anzahl der auf `isDirty` gesetzten Slots.
+ */
+export function repairSlotNumbering(
+  slots: OpenedSlot[]
+): { slots: OpenedSlot[]; changed: number } {
+  let changed = 0;
+  const out = slots.map(s => {
+    if (s.empty) return s;
+    // `slotIndex` ist die Wahrheit: dort liegt der Zeiger in der Tabelle, und
+    // genau diese Zahl erwartet das Gerät (HW-verifiziert 2026-07-28).
+    const stored = s.original?.sampleNumber;
+    if (stored === undefined || stored === s.slotIndex) return s;
+    changed++;
+    return { ...s, isDirty: true };
+  });
+  return { slots: out, changed };
+}
+
 export function hasUnsavedChanges(slots: OpenedSlot[]): boolean {
   return slots.some(s => s.isDirty);
 }
@@ -661,9 +730,9 @@ export function displayCategory(s: OpenedSlot): string {
 /**
  * v3.286 — Filter für den Slot-Browser.
  *
- * Wurde nötig, als die Offset-Tabelle von (fälschlich) 250 auf 1002 Einträge
- * korrigiert wurde: eine Hacktribe-Bank hat ihre User-Samples ab Index 501,
- * davor stehen hunderte leere Slots. Ohne Filter müsste man die durchscrollen.
+ * Wurde nötig, als die Offset-Tabelle auf ihre volle Länge korrigiert wurde:
+ * eine Hacktribe-Bank hat ihre User-Samples ab Index 501, davor stehen
+ * hunderte leere Slots. Ohne Filter müsste man die durchscrollen.
  *
  * Reihenfolge bleibt die Slot-Reihenfolge — es wird nur weggelassen, nie
  * umsortiert. `hideEmpty` wirkt nicht auf geänderte Slots: was man gerade

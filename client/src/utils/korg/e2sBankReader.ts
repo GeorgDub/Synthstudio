@@ -131,6 +131,25 @@ export interface E2sSlot {
   rawRiff?: Uint8Array;
 }
 
+/**
+ * Ergebnis der Slot-Nummerierungs-Selbstprüfung — maschinenlesbar, damit die
+ * Oberfläche warnen kann, ohne Warntexte zu parsen.
+ *
+ * - `"ok"` — jeder belegte Slot trägt seine eigene Nummer.
+ * - `"constant-shift"` — **alle** belegten Slots liegen um `shift` daneben.
+ *   Die Bank ist am Gerät fehlnummeriert und muss neu gebaut werden.
+ * - `"scattered"` — einzelne Slots inkonsistent; kein Geometriefehler.
+ */
+export interface E2sSlotNumbering {
+  kind: "ok" | "constant-shift" | "scattered";
+  /** Betrag des Versatzes (`OSC_0index − Index`), nur bei `constant-shift`. */
+  shift: number | null;
+  /** Anzahl betroffener Slots. */
+  affected: number;
+  /** Belegte Slots insgesamt. */
+  filled: number;
+}
+
 export interface E2sBank {
   /** Quelle (Filename oder "<bytes>"). */
   source: string;
@@ -142,6 +161,8 @@ export interface E2sBank {
   trailingBytes: number;
   /** Soft-Warnings. */
   warnings: string[];
+  /** Befund der Slot-Nummerierungs-Prüfung (v3.301). */
+  slotNumbering: E2sSlotNumbering;
 }
 
 export class E2sParseError extends Error {
@@ -677,46 +698,78 @@ export function parseE2sBank(
     }
   }
 
-  // ── Selbstpruefung der Tabellen-Geometrie (v3.298) ─────────────────────────
+  // ── Selbstpruefung der Slot-Nummerierung (v3.298, Diagnose gedreht v3.301) ──
   //
   // Die Datei traegt die Sample-Nummer doppelt: einmal als Position in der
   // Offset-Tabelle, einmal als `OSC_0index` im korg/esli-Chunk des Slots. Bei
-  // korrektem `E2S_ALL_OFFSET_TABLE_START` sind beide gleich.
+  // einer korrekt gebauten Bank sind beide gleich.
   //
-  // Diese Redundanz ist das EINZIGE, was eine falsche Tabellen-Startadresse
-  // auffliegen laesst. Ein um n Eintraege verschobener Start liefert dieselben
-  // Offset-Werte, nur unter falschen Indizes — Plausibilitaetspruefungen wie
-  // "Offset >= 0x1000" oder "Anzahl nicht-null" koennen das prinzipiell nicht
-  // sehen. Genau daran sind hier schon zwei Werte gescheitert (0x07E0 und
-  // 0x0058); ohne diesen Abgleich faellt der naechste Irrtum wieder erst am
-  // Geraet auf, an verschobenen Sample-Nummern.
+  // ⚠️ Die Deutung dieses Befunds hat sich am 2026-07-28 GEDREHT. Vorher stand
+  // hier, ein konstanter Versatz heisse "E2S_ALL_OFFSET_TABLE_START ist falsch".
+  // Am Geraet ist inzwischen bewiesen, dass die Konstante 0x0010 STIMMT:
+  // Anzeige == Pattern-Ref == Tabellen-Index == OSC_0index, eine einzige
+  // Zaehlung (Beleg: omnitribe/docs/hwtest/e2s_native_layer_bringup.md §1 —
+  // dieselben 117 Samples liefen erst nach dem Verschieben von Index 500..616
+  // auf 501..617 korrekt am Geraet). Ein konstanter Versatz heisst deshalb:
+  // **diese BANK ist fehlnummeriert** und wird am Geraet falsche Sample-Nummern
+  // zeigen. Aeltere Werkzeuge packen die Zeiger ab Index 0 bzw. um eins
+  // versetzt, waehrend die Samples ihre gemeinte Geraetenummer behalten.
+  //
+  // Die alte Deutung bleibt als Nebensatz erhalten, weil sie einen Restwert hat:
+  // wenn AUSNAHMSLOS JEDE geladene Bank denselben Versatz meldet, ist eher die
+  // Konstante schuld als jede einzelne Datei.
   const mismatches: number[] = [];
   for (let i = 0; i < E2S_MAX_SLOTS; i++) {
     const s = slots[i];
     if (s === null) continue;
     if (s.sampleNumber !== i) mismatches.push(i);
   }
+  const filled = slots.reduce<number>((n, s) => (s === null ? n : n + 1), 0);
+  let slotNumbering: E2sSlotNumbering = {
+    kind: "ok",
+    shift: null,
+    affected: 0,
+    filled,
+  };
+
   if (mismatches.length > 0) {
-    const filled = slots.reduce<number>((n, s) => (s === null ? n : n + 1), 0);
     const shifts = new Set(mismatches.map(i => (slots[i] as E2sSlot).sampleNumber - i));
-    // Ein Geometriefehler verschiebt AUSNAHMSLOS jeden Slot um denselben
-    // Betrag. Zwei einzelne krumme Slots ergeben trivial auch einen
+    // Ein systematischer Baufehler verschiebt AUSNAHMSLOS jeden Slot um
+    // denselben Betrag. Zwei einzelne krumme Slots ergeben trivial auch einen
     // "konstanten" Versatz — deshalb muessen alle belegten Slots betroffen
     // sein, und es muessen mehr als einer sein.
     if (shifts.size === 1 && mismatches.length === filled && filled > 1) {
       const shift = [...shifts][0];
+      slotNumbering = {
+        kind: "constant-shift",
+        shift,
+        affected: mismatches.length,
+        filled,
+      };
+      const dir = shift > 0 ? "zu niedrigen" : "zu hohen";
       warnings.push(
-        `offset-table geometry suspect: ALL ${mismatches.length} slots report ` +
-          `OSC_0index = index ${shift > 0 ? "+" : ""}${shift}. Ein konstanter ` +
-          `Versatz heisst in aller Regel: E2S_ALL_OFFSET_TABLE_START ist um ` +
-          `${Math.abs(shift) * 4} Bytes falsch (aktuell 0x${E2S_ALL_OFFSET_TABLE_START.toString(16)}).`
+        `Bank fehlnummeriert: alle ${mismatches.length} belegten Slots liegen ` +
+          `${shift > 0 ? "+" : ""}${shift} neben ihrer eigenen Sample-Nummer ` +
+          `(Zeiger stehen auf ${dir} Indizes). Am Geraet zeigt diese Bank ` +
+          `verschobene Nummern, und Patterns treffen die falschen Samples — ` +
+          `sie muss neu gebaut werden (Slots so speichern, wie die Samples sich ` +
+          `selbst nummerieren). Verschieben allein genuegt nicht. ` +
+          `Nur falls JEDE Bank denselben Versatz meldet, ist stattdessen ` +
+          `E2S_ALL_OFFSET_TABLE_START (0x${E2S_ALL_OFFSET_TABLE_START.toString(16)}) ` +
+          `um ${Math.abs(shift) * 4} Bytes zu pruefen.`
       );
     } else {
+      slotNumbering = {
+        kind: "scattered",
+        shift: null,
+        affected: mismatches.length,
+        filled,
+      };
       warnings.push(
         `${mismatches.length} Slot(s) mit OSC_0index != Tabellen-Index ` +
           `(z.B. Slot ${mismatches[0]} meldet ${(slots[mismatches[0]] as E2sSlot).sampleNumber}). ` +
-          `Kein konstanter Versatz — vermutlich einzelne Slots inkonsistent, ` +
-          `nicht die Tabellen-Geometrie.`
+          `Kein konstanter Versatz — einzelne Slots wurden nachbearbeitet, ` +
+          `die Bank als Ganzes ist nicht verschoben.`
       );
     }
   }
@@ -728,6 +781,7 @@ export function parseE2sBank(
     offsetTable,
     trailingBytes,
     warnings,
+    slotNumbering,
   };
 }
 

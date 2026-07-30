@@ -221,6 +221,19 @@ export function getPeak(source: AudioBuffer): number {
   return peak;
 }
 
+/**
+ * Linearen Amplitudenwert in dBFS umrechnen, für die Anzeige.
+ *
+ * Eine Untergrenze ist nötig, weil `log10(0)` minus unendlich ergibt und in der
+ * Oberfläche als `-Infinity` landen würde. −120 dB liegt weit unter allem, was
+ * 16-Bit-Material auflösen kann, taugt also als „still".
+ */
+export function toDbfs(amplitude: number, digits = 1): string {
+  if (!Number.isFinite(amplitude) || amplitude <= 0) return "-∞";
+  const db = 20 * Math.log10(amplitude);
+  return db < -120 ? "-∞" : db.toFixed(digits);
+}
+
 /** Berechnet den RMS-Pegel eines Buffers. */
 export function getRms(source: AudioBuffer): number {
   let sum = 0;

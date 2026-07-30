@@ -262,23 +262,25 @@ export function buildMapFxParam(
 /**
  * Quell-Bedienelemente für {@link buildMapFxParam}.
  *
- * Werte aus `ht_fx_preset_format.py` (Preset-Format). Achtung: das
- * **RAM**-Format derselben Struktur benutzt die kleinen Werte 0x01–0x0A für
- * dieselben Elemente — beim direkten RAM-Schreiben also nicht diese Tabelle
- * verwenden.
+ * **RAM**-Kodierung (`ht_fx_ram_format.py`), NICHT die Preset-*Datei*-Kodierung
+ * `0x41–0x4A` aus `ht_fx_preset_format.py`. Am Gerät verifiziert (2026-07-28,
+ * E2S/Hacktribe): der NRPN-Handler schreibt den gesendeten Wert **roh** in die
+ * Control-Map des FX-Edit-Buffers (RAM-Format, `decodeFxControlMap`) — ein
+ * gesendetes 0x42 landet dort als ungültiges 0x42, erst 0x02 ergibt ein
+ * gültiges `FX Edit X`.
  */
 export const FX_SOURCE_CONTROL = {
   none: 0x00,
-  fxOn: 0x41,
-  fxEditX: 0x42,
-  fxEditY: 0x43,
-  fxEditXHi: 0x44,
-  fxEditXLo: 0x45,
-  fxEditYHi: 0x46,
-  fxEditYLo: 0x47,
-  keyPart: 0x48,
-  keyGlobal: 0x49,
-  pressPlay: 0x4a,
+  fxOn: 0x01,
+  fxEditX: 0x02,
+  fxEditY: 0x03,
+  fxEditXHi: 0x04,
+  fxEditXLo: 0x05,
+  fxEditYHi: 0x06,
+  fxEditYLo: 0x07,
+  keyPart: 0x08,
+  keyGlobal: 0x09,
+  pressPlay: 0x0a,
 } as const;
 
 export type FxSourceControl = keyof typeof FX_SOURCE_CONTROL;

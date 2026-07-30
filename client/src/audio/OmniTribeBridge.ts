@@ -207,7 +207,7 @@ function xorChecksum(payload: number[] | Uint8Array): number {
  * Mirrors _unpack32_7bit in otp_codec.py and unpack32_7bit in loader_simulator.py.
  * b[0] = header nibble (MSBs of the 4 data bytes), b[1..4] = 7-bit data.
  */
-function unpack32_7bit(b: Uint8Array | number[], offset = 0): number {
+export function unpack32_7bit(b: Uint8Array | number[], offset = 0): number {
   let result = 0;
   for (let k = 0; k < 4; k++) {
     let v = b[offset + 1 + k] & 0x7F;

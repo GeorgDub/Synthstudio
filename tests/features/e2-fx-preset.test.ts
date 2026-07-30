@@ -18,6 +18,7 @@ import {
   FX_CONTROL_SIZE,
   FX_CONTROL_SLOTS,
   FX_PRESET_SIZE,
+  FX_SOURCE_CONTROL_PRESET,
   FX_SOURCE_CONTROL_RAM,
   IFX2_WHITELIST,
   IFX_DEVICES,
@@ -149,20 +150,29 @@ describe("Device-Tabellen", () => {
 // ─── Die zwei Kodierungen ───────────────────────────────────────────────────
 
 describe("source_control — zwei Kodierungen", () => {
-  it("deckt in beiden Tabellen dieselben Bedienelemente ab", () => {
+  it("deckt in allen Tabellen dieselben Bedienelemente ab", () => {
     expect(new Set(Object.keys(FX_SOURCE_CONTROL_RAM))).toEqual(
+      new Set(Object.keys(FX_SOURCE_CONTROL)),
+    );
+    expect(new Set(Object.keys(FX_SOURCE_CONTROL_PRESET))).toEqual(
       new Set(Object.keys(FX_SOURCE_CONTROL)),
     );
   });
 
-  it("unterscheidet sich genau um 0x40 — außer bei none", () => {
+  it("Preset-Datei-Tabelle liegt genau 0x40 über der RAM-Tabelle — außer bei none", () => {
     for (const k of FX_SOURCE_CONTROL_KEYS) {
       if (k === "none") {
-        expect(FX_SOURCE_CONTROL_RAM[k]).toBe(FX_SOURCE_CONTROL[k]);
+        expect(FX_SOURCE_CONTROL_PRESET[k]).toBe(FX_SOURCE_CONTROL_RAM[k]);
         continue;
       }
-      expect(FX_SOURCE_CONTROL[k] - FX_SOURCE_CONTROL_RAM[k]).toBe(0x40);
+      expect(FX_SOURCE_CONTROL_PRESET[k] - FX_SOURCE_CONTROL_RAM[k]).toBe(0x40);
     }
+  });
+
+  it("die NRPN-Sende-Tabelle IST die RAM-Tabelle", () => {
+    // Am Gerät verifiziert (2026-07-28): der Handler legt gesendete Werte roh
+    // im RAM-Format ab — die Sende-Tabelle muss deshalb die RAM-Codes führen.
+    expect(FX_SOURCE_CONTROL).toEqual(FX_SOURCE_CONTROL_RAM);
   });
 
   it("liest dieselben Bytes je nach Kodierung als verschiedene Elemente", () => {
@@ -174,10 +184,11 @@ describe("source_control — zwei Kodierungen", () => {
     expect(labelForSourceControl(0x42, "ram")).toBe("unbekannt (0x42)");
   });
 
-  it("erkennt im Preset-Modus genau die Codes, die buildMapFxParam sendet", () => {
-    // Wir senden die Preset-Codes über NRPN. Wenn das Gerät sie unverändert
-    // ablegt, muss der Preset-Modus sie wiederfinden — sonst haben wir die
-    // falsche Tabelle beim Senden benutzt.
+  it("erkennt im RAM-Modus genau die Codes, die buildMapFxParam sendet", () => {
+    // Am Gerät verifiziert (2026-07-28): der NRPN-Handler legt den gesendeten
+    // Wert unverändert im RAM-Format ab. Der RAM-Modus muss also jeden
+    // gesendeten Code wiederfinden — sonst wäre beim Senden die falsche
+    // Tabelle im Spiel.
     for (const key of FX_SOURCE_CONTROL_KEYS) {
       const msgs = buildMapFxParam(0, 0, {
         mapSlot: 0,
@@ -187,7 +198,7 @@ describe("source_control — zwei Kodierungen", () => {
         maxValue: 127,
       });
       const sentValue = msgs[1 * 4 + 3][2]; // zweite NRPN-Gruppe, DATA-LSB
-      expect(labelForSourceControl(sentValue, "preset")).not.toMatch(/^unbekannt/);
+      expect(labelForSourceControl(sentValue, "ram")).not.toMatch(/^unbekannt/);
     }
   });
 });

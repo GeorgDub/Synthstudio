@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.301.0",
+    version: "3.306.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4277,6 +4277,143 @@ const INDEX = {
       changed: [
         "client/src/components/SampleSlicer/SampleSlicer.tsx (geloescht)",
         "client/src/components/SampleSlicer/index.ts (geloescht)"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T18:45:00.000Z",
+      done: [
+        "v3.305.0 — Feinschliff: die vier Kleinkram-Punkte aus dem ModernKorgManager-Vergleich (Punkt 7). Damit ist die Liste komplett abgearbeitet.",
+        "ALLE HINZUFUEGEN im Sample-Picker: NICHT als Schleife ueber addSampleAsSlot gebaut — die liest newSlots.length fuer den Slot-Index und Date.now() fuer die Zeilen-ID, saehe in jedem Durchlauf denselben gebuendelten React-State und dieselbe Millisekunde. Alle Zeilen bekaemen Index 0 und dieselbe ID; bei zwei Samples faellt das nicht auf, bei zwanzig zerlegt es die Liste. Stattdessen utils/korg/bulkSlotAdd.ts (rein): plant den kompletten Anhang, der Aufrufer setzt den State genau einmal. Trennt ausserdem 'schon in der Liste' von 'kein Platz mehr' — eine gemeinsame Zahl waere eine irrefuehrende Ursache.",
+        "FORTSCHRITT beim .all-Export: decodeAllPendingNew meldete nichts, bei 100 Samples sah das aus wie ein Haenger. Wiederverwendet die bestehende BulkProgressBar statt einer zweiten Eigenbau-Anzeige; deren data-testid ist jetzt ueberschreibbar (Default unveraendert, bestehende Tests greifen weiter). Gezaehlt werden nur die NOCH OFFENEN Slots — bereits dekodierte mitzuzaehlen liesse den Balken bei einer Teil-Aktualisierung scheinbar in der Mitte starten.",
+        "RMS neben Peak: getRms war importiert und die Ueberschrift versprach 'Peak/RMS Info', angezeigt wurde nur Peak. Beim Nachruesten fiel auf, dass getPeak an zwei Stellen DIREKT im Render ueber alle Samples laeuft — RMS ungemessen dazuzunehmen haette das verdoppelt. Jetzt beide einmal je Buffer via useMemo, also nebenbei schneller als vorher. Neu toDbfs() in audioEdit.ts: log10(0) waere -Infinity in der Oberflaeche gelandet, jetzt '-∞'; Uebersteuerung wird bewusst als positiver Wert gezeigt statt abgeschnitten.",
+        "KLANGPROFIL pro Slot: sampleSpectrumPeak.ts (Goertzel ueber 7 Baender) lag mit Tests ohne UI-Consumer da. Neu utils/korg/korgSlotSpectrum.ts (rein) + Balkenanzeige im Slot-Detail, bewusst UEBER den EQ-Knoepfen platziert — wer sieht wo die Energie sitzt, weiss welcher EQ-Knopf passt. Dazu ein zurueckhaltender EQ-Vorschlag mit BEGRUENDUNG und Ein-Klick-Anwendung. Schwellen absichtlich grosszuegig: ein Hinweis bei jedem zweiten Sample wird ignoriert und ist damit wertlos (eigener Test auf 'haelt sich bei ausgewogenem Material zurueck'). Bei Stille kein Schwerpunkt und kein Hinweis — eine Empfehlung auf Grundlage von Rauschen waere schlimmer als keine.",
+        "34 neue Tests (13 bulkSlotAdd, 8 toDbfs, 13 Klangprofil). Ein Test war zuerst selbst falsch: /\S{10,}/ verlangt zehn Zeichen OHNE Leerzeichen, die Begruendung ist aber ein Satz — Assertion auf die gemeinte Aussage umgestellt statt den Code anzupassen."
+      ],
+      next: [
+        "MKM-Vergleich vollstaendig abgearbeitet (alle 7 Punkte, v3.301-v3.305).",
+        "Am Geraet weiterhin offen (brauchen den Nutzer): §3-UI-Teil (Push/Pull-Buttons in der DrumMachine einmal fahren) und §4 (Sample-Link hoerbar pruefen) aus omnitribe/docs/hwtest/e2s_native_layer_bringup.md.",
+        "Denkbare Fortsetzung ohne Geraet: Piano-Roll-Vorschau im MIDI->Bank-Werkzeug; der Bericht deckt den Informationsbedarf bisher ab.",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI)."
+      ],
+      changed: [
+        "client/src/utils/korg/bulkSlotAdd.ts",
+        "client/src/utils/korg/korgSlotSpectrum.ts",
+        "client/src/utils/audioEdit.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "client/src/components/AudioWorkbench/AudioWorkbench.tsx",
+        "client/src/components/SampleBrowser/BulkProgressBar.tsx",
+        "tests/features/korg-bulk-slot-add.test.ts",
+        "tests/features/audio-level-display.test.ts",
+        "tests/features/korg-slot-spectrum.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T15:10:00.000Z",
+      done: [
+        "v3.304.0 — 3-Band-EQ im .all-Slot-Editor. Damit ist der LETZTE Punkt aus dem ModernKorgManager-Vergleich geschlossen (Punkt 4, MKMs 'Node EQ'). sampleEqualizer3Band.ts lag mit Tests im Projekt, hatte aber KEINEN UI-Consumer — dasselbe Muster wie bei der uebrigen Mastering-Kette: die Faehigkeit war da, die Verdrahtung fehlte.",
+        "NEU utils/korg/korgSlotEq.ts (rein): Formatbruecke auf interleavtes Slot-PCM (wiederverwendet interleavedToBuffer/bufferToInterleaved aus korgMatch) + fuenf benannte Voreinstellungen. Kein eigenes DSP; die Biquads bleiben im Helfer.",
+        "Voreinstellungen sind auf das GERAET hin gewaehlt, nicht auf ein Mischpult: 'Mumpf raus' (-4.5 dB um 300 Hz, wo sich mehrere Samples zumatschen), 'Druck' (+4 dB ab 120 Hz fuer Kicks), 'Hoehen auf' (+4.5 dB ab 6 kHz, hilft auf 22 kHz heruntergerechneten Samples), 'Telefon' (Effekt fuer Vocal-Schnipsel), 'Sub weg' (-12 dB unter 80 Hz; spart Kopfraum, den die Electribe unten nicht wiedergibt).",
+        "BEWUSSTE ENTSCHEIDUNG: der EQ normalisiert NICHT selbst. Ein EQ, der heimlich den Pegel nachzieht, ist nicht nachvollziehbar. Stattdessen meldet das Ergebnis 'clipped' samt Hinweis, dass 'Korg Match' das aufraeumt — eigener Test darauf, damit es nicht spaeter 'hilfsbereit' nachgeruestet wird.",
+        "17 Tests. Geprueft wird nicht die Biquad-Mathematik (die hat eigene Tests), sondern was durch die Anbindung dazukommt: dass jede Voreinstellung die Frequenz trifft, die ihr Name verspricht (RMS der zweiten Signalhaelfte, um den Filter-Einschwinger auszulassen), dass Stereo-Kanaele nicht zusammengeruehrt werden (rechts stumm bleibt stumm), und dass Uebersteuerung gemeldet statt verschluckt wird.",
+        "Test-Stolperstein am Rande: deutsche Anfuehrungszeichen in Testtiteln — schliessendes ASCII-Quote beendete den JS-String und esbuild brach ab. Auf einfache Anfuehrungszeichen umgestellt."
+      ],
+      next: [
+        "Alle 7 Punkte des MKM-Vergleichs sind damit abgearbeitet (1,2,3,5 in v3.301/v3.302, 6 in v3.303, 4 hier).",
+        "Kleinkram bleibt offen: 'Alle hinzufuegen'-Massenaktion im Sample-Picker, echter Fortschrittsbalken beim .all-Export (BulkProgressBar existiert im SampleBrowser), RMS neben Peak (getRms wird schon importiert, aber nicht angezeigt), Spectrum pro Sample (sampleSpectrumPeak.ts hat nur Tests).",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI, Datei fehlt dort)."
+      ],
+      changed: [
+        "client/src/utils/korg/korgSlotEq.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/korg-slot-eq.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T15:00:00.000Z",
+      done: [
+        "v3.303.0 — MIDI-Datei -> Pattern MIT TAKTEN. Dritte Stufe aus dem ModernKorgManager-Vergleich und der spuerbarste Funktionsgewinn: der bestehende Import (midiParser.js, in der DrumMachine aktiv) rechnet 'step = round(absTick/ticksPerStep) % stepCount' und faltet damit eine ganze Datei in EINEN Takt — Takt 1, 5 und 9 landen auf denselben Steps. Zusaetzlich fielen nicht gemappte Noten per 'note % parts.length' auf einen beliebigen Part. Beides passierte stillschweigend.",
+        "NEU parseMidiFileDetailed() in smfParser.ts als ZWEITE Ausgabe (die alte bleibt unangetastet, sie ist getestet und in Benutzung): absolute Ticks statt vorquantisiertem stepIndex, ALLE Kanaele statt nur 9 (Melodie-Spuren gingen vorher komplett verloren), Track-Index + Track-Name fuer die Spur-Auswahl, Taktart aus Meta 0x58 (ohne sie ist 'Takt 3 bis 8' bei allem ausser 4/4 falsch) und Note-Off-Paarung fuer Laengen.",
+        "NEU utils/korg/midiToE2Pattern.ts (rein): Takt-Bereich -> mehrere E2PatternInput. Zwei Zuordnungs-Arten, weil beides gebraucht wird — 'pitch' (jede Tonhoehe ihren Part, Drums) und 'track' (jede Spur ein Part, Tonhoehe wandert in den Step, Melodie). Ausgabe ist die Form, die buildE2PatternBody schon schreibt; kein zweiter Writer.",
+        "EHRLICHER BERICHT statt stiller Verluste: outOfRangeNotes, unmappedNotes + unmappedSources (mehr als 16 Quellen), collisions (zwei Noten auf einem Step — die lautere gewinnt, bei Gleichstand die fruehere, damit reproduzierbar) und partSources (welcher Part woher kommt). describeMidiToE2() formuliert das fuer die UI.",
+        "Taktarten gerechnet statt angenommen: ticksPerBar() ueber numerator*4/denominator (4/4 -> 4 Viertel, 3/4 -> 3, 6/8 -> 3). Fehlt Meta 0x58, wird 4/4 angenommen UND das im Bericht als Annahme markiert — bei einer 3/4-Datei ohne Meta-Event waere unsere Rechnung sonst unsichtbar falsch.",
+        "Ein verdrehter Bereich (barTo < barFrom) wird auf barFrom geklemmt, NICHT stillschweigend getauscht: ein Tippfehler soll kein plausibles Ergebnis liefern.",
+        "UI: neues Werkzeug 'MIDI->Bank' (Tools-Tab) mit Takt-Von/Bis, Steps/Pattern (16/32/64), Zuordnungs-Wahl, Spur-Knoepfen (Notenzahl + Drum-Marker) und einer VORSCHAU, die vor dem Schreiben nennt, wie viele Patterns entstehen und was wegfaellt. Gleiche Zurueckhaltung wie E2sBankExport: der Container wird nicht fabriziert, eine echte Basis-Bank ist Pflicht.",
+        "Der alte DrumMachine-Import bleibt (er fuellt bewusst EIN Pattern), warnt jetzt aber, wenn er faltet: 'N Takte liegen jetzt uebereinander' + Verweis auf das neue Werkzeug.",
+        "35 neue Tests. Ende-zu-Ende gegen die ECHTE Nutzer-Bank geprueft (4-Takt-MIDI -> 4 Slots ab 200): Kick auf Step 0, Snare auf Step 8 in jedem Slot, unberuehrte Slots byte-exakt."
+      ],
+      next: [
+        "Letzter offener Punkt aus dem Vergleich: EQ im .all-Slot-Editor (sampleEqualizer3Band.ts existiert als Pure-Helper mit Tests, aber ohne UI-Consumer).",
+        "Kleinkram: 'Alle hinzufuegen'-Massenaktion im Sample-Picker, Fortschrittsbalken beim .all-Export (BulkProgressBar existiert im SampleBrowser), RMS neben Peak (getRms wird schon importiert), Spectrum pro Sample.",
+        "Optional: Piano-Roll-Vorschau im MIDI->Bank-Werkzeug (MKM hat eine). Der Bericht deckt den Informationsbedarf vorerst ab.",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI)."
+      ],
+      changed: [
+        "client/src/utils/smfParser.ts",
+        "client/src/utils/korg/midiToE2Pattern.ts",
+        "client/src/components/Tools/MidiToBankExport.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/App.tsx",
+        "tests/features/midi-to-e2-pattern.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T13:00:00.000Z",
+      done: [
+        "v3.302.0 — 'Korg Match': drei Ein-Klick-Profile (Clean / Loud / Hardtekk), die ein Sample geraetetauglich machen. Zweite Stufe aus dem ModernKorgManager-Vergleich; MKM hat genau diese drei Profile, wir hatten alle Bausteine — aber app-weit im SampleBrowser und einzeln zu bedienen, nicht im Geraetepfad.",
+        "REINE KOMPOSITION, kein neues DSP: cleanupSample (DC + Rumpeln) -> applyCompressor -> applySaturator -> autoNormalizeSample -> Safety-Limiter. Die Reihenfolge ist der eigentliche Inhalt: Cleanup MUSS zuerst (sonst verstaerkt jeder Schritt den Gleichanteil mit), Kompressor VOR dem Normalisieren (sonst greift er anders als sein Preset erwartet), Limiter ZULETZT. Genau diese Reihenfolge vergisst man beim manuellen Zusammenklicken — deshalb ein Profil und keine Checkliste.",
+        "Die Obergrenze liegt bewusst unter 1.0 (0.891 / 0.966): bei exakt 1.0 kippt die Rundung nach 16-Bit-Ganzzahl beim .all-Schreiben ueber und erzeugt genau den Knack, den der Limiter verhindern soll. Als Test festgeschrieben, auch fuer bereits uebersteuertes Eingangsmaterial (1.8 linear).",
+        "makeupGainDb ist in jedem Kompressor-Preset 0 — der Normalisier-Schritt legt den Endpegel fest, Make-up waere doppelt. Eigener Test darauf, weil es beim Preset-Tuning leicht wieder reinrutscht.",
+        "Bruecke zum Slot-Format: .all-PCM liegt INTERLEAVED, die Kette arbeitet kanalweise. interleavedToBuffer/bufferToInterleaved mit Round-Trip-Test und einem Test 'links bleibt links' — vertauschte Kanaele fallen bei symmetrischem Testmaterial nicht auf.",
+        "Stille Samples werden NICHT hochgezogen (sonst wird Rauschen unter der Hoerschwelle hoerbar); leere Puffer laufen durch; ungerade Stereo-Laengen werfen nicht. 25 Tests.",
+        "UI: drei Knoepfe im Slot-Detail des Bank-Editors, Tooltip = Profilbeschreibung, Rueckmeldung nennt die tatsaechlich gelaufenen Schritte (inkl. begrenzter Spitzen) statt nur 'fertig'. Alles per Revert ruecknehmbar."
+      ],
+      next: [
+        "Naechste Stufe: restliche Mastering-Kette (EQ) im Slot-Editor — sampleEqualizer3Band.ts existiert als Pure-Helper mit Tests, hat aber noch keinen UI-Consumer.",
+        "Eigener Sprint: MIDI-Datei -> Pattern mit Bar/Step-Auswahl (midiParser.js faltet ueber 'step % stepCount' alles in einen Takt; smfParser.ts liegt ungenutzt bereit).",
+        "Kleinkram: 'Alle hinzufuegen'-Massenaktion, Fortschrittsbalken beim .all-Export, RMS neben Peak, Spectrum pro Sample.",
+        "Offen aus v3.301: Korg Editor/constants.py steht laut Omnitribe-Doku noch auf der alten Offset-Konstante."
+      ],
+      changed: [
+        "client/src/utils/korg/korgMatch.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "tests/features/korg-match.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T12:00:00.000Z",
+      done: [
+        "v3.301.0 — Bank-Sicherheit: drei stille Fehlerquellen im .all-Pfad geschlossen. Anlass war ein Vergleich mit ModernKorgManager (binary-only, keine Lizenz => nur Funktionsideen uebernommen, kein Code) PLUS der Geraete-Befund vom 2026-07-28.",
+        "BEFUND 1 (der wichtigste, kommt NICHT von MKM) — e2sBankReader erkannte einen konstanten Slot-Versatz korrekt, DEUTETE ihn aber falsch: die Meldung lautete 'E2S_ALL_OFFSET_TABLE_START ist um N Bytes falsch'. Am Geraet ist inzwischen bewiesen, dass 0x0010 STIMMT (Anzeige == Pattern-Ref == Tabellen-Index == OSC_0index, eine Zaehlung; omnitribe/docs/hwtest/e2s_native_layer_bringup.md §1). Ein Versatz heisst also: die BANK ist fehlnummeriert. Die alte Formulierung schickte Entwickler auf die Jagd nach unserer Konstante, waehrend der Nutzer seine Bank neu bauen musste. Neu: bank.slotNumbering (ok | constant-shift | scattered) als maschinenlesbarer Befund, damit die UI nicht Warntexte parsen muss. Verifiziert gegen drei echte Baenke: neue e2sSample.all (device-verifiziert) -> ok, luknkicks.all -> constant-shift +1, htb1.all -> +482 — identisch zum Python-Tool e2s_geometry_check.py.",
+        "BEFUND 2 — 'Nummerierung reparieren' war noetig, weil bloss Neu-Speichern NICHT reicht: der Bit-exakt-Passthrough reicht das originale RIFF und damit dessen falsche OSC_0index weiter. Das war zuerst eine Vermutung und ist jetzt als Test festgeschrieben (e2s-slot-numbering-repair.test.ts, erster Fall). repairSlotNumbering markiert nur die betroffenen Slots als dirty, damit der Builder sie neu kodiert; POSITIONEN bleiben unangetastet (sonst zeigten bestehende Patterns ploetzlich auf andere Samples), und saubere Baenke verlieren ihre Bit-Exaktheit nicht.",
+        "BEFUND 3 — Kapazitaet: die 24-MiB-Geraetegrenze existierte im Builder, landete aber nur in console.warn. Wer zu gross exportierte, merkte es erst, wenn die Electribe die Bank nicht lud. Neu utils/korg/e2sCapacity.ts (rein) + Ampel im Footer + Build-Warnungen als Toast. Genau am Limit = 'tight', nicht 'over' — die groesste gemessene reale Bank liegt bei 24.037.610 B, knapp darunter.",
+        "BEFUND 4 — Auto-Backup: korg:save-bank-as ueberschrieb ohne Sicherung. Eine .all ist nicht rekonstruierbar (Samples in Geraetekodierung; ohne Quell-WAVs ist der Inhalt weg). Neu electron/korgBankBackup.ts mit rotierender .bak/.bak2/.bak3-Kette, injizierbares Dateisystem => 13 Tests ohne Platten-I/O. Rotation laeuft von HINTEN nach vorn, sonst ueberschreibt die Kette sich selbst (eigener Test). copy statt rename, damit ein Absturz die Originaldatei nie verschwinden laesst. Scheitert die Sicherung, wird NICHT geschrieben — ein Backup, das genau dann bricht, wenn es zaehlt, waere schlimmer als keins.",
+        "Theme-Purity: erste Fassung nutzte bg-amber-500/text-red-400 usw. und fiel bei theme-class-purity.test.ts durch (511 Dateien pruefend). Auf die semantischen Tokens accent-warning/-danger/-success umgestellt."
+      ],
+      next: [
+        "Naechste Stufe aus dem MKM-Vergleich (docs in omnitribe/docs/vergleich_modern_korg_manager.md): 'Korg Match'-Presets (Clean/Loud/Hardtekk) — alle Bausteine liegen vor (sampleAutoNormalize, sampleCompressor-Presets, sampleSaturator), es fehlt die Buendelung.",
+        "Danach Mastering-Kette in den .all-Slot-Editor durchreichen: die komplette Transform-Pipeline existiert app-weit, greift aber nicht auf geoeffnete Slots.",
+        "Eigener Sprint: MIDI-Datei -> Pattern mit Bar/Step-Auswahl. Der aktuelle midiParser.js faltet ueber 'step % stepCount' ALLES in einen Takt; ein sauberer zweiter SMF-Parser (smfParser.ts) liegt ungenutzt im Repo.",
+        "Offen und bewusst nicht angefasst: 'Alle hinzufuegen'-Massenaktion im Sample-Picker, echter Fortschrittsbalken beim .all-Export (BulkProgressBar existiert im SampleBrowser), RMS neben Peak anzeigen."
+      ],
+      changed: [
+        "client/src/utils/korg/e2sBankReader.ts",
+        "client/src/utils/korg/e2sCapacity.ts",
+        "client/src/utils/korg/bankEditorState.ts",
+        "client/src/components/KorgBank/KorgBankEditor.tsx",
+        "electron/korgBankBackup.ts",
+        "electron/main.ts",
+        "electron/preload.ts",
+        "electron/types.d.ts",
+        "electron/useElectron.ts",
+        "tests/features/e2s-offset-table-layout.test.ts",
+        "tests/features/e2s-capacity.test.ts",
+        "tests/features/e2s-slot-numbering-repair.test.ts",
+        "tests/electron/korg-bank-backup.test.ts"
       ]
     },
     {
@@ -15526,6 +15663,21 @@ const INDEX = {
       changed: [
         "agents/INDEX.js"
       ]
+    },
+    {
+      agent:     "coordinator",
+      timestamp: "2026-07-10T12:00:00.000Z",
+      done:      [
+        "Ist-Analyse License-System: Ed25519-offline-Validierung komplett gebaut (TASK-232 v2.97) ABER LICENSE_PUBLIC_KEY_HEX ist all-zero-Placeholder (licenseConfig.ts:42) -> echte Keys koennen NIE validieren; einziger Freischalt-Weg ist der hardcodierte MASTER_LICENSE_KEY '137924568' (licenseConfig.ts:49), der in Dev+Electron greift (preload.ts:44 exponiert isElectron) aber undokumentiert + Klartext im Bundle ist. Kein Keygen-Tooling vorhanden (nur Test-Helper signLicensePayload).",
+        "Ist-Analyse MIDI/Audio-Devices: useMidi.ts (WebMIDI) + electron/midi-native.ts (@julusian/midi) + 13 Templates (midiTemplates.ts/midiHardwareTemplates.ts) + Auto-Detection (midiDeviceDetection.ts:43-67). LUECKEN: kein Akai-MIDImix-Template, korg-electribe-2-Template ist generische GM-Ch10-Map (User hat E2 SAMPLER + Hacktribe, Port-Namen/Note-Map abweichend), KEINE Audio-Output-Device-Auswahl (kein setSinkId im Repo; Input-Auswahl existiert in useAudioInput.ts).",
+        "8 Tasks erstellt: TASK-276..279 (License, high: Keygen-CLI, echter Public-Key + Dev-Key, Master-Key-Removal+Security-Audit, Regression-Tests) + TASK-280..283 (MIDI/Audio, medium: MIDImix-Template, Hacktribe-Template+Port-Matching, setSinkId-Output-Auswahl, Tests)."
+      ],
+      next:      [
+        "Dispatch-Reihenfolge: TASK-276 -> TASK-277 -> (TASK-278 parallel TASK-279); TASK-280/281/282 untereinander parallelisierbar, TASK-283 danach.",
+        "Offene Produkt-Frage an User: Gumroad-Flow — offline Ed25519-Keys via Signier-Webhook/manuellem Minting vs. Gumroad License-Verify-API (online). Aktuelle Architektur ist offline-first; Entscheidung vor TASK-278-Finalisierung.",
+        "Hacktribe-Note-Map (TASK-281) braucht finale Hardware-Verifikation durch User (E2 Sampler am Geraet)."
+      ],
+      changed:   []
     }
   ],
 
@@ -15588,6 +15740,95 @@ const INDEX = {
   //     grep -L 'doneIn\|closedIn'
   // ───────────────────────────────────────────────────────
   openTasks: [
+        // ─── Runde 2026-07-10: License-Full-Version-Freischaltung (high) + MIDI-Hardware-Setup (medium). Coordinator-Analyse, siehe workLog. ───
+        {
+          id: "TASK-276",
+          type: "feature",
+          priority: "high",
+          agent: "backend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "License-Keygen-CLI (tools/license-keygen.mjs)",
+          description: "Node-CLI mit @noble/ed25519 (bereits Dependency): (a) --keypair generiert Ed25519-Keypair (Secret NIE committen, nur stdout), (b) --mint <secretHex> --email <e> [--expires <iso>] mintet Keys im Format base64url(payload).base64url(sig) via gleicher Logik wie signLicensePayload in client/src/utils/licenseValidator.ts:159. Gemintete Keys MUESSEN gegen validateLicenseKey (licenseValidator.ts:115) round-trippen. Akzeptanz: Keypair-Gen, perpetual+expiring Keys, Round-Trip-Test, README-Abschnitt im Tool-Header. Traegt spaeteren Gumroad-Webhook-Flow (gleiche Mint-Logik serverseitig).",
+        },
+        {
+          id: "TASK-277",
+          type: "bugfix",
+          priority: "high",
+          agent: "backend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Echten Ed25519-Public-Key einsetzen + Developer-Perpetual-Key ausstellen",
+          description: "LICENSE_PUBLIC_KEY_HEX in client/src/utils/licenseConfig.ts:42 ist all-zero-Placeholder -> echte Key-Validierung schlaegt IMMER fehl (Root-Cause: Owner kann Full Version nicht freischalten, TASK-232-FOLLOWUP-1). Mit TASK-276-CLI Keypair erzeugen, Public-Key-Hex in licenseConfig.ts einsetzen, Developer-Key (expiresAt:null, email dubrowskijgeorg@gmail.com) minten und dem User uebergeben. Secret-Key nur an User ausgeben, NICHT ins Repo. isUsingPlaceholderPublicKey-Hinweis in ActivationModal verschwindet automatisch. Abhaengigkeit: TASK-276.",
+        },
+        {
+          id: "TASK-278",
+          type: "security",
+          priority: "high",
+          agent: "security",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Master-Key 137924568 entfernen/absichern + License-IPC-Audit",
+          description: "MASTER_LICENSE_KEY '137924568' (licenseConfig.ts:49, isMasterLicenseKey:93) ist Klartext im Bundle — auch Electron-Bundles sind entpackbar, Key schaltet Pro in JEDER Desktop-Installation frei. Laut TODO(release) nach echtem Public-Key entfernen (Branch in useLicenseStore.activate():241 mit). Zusaetzlich license:read/license:write IPC (electron/preload.ts readLicense/writeLicense + main.ts Handler + ipcValidators) auditieren. Abhaengigkeit: TASK-277 (Developer braucht erst funktionierenden Ersatz-Key).",
+        },
+        {
+          id: "TASK-279",
+          type: "test",
+          priority: "high",
+          agent: "testing",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "License-Regression: Keygen-Round-Trip + Aktivierungs-E2E",
+          description: "tests/features/license.test.ts erweitern: CLI-gemintete Keys validieren (Round-Trip perpetual+expiring+abgelaufen+falscher productId), Master-Key-Env-Matrix nach TASK-278-Entscheidung anpassen. Playwright: Aktivierung ueber ActivationModal (unknown->pro, trial->pro, expired->pro via Settings/LicenseSection) mit echtem gemintetem Test-Key. Abhaengigkeiten: TASK-276, TASK-277.",
+        },
+        {
+          id: "TASK-280",
+          type: "feature",
+          priority: "medium",
+          agent: "frontend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Akai-MIDImix-Hardware-Template + Auto-Detection",
+          description: "User-Hardware: Akai MIDImix (24 Knobs, 9 Fader, 16 Buttons + Solo, feste Werks-CC-Map). Template in client/src/utils/midiTemplates.ts + midiHardwareTemplates.ts nach Muster nanokontrol2: 8 Kanal-Fader->volume part-0..7, Master-Fader->masterVolume, Knob-Reihe 3->pan, Knob-Reihen 1+2->macro 1-8 + fxParam-Vorschlaege, Mute-Buttons->mute, Rec-Arm->solo. Werks-CC-Map gegen Akai-Doku verifizieren (NICHT raten). Auto-Detection-Regex /midi\\s*mix/i in midiDeviceDetection.ts DEVICE_NAME_PATTERNS (~Z43-67). Tips-Array + Kategorie 'controller'.",
+        },
+        {
+          id: "TASK-281",
+          type: "feature",
+          priority: "medium",
+          agent: "frontend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Electribe-2-SAMPLER/Hacktribe-Template + breites Port-Matching (Pads->Part-Trigger)",
+          description: "User spielt E2 Sampler mit Hacktribe-Firmware; bestehendes korg-electribe-2-Template (midiTemplates.ts) nutzt generische GM-Map auf Ch10 — Sampler/Hacktribe sendet Noten je Part auf eigenen MIDI-Channels und Port-Namen variieren je Firmware. Quellen: G:/IdeaProjects/Omnitribe (KORG-MIDI-Verhaltens-Doku stock/hacktribe/omni) + client/src/audio/nrpn-map.ts. Eigenes Template korg-electribe-2-sampler-hacktribe mit korrekter Pad/Part-Note+Channel-Map, Detection-Regex fuer alle bekannten Port-Namen-Varianten verbreitern (auch 'e2 sampler', hacktribe-Namen), Tips fuer Hacktribe. Ziel: Pads triggern Parts/Channels wie in FL/Ableton. Finale Hardware-Verifikation durch User einplanen (pending-HW-Flag im doneNote).",
+        },
+        {
+          id: "TASK-282",
+          type: "feature",
+          priority: "medium",
+          agent: "backend",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Audio-Output-Device-Auswahl (AudioContext.setSinkId) fuer Scarlett 2i2",
+          description: "Es existiert KEINE Output-Device-Auswahl (kein setSinkId im Repo); Input-Seite existiert (useAudioInput.ts enumerateDevices+deviceId-Constraint). AudioContext.setSinkId ist in Chromium>=110 verfuegbar (Electron 40 ok). Bauen: Helper in AudioEngine.ts (Feature-Detect + Fallback wenn nicht unterstuetzt, z.B. Firefox/Safari), enumerateDevices kind=audiooutput, Persistenz localStorage synthstudio:audio:outputDeviceId, Settings-UI-Section (Audio-Geraete: Output-Dropdown + bestehende Input-Auswahl buendeln), Device-Unplugged-Fallback auf default. Isomorph via useElectron-Pattern, keine hardcoded Farben. electron/permissions.ts pruefen (media-Permission fuer Labels).",
+        },
+        {
+          id: "TASK-283",
+          type: "test",
+          priority: "medium",
+          agent: "testing",
+          status: "open",
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "coordinator",
+          title: "Tests fuer MIDImix/Hacktribe-Templates + Output-Device-Helper",
+          description: "Vitest: Template-Invarianten (keine CC-Kollisionen innerhalb Template, gueltige partIds/targets, Detection-Regexes matchen erwartete Port-Namen-Listen inkl. Hacktribe-Varianten und false-positive-frei gegen andere 13 Templates), sinkId-Helper pure Logik (Feature-Detect-Fallback, Persistenz-Sanitize). Playwright-Smoke: Settings zeigt Output-Dropdown, Template-Library listet MIDImix. Abhaengigkeiten: TASK-280, TASK-281, TASK-282.",
+        },
         {
           id: "TASK-267",
           type: "feature",

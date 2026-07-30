@@ -105,19 +105,13 @@ describe("offset-table self-check via esli.OSC_0index", () => {
     expect(bank.warnings.filter(w => w.includes("geometry suspect"))).toEqual([]);
   });
 
-  it("reports a constant shift — the signature of a wrong table start", () => {
-    // Simuliert exakt den v3.286-Fehler: die Tabelle 18 Einträge (0x48 Bytes)
-    // zu weit hinten gelesen. Statt das zu simulieren, verbiegen wir die
-    // OSC_0index-Felder um denselben Betrag — für den Reader nicht
-    // unterscheidbar, und genau darum geht es.
-    const SHIFT = 18;
-    const built = buildE2sBank([slot(500, "A"), slot(600, "B"), slot(700, "C")]);
-    const bytes = new Uint8Array(built.buffer);
+  /** Verbiegt die `OSC_0index`-Felder der genannten Slots um `shift`. */
+  function shiftOscIndexes(buffer: ArrayBuffer, indexes: number[], shift: number) {
+    const bytes = new Uint8Array(buffer);
     const dv = new DataView(bytes.buffer);
-    for (const i of [500, 600, 700]) {
+    for (const i of indexes) {
       const riffOff = dv.getUint32(E2S_ALL_OFFSET_TABLE_START + i * 4, true);
       // korg-Body suchen: 'korg' + LE32 size, danach 'esli' + 4 + OSC_0index.
-      const korgAt = bytes.indexOf(0x6b, riffOff); // 'k'
       let p = riffOff;
       while (p < bytes.length - 8) {
         if (
@@ -126,18 +120,63 @@ describe("offset-table self-check via esli.OSC_0index", () => {
         ) break;
         p++;
       }
-      expect(p).toBeGreaterThanOrEqual(korgAt > 0 ? 0 : 0);
-      dv.setUint16(p + 8 + ESLI_OSC_INDEX_OFFSET, i + SHIFT, true);
+      dv.setUint16(p + 8 + ESLI_OSC_INDEX_OFFSET, i + shift, true);
     }
+    return bytes;
+  }
+
+  it("nennt bei konstantem Versatz die BANK als fehlnummeriert, nicht unsere Konstante", () => {
+    // ⚠️ Diese Erwartung ist am 2026-07-28 GEDREHT worden. Vorher galt ein
+    // konstanter Versatz als Hinweis auf ein falsches
+    // E2S_ALL_OFFSET_TABLE_START. Am Gerät ist inzwischen bewiesen, dass 0x0010
+    // stimmt (Anzeige == Ref == Index == OSC_0index) — ein Versatz heißt also:
+    // die Datei ist falsch gebaut. Die alte Formulierung schickte Entwickler
+    // auf die Jagd nach der Konstante, während der User seine Bank neu bauen
+    // musste.
+    const SHIFT = 18;
+    const built = buildE2sBank([slot(500, "A"), slot(600, "B"), slot(700, "C")]);
+    const bytes = shiftOscIndexes(built.buffer, [500, 600, 700], SHIFT);
 
     const bank = parseE2sBank(bytes.buffer, "shifted.all");
-    const suspect = bank.warnings.filter(w => w.includes("geometry suspect"));
-    expect(suspect).toHaveLength(1);
-    expect(suspect[0]).toContain("+18");
-    // Die Warnung nennt die Byte-Zahl, um die die Startadresse danebenliegt —
-    // 18 Einträge sind 72 Bytes, exakt der Abstand 0x0058 - 0x0010.
-    expect(suspect[0]).toContain("72 Bytes");
+    expect(bank.slotNumbering).toEqual({
+      kind: "constant-shift", shift: 18, affected: 3, filled: 3,
+    });
+
+    const w = bank.warnings.filter(x => x.includes("fehlnummeriert"));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain("+18");
+    expect(w[0]).toContain("neu gebaut");
+    // Die frühere, irreführende Deutung darf nicht mehr die Hauptaussage sein.
+    expect(w[0]).not.toMatch(/^offset-table geometry suspect/);
+    // Als Nebensatz bleibt der Konstanten-Hinweis erhalten — mit Bedingung.
+    expect(w[0]).toContain("Nur falls JEDE Bank");
+    expect(w[0]).toContain("72 Bytes");
     expect(0x0058 - 0x0010).toBe(SHIFT * 4);
+  });
+
+  it("erkennt den real belegten −1-Fall (luknkicks.all, HW-verifiziert)", () => {
+    // Der Fall, der den User Arbeit gekostet hat: 117 Samples auf Index
+    // 500..616, deren esli 501..617 sagt. Am Gerät falsch; erst der Neubau auf
+    // 501..617 lief. Ein Slot-Versatz von +1 muss deshalb genauso deutlich
+    // gemeldet werden wie ein grober — er ist der leiseste und gefährlichste.
+    const built = buildE2sBank([slot(500, "Kick"), slot(501, "Snare"), slot(502, "Hat")]);
+    const bytes = shiftOscIndexes(built.buffer, [500, 501, 502], 1);
+
+    const bank = parseE2sBank(bytes.buffer, "luknkicks-like.all");
+    expect(bank.slotNumbering.kind).toBe("constant-shift");
+    expect(bank.slotNumbering.shift).toBe(1);
+    const w = bank.warnings.find(x => x.includes("fehlnummeriert"));
+    expect(w).toBeDefined();
+    expect(w).toContain("+1");
+    expect(w).toContain("Verschieben allein genuegt nicht");
+  });
+
+  it("meldet slotNumbering.kind = ok für eine saubere Bank", () => {
+    const built = buildE2sBank([slot(501, "A"), slot(502, "B")]);
+    const bank = parseE2sBank(built.buffer, "clean.all");
+    expect(bank.slotNumbering).toEqual({
+      kind: "ok", shift: null, affected: 0, filled: 2,
+    });
   });
 
   it("distinguishes single inconsistent slots from a geometry error", () => {
@@ -157,8 +196,21 @@ describe("offset-table self-check via esli.OSC_0index", () => {
     dv.setUint16(p + 8 + ESLI_OSC_INDEX_OFFSET, 999, true);
 
     const bank = parseE2sBank(bytes.buffer, "one-bad.all");
-    expect(bank.warnings.some(w => w.includes("geometry suspect"))).toBe(false);
+    expect(bank.slotNumbering.kind).toBe("scattered");
+    expect(bank.slotNumbering.shift).toBeNull();
+    expect(bank.warnings.some(w => w.includes("fehlnummeriert"))).toBe(false);
     expect(bank.warnings.some(w => w.includes("Kein konstanter Versatz"))).toBe(true);
+  });
+
+  it("zieht die Grenze bei EINEM belegten Slot — kein Versatz-Verdacht", () => {
+    // Ein einzelner krummer Slot ergibt trivial einen "konstanten" Versatz.
+    // Daraus darf keine Bank-weite Fehlnummerierung abgeleitet werden, sonst
+    // erzeugt jede Ein-Sample-Bank mit nachbearbeitetem esli einen Fehlalarm.
+    const built = buildE2sBank([slot(501, "Solo")]);
+    const bytes = shiftOscIndexes(built.buffer, [501], 7);
+    const bank = parseE2sBank(bytes.buffer, "single.all");
+    expect(bank.slotNumbering.kind).toBe("scattered");
+    expect(bank.slotNumbering.filled).toBe(1);
   });
 });
 
@@ -266,5 +318,36 @@ describe("filterOpenedSlots", () => {
   it("returns an empty list rather than throwing on no match", () => {
     expect(filterOpenedSlots(rows(), "kein-solcher-slot", true)).toEqual([]);
     expect(filterOpenedSlots([], "", true)).toEqual([]);
+  });
+});
+
+// ─── Geräte-Limit als Warnung ─────────────────────────────────────────────────
+
+describe("PCM-Budget: Geräte-Limit warnt, blockt aber nicht", () => {
+  it("warnt oberhalb von 24 MB, baut die Bank aber trotzdem", () => {
+    // ~25 MB PCM: über dem Geräte-Limit, weit unter der harten Bau-Grenze.
+    // Die Bank muss trotzdem entstehen — sonst wäre es eine Regression für
+    // alles, was sich bisher bauen ließ.
+    const perSlot = 1_600_000; // Samples => ~3,2 MB je Slot on disk
+    const built = buildE2sBank(
+      Array.from({ length: 8 }, (_, i) => ({
+        slotIndex: 500 + i,
+        name: `BIG${i}`,
+        pcmData: new Float32Array(perSlot),
+        sampleRate: 44100,
+        channels: 1,
+      })),
+    );
+
+    expect(built.slotCount).toBe(8);
+    expect(
+      built.warnings.some((w) => w.includes("Geräte-Limit")),
+      `keine Geräte-Limit-Warnung in: ${JSON.stringify(built.warnings)}`,
+    ).toBe(true);
+  });
+
+  it("schweigt bei einer Bank normaler Größe", () => {
+    const built = buildE2sBank([slot(501, "S501")]);
+    expect(built.warnings.some((w) => w.includes("Geräte-Limit"))).toBe(false);
   });
 });

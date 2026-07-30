@@ -9,12 +9,23 @@ export interface BulkProgressBarProps {
   label: string;
   current: number;
   total: number;
+  /**
+   * v3.305 — überschreibbar, damit die Leiste außerhalb des SampleBrowsers
+   * (z. B. im Bank-Editor) nicht unter einer irreführenden Kennung auftaucht.
+   * Vorgabe bleibt die bisherige, damit bestehende Tests unverändert greifen.
+   */
+  testId?: string;
 }
 
-export function BulkProgressBar({ label, current, total }: BulkProgressBarProps) {
+export function BulkProgressBar({
+  label,
+  current,
+  total,
+  testId = "sample-browser-bulk-progress",
+}: BulkProgressBarProps) {
   return (
     <div
-      data-testid="sample-browser-bulk-progress"
+      data-testid={testId}
       className="absolute bottom-2 right-2 bg-bg-panel border border-border-color rounded px-3 py-1.5 shadow z-10"
     >
       <div className="flex items-center gap-2">
