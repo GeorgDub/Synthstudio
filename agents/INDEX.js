@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.302.0",
+    version: "3.303.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,35 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-30T15:00:00.000Z",
+      done: [
+        "v3.303.0 — MIDI-Datei -> Pattern MIT TAKTEN. Dritte Stufe aus dem ModernKorgManager-Vergleich und der spuerbarste Funktionsgewinn: der bestehende Import (midiParser.js, in der DrumMachine aktiv) rechnet 'step = round(absTick/ticksPerStep) % stepCount' und faltet damit eine ganze Datei in EINEN Takt — Takt 1, 5 und 9 landen auf denselben Steps. Zusaetzlich fielen nicht gemappte Noten per 'note % parts.length' auf einen beliebigen Part. Beides passierte stillschweigend.",
+        "NEU parseMidiFileDetailed() in smfParser.ts als ZWEITE Ausgabe (die alte bleibt unangetastet, sie ist getestet und in Benutzung): absolute Ticks statt vorquantisiertem stepIndex, ALLE Kanaele statt nur 9 (Melodie-Spuren gingen vorher komplett verloren), Track-Index + Track-Name fuer die Spur-Auswahl, Taktart aus Meta 0x58 (ohne sie ist 'Takt 3 bis 8' bei allem ausser 4/4 falsch) und Note-Off-Paarung fuer Laengen.",
+        "NEU utils/korg/midiToE2Pattern.ts (rein): Takt-Bereich -> mehrere E2PatternInput. Zwei Zuordnungs-Arten, weil beides gebraucht wird — 'pitch' (jede Tonhoehe ihren Part, Drums) und 'track' (jede Spur ein Part, Tonhoehe wandert in den Step, Melodie). Ausgabe ist die Form, die buildE2PatternBody schon schreibt; kein zweiter Writer.",
+        "EHRLICHER BERICHT statt stiller Verluste: outOfRangeNotes, unmappedNotes + unmappedSources (mehr als 16 Quellen), collisions (zwei Noten auf einem Step — die lautere gewinnt, bei Gleichstand die fruehere, damit reproduzierbar) und partSources (welcher Part woher kommt). describeMidiToE2() formuliert das fuer die UI.",
+        "Taktarten gerechnet statt angenommen: ticksPerBar() ueber numerator*4/denominator (4/4 -> 4 Viertel, 3/4 -> 3, 6/8 -> 3). Fehlt Meta 0x58, wird 4/4 angenommen UND das im Bericht als Annahme markiert — bei einer 3/4-Datei ohne Meta-Event waere unsere Rechnung sonst unsichtbar falsch.",
+        "Ein verdrehter Bereich (barTo < barFrom) wird auf barFrom geklemmt, NICHT stillschweigend getauscht: ein Tippfehler soll kein plausibles Ergebnis liefern.",
+        "UI: neues Werkzeug 'MIDI->Bank' (Tools-Tab) mit Takt-Von/Bis, Steps/Pattern (16/32/64), Zuordnungs-Wahl, Spur-Knoepfen (Notenzahl + Drum-Marker) und einer VORSCHAU, die vor dem Schreiben nennt, wie viele Patterns entstehen und was wegfaellt. Gleiche Zurueckhaltung wie E2sBankExport: der Container wird nicht fabriziert, eine echte Basis-Bank ist Pflicht.",
+        "Der alte DrumMachine-Import bleibt (er fuellt bewusst EIN Pattern), warnt jetzt aber, wenn er faltet: 'N Takte liegen jetzt uebereinander' + Verweis auf das neue Werkzeug.",
+        "35 neue Tests. Ende-zu-Ende gegen die ECHTE Nutzer-Bank geprueft (4-Takt-MIDI -> 4 Slots ab 200): Kick auf Step 0, Snare auf Step 8 in jedem Slot, unberuehrte Slots byte-exakt."
+      ],
+      next: [
+        "Letzter offener Punkt aus dem Vergleich: EQ im .all-Slot-Editor (sampleEqualizer3Band.ts existiert als Pure-Helper mit Tests, aber ohne UI-Consumer).",
+        "Kleinkram: 'Alle hinzufuegen'-Massenaktion im Sample-Picker, Fortschrittsbalken beim .all-Export (BulkProgressBar existiert im SampleBrowser), RMS neben Peak (getRms wird schon importiert), Spectrum pro Sample.",
+        "Optional: Piano-Roll-Vorschau im MIDI->Bank-Werkzeug (MKM hat eine). Der Bericht deckt den Informationsbedarf vorerst ab.",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI)."
+      ],
+      changed: [
+        "client/src/utils/smfParser.ts",
+        "client/src/utils/korg/midiToE2Pattern.ts",
+        "client/src/components/Tools/MidiToBankExport.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/App.tsx",
+        "tests/features/midi-to-e2-pattern.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-30T13:00:00.000Z",

@@ -77,6 +77,7 @@ import { ProjectDiffPanel } from "@/components/ProjectDiff/ProjectDiffPanel";
 import { EsxToE2sConverter } from "@/components/Tools/EsxToE2sConverter";
 import { E2sHacktribeRemap } from "@/components/Tools/E2sHacktribeRemap";
 import { E2sBankExport } from "@/components/Tools/E2sBankExport";
+import { MidiToBankExport } from "@/components/Tools/MidiToBankExport";
 import { getKeyboardSamplerState } from "@/store/useKeyboardSamplerStore";
 import { getEnvelopeFollowerConfigs } from "@/store/useEnvelopeFollowerStore";
 import {
@@ -2325,6 +2326,7 @@ export default function App() {
     | "esx2e2s"
     | "e2sremap"
     | "e2sbank"
+    | "midibank"
     | "lfomod"
   >("prompt");
 
@@ -5929,6 +5931,7 @@ export default function App() {
                           { id: "esx2e2s", label: "🔁 ESX→E2S" },
                           { id: "e2sremap", label: "🩹 HT-Remap" },
                           { id: "e2sbank", label: "📦 Bank-Export" },
+                          { id: "midibank", label: "🎼 MIDI→Bank" },
                           { id: "omnitribe", label: "🎛 OmniTribe" },
                         ] as const
                       ).map(t => (
@@ -6206,6 +6209,7 @@ export default function App() {
                       {activeTool === "esx2e2s" && <EsxToE2sConverter />}
                       {activeTool === "e2sremap" && <E2sHacktribeRemap />}
                       {activeTool === "e2sbank" && <E2sBankExport />}
+                      {activeTool === "midibank" && <MidiToBankExport />}
                     </div>
                   </div>
                 )}
