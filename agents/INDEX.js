@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.305.0",
+    version: "3.309.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,111 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-07-31T15:00:00.000Z",
+      done: [
+        "v3.309.0 — E2-Chord-Noten im Step-Editor sichtbar (schliesst das v3.308-'next': UI zeigte Akkorde nirgends an). StepData.chordNotes (AudioEngine.ts) + Store-Action setStepChordNotes; die Engine spielt Akkorde weiterhin NICHT ab — Anzeige + verlustfreier Re-Export.",
+        "Import-Pfade verdrahtet: convertParsedPatternToSynthstudio fuehrt chords index-aligned mit (Bank-/Datei-Import), Sysex-Pfad ('Von Korg') nutzt stepChordNotes(); beide setzen auch undefined, damit Alt-Akkorde eines frueheren Imports abgeraeumt werden. Export: convertStepToE2 reicht chordNotes (gefiltert 1..127, max 3) in E2StepInput durch.",
+        "UI: ♫-Indikator auf der Step-Zelle (ChannelStrip, inkl. aria-label/Tooltip), Akkord-Chips mit Notennamen + Entfernen-Button im StepInspector, CollabSplitView-Adapter no-op.",
+        "BUGFIX drumMachineHelpers.NOTE_NAMES: 'G#' fehlte — alle Pitch-Labels oberhalb von G waren einen Halbton verrutscht und NOTE_NAMES[11] war undefined. Neu: midiNoteLabel() (E2-Konvention 60=C4) + chordNotesLabel().",
+        "10 neue Tests (tests/features/e2-chord-step-editor.test.ts): Import-Konvertierung, Export-Rueckweg bis in die Bytes 5..7, Werksbank-Sichtbarkeit (>3000 Chord-Steps), Notennamen inkl. Regression fuer den G#-Fix."
+      ],
+      next: [
+        "Akkord-EDITIEREN (Noten hinzufuegen/aendern) fehlt noch — aktuell nur anzeigen + entfernen; Abspielen in der Engine waere der Schritt danach.",
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt (offen aus v3.306)."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts",
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/utils/electribeImport.ts",
+        "client/src/utils/electribePatternConvert.ts",
+        "client/src/components/DrumMachine/drumMachineHelpers.ts",
+        "client/src/components/DrumMachine/ChannelStrip.tsx",
+        "client/src/components/DrumMachine/StepInspector.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/e2-chord-step-editor.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-31T13:00:00.000Z",
+      done: [
+        "v3.308.0 — Chord-Noten (Step-Bytes 5..7 = Noten 2..4, 0 = unbenutzt) durch die gesamte Pattern-Pipeline gezogen. Die Semantik stammt aus der Werksbank e2s-2016: 4 392 aktive Stock-Steps tragen Zusatznoten (z.B. '01 41 60 01 2e 30' = Zweiklang), Werte nie ueber 127; Bytes 8..11 sind in allen 256 000 Records 0.",
+        "ParsedPartStep + E2StepInput um chordNotes?: number[] erweitert; Parser fuellt das Feld (nur wenn belegt), electribePatternBuilder.writeStepRecord und e2sExport.buildE2PatternBody schreiben es zurueck (Clamp 0..127 pro Slot). Vorher gingen Akkorde bei JEDEM Parse->Build-Roundtrip verloren — der Patch-Pfad writePatternBodyIntoAllpat war der einzige verlustfreie Weg.",
+        "e2Sysex.ts: Die 7 'motion'-Bytes sind damit teilentschluesselt — Doku korrigiert (der alte Verdacht Motion-/Param-Lock ist vom Tisch), neuer Helper stepChordNotes(). Feldname motion bleibt fuer API-Kompatibilitaet.",
+        "Neue Layout-Konstanten E2_STEP_CHORD_NOTES_OFFSET/COUNT (e2Layout.ts) + ELECTRIBE_REAL_STEP_CHORD_* (electribeImport.ts); veraltete Step-Record-Doku-Bloecke in electribeImport.ts auf das korrigierte Layout gehoben (standen noch auf Velocity@1/Note@4).",
+        "2 neue Tests: synthetischer Chord-Write (Clamp-Verhalten) + Stock-Ground-Truth-Roundtrip: 5 akkordtragende Werks-Patterns geparst, durch buildE2PatternBody gebaut, Chord-Bytes byte-genau identisch; Parser sieht >4000 Chord-Steps in der Werksbank. projectParsedToBuilderInput im Roundtrip-Real-Test reicht chordNotes jetzt durch."
+      ],
+      next: [
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt — der Nutzer hat die Vorlage dafuer schon angelegt.",
+        "UI zeigt Chord-Noten noch nirgends an — Datenmodell und Roundtrip sind da, ein Editor-Feature waere der naechste Schritt."
+      ],
+      changed: [
+        "client/src/utils/korg/e2Layout.ts",
+        "client/src/utils/electribeImport.ts",
+        "client/src/utils/electribePatternBuilder.ts",
+        "client/src/utils/e2sExport.ts",
+        "client/src/utils/korg/e2Sysex.ts",
+        "tests/features/e2s-allpat-verify.test.ts",
+        "tests/features/electribe-pattern-roundtrip-real.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-31T12:30:00.000Z",
+      done: [
+        "v3.307.0 — Bank-Builder gegen die Werksbank e2s-2016.e2sallpat verifiziert und gehaertet. Die Bank (250 echte Factory-Patterns, 4 161 792 B) wurde vollstaendig differenziell analysiert: Prefix (KORG-Header + GLST..GLED + 0xFF-Pad) ist byte-identisch zu unserem Output, unser Init-Template verletzt KEINE der 9869 ueber alle 250 Bodies konstanten Byte-Invarianten, und der GLST-Block ist byte-identisch. Der Template-Overlay-Ansatz ist damit gegen Werksdaten bestaetigt.",
+        "GEFUNDENER BUILDER-FEHLER: sampleId wurde auf 0xFFFF geclampt — Geraete-Slots enden bei 999 (Stock nutzt max. 419). Ein Part mit sampleId>999 bekam eine Referenz ins Leere. Jetzt Clamp auf E2_MAX_SAMPLE_REF=999 (neue Konstante in e2Layout.ts).",
+        "ZWEITER FEHLER: der 0xFF-Tie-Sentinel ('kein neuer Ton', 15 177 aktive Steps im Stock) wurde beim Body-Build auf 127 geclampt — Ties gingen bei jedem Re-Export verloren. Jetzt Durchreichung.",
+        "DRITTENS: Velocity-Clamp 0..127 -> 1..127 (Stock hat keine einzige Velocity 0; ein aktiver Step mit 0 waere unhoerbar) und gate/gateLength aus E2StepInput werden jetzt auch im e2sExport-Pfad geschrieben (vorher Konstante 0x3D, Roundtrip-Verlust).",
+        "DOKU-KORREKTUR aus den Stock-Zahlen: das Gate-Flag (Byte 3) ist KEIN Pflicht-Bit — 38% der aktiven Stock-Steps (16 337 von 43 099) haben 0. Bytes 5..7 sind Chord-Noten 2..4 (<=127), Bytes 8..11 in allen 256 000 Stock-Records 0. Gate-Laenge-Spanne 0..106.",
+        "NEUER VALIDATOR client/src/utils/korg/e2AllpatVerify.ts: verifyE2AllpatBank prueft jede gebaute Bank gegen die stock-verifizierten Invarianten (Prefix, PTST/PTED-Marker, BPM<=3000, StepLen in {0,1,3}, Sample-Ref<=999, Note<=127|0xFF, Velocity<=127, Reserved-Bytes 0). Eingehaengt VOR dem Save in beiden Bank-Export-Pfaden: DrumMachine-Export und esxToE2sBank. Eine strukturell kaputte Bank verlaesst SynthStudio nicht mehr.",
+        "Neue Testdatei e2s-allpat-verify.test.ts (16 Tests): Werksbank passiert den Validator fehlerfrei (Ground-Truth-Test), Builder-Output fehlerfrei, alle v3.307-Fixes einzeln byte-genau geprueft, 8 Korruptions-Szenarien fallen mit praezisen Meldungen durch.",
+        "Vorbestehend roten Pan-Histogramm-Test repariert: seine Zahlen (hard-L>50, hard-R>200) beschrieben das Histogramm des FALSCHEN Bytes (+0x22 = IFX Edit, vor der v3.297-Pan-Korrektur). Reale Verteilung mit korrekter Semantik: 3573x Center, 199 L / 228 R, hard-L existiert nicht. Vollsuite 11448 gruen, 0 rot."
+      ],
+      next: [
+        "Chord-Noten (Step-Bytes 5..7) sind im Datenmodell noch nicht abgebildet — ein Parse->Build-Roundtrip ueber E2PatternInput verliert sie (der Patch-Pfad writePatternBodyIntoAllpat erhaelt sie). Falls Chord-Support gewuenscht: E2StepInput um notes[] erweitern.",
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt — der Nutzer hat die Vorlage dafuer schon angelegt."
+      ],
+      changed: [
+        "client/src/utils/korg/e2AllpatVerify.ts",
+        "client/src/utils/korg/e2Layout.ts",
+        "client/src/utils/e2sExport.ts",
+        "client/src/utils/korg/esxToE2sBank.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/e2s-allpat-verify.test.ts",
+        "tests/features/electribe-import.test.ts"
+      ]
+    },
+    {
+      agent:     "backend",
+      timestamp: "2026-07-31T10:00:00.000Z",
+      done: [
+        "v3.306.0 — Step-Record-Layout korrigiert: Note @1, Velocity @2, Gate-Flag @3, Gate-Laenge @4. Vorher galten Velocity @1 und Note @4. Der Import zeigte deshalb fuer JEDEN Step die Velocity 72 an — das ist 0x48, die Vorgabe-Note C5.",
+        "AUSLOESER war ein Nutzerbefund am Geraet: vier Steps mit deutlich unterschiedlicher Betonung gesetzt (laut/leise/laut/leise), SynthStudio zeigte viermal die 72. Eigener Sysex-Pull bestaetigte es byteweise: Byte 1 konstant 0x48, Byte 2 folgt exakt der Betonung (127/8/127/25).",
+        "ZWEITER BELEG aus der Werksdatei 245_BodyTalk1.e2spat: Byte 1 traegt musikalische Tonhoehen (C5 dominant, dazu B2/D2/C#3/F2) plus 98x 0xFF fuer 'kein neuer Ton'; Byte 2 traegt 96 (299x) mit 127 (14x) als Akzent; Byte 4 streut ueber 32..80 wie eine Gate-Laenge. e2sExport.ts hatte das Layout von Anfang an richtig — die beiden Pfade widersprachen sich.",
+        "EIGENE FEHLLEISTUNG dokumentiert: ich hatte den Fix zunaechst gebaut, dann wegen eines vermeintlichen Widerspruchs zur Werksdatei zurueckgenommen. Der Widerspruch existierte nicht — ich hatte Byte 4 nur in den ersten Steps EINES Parts angesehen und daraus 'konstant 0x48 = Note' geschlossen. Ueber die ganze Datei gerechnet loest er sich auf. Lehre: bei Byte-Semantik immer ueber die ganze Datei zaehlen, nicht ueber eine Handvoll Records.",
+        "DER EIGENTLICHE UMBAU war noetig, weil Parser und electribePatternBuilder ein positionstreues Paar bilden, dessen Byte-Treue 13 Tests gegen echte Dateien pruefen. Nur den Parser zu korrigieren bricht die Symmetrie; beide zu korrigieren liess Byte 4 seinen Rueckweg verlieren (Init181-Abweichung stieg von <200 auf 1188 Bytes), weil E2StepInput kein Gate-Laengen-Feld hatte. Geloest durch: ParsedPartStep + E2StepInput um note/gate/gateLength erweitert, Parser fuellt sie, Builder schreibt sie zurueck.",
+        "ZUSATZFUND dabei: der Builder schrieb inaktiven Steps 0x00 aufs Noten-Byte. Das war unter dem ALTEN Layout richtig (byte 4 ist dort 0x00), unter dem korrigierten aber falsch — echte Dateien tragen auch bei inaktiven Steps die Vorgabe 0x48 (Init181: 1020x '00 48 60 00 00'). Das allein erzeugte ~1020 abweichende Bytes.",
+        "0xFF-SENTINEL neu eingeordnet: er stammt aus Werksdateien und steht dort auf dem NOTEN-Byte ('kein neuer Ton'), nicht auf der Velocity. Der Builder schreibt ihn nicht mehr als Velocity; das Noten-Byte reicht ihn unveraendert durch statt auf 127 zu klemmen.",
+        "Neuer Regressionstest e2-step-layout-device.test.ts haelt die Geraetemessung woertlich fest (die gemessenen Bytes stehen als Konstanten drin). Faellt er, ist die Zuordnung wieder verrutscht — gegen echte Hardware, nicht gegen eine Annahme. Bestehende Tests nachgezogen: synthetische Fixtures, der BodyTalk-Sentinel-Test (dessen Praemisse das falsche Byte las) und 9 toEqual->toMatchObject (der Parser liefert jetzt drei Felder mehr)."
+      ],
+      next: [
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt — der Nutzer hat die Vorlage dafuer schon angelegt.",
+        "Offen aus §6 des Pruefprotokolls: 228 von 250 Patterns der Nutzer-Bank haben KEIN Insert-FX zugewiesen; ob das die Beobachtung 'Parts ueber Effekte nicht veraenderbar' vollstaendig erklaert, ist noch nicht bestaetigt.",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI)."
+      ],
+      changed: [
+        "client/src/utils/electribeImport.ts",
+        "client/src/utils/electribePatternBuilder.ts",
+        "tests/features/e2-step-layout-device.test.ts",
+        "tests/features/electribe-import.test.ts",
+        "tests/features/electribe-pattern-write.test.ts",
+        "tests/features/electribe-pattern-roundtrip-real.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-30T18:45:00.000Z",

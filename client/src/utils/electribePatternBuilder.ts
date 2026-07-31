@@ -70,6 +70,10 @@ import {
   ELECTRIBE_REAL_STEP_TRIGGER_OFFSET,
   ELECTRIBE_REAL_STEP_VELOCITY_OFFSET,
   ELECTRIBE_REAL_STEP_NOTE_OFFSET,
+  ELECTRIBE_REAL_STEP_GATE_OFFSET,
+  ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET,
+  ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET,
+  ELECTRIBE_REAL_STEP_CHORD_NOTE_COUNT,
   ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL,
   ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE,
   ELECTRIBE_MOTION_PARAM_TABLE_OFFSET,
@@ -91,10 +95,36 @@ export interface E2StepInput {
   active: boolean;
   /** 0..127 velocity. Default 96 (0x60) when unset. */
   velocity?: number;
-  /** Accent / tied flag. Default false. */
+  /**
+   * Accent-Flag.
+   *
+   * ⚠️ v3.306: Unter dem korrigierten Layout gibt es kein eigenes Accent-Byte
+   * mehr — byte 3 ist das Gate-Flag. Das Feld bleibt für Aufrufer erhalten,
+   * wird beim Schreiben aber nicht mehr ausgewertet.
+   */
   accent?: boolean;
-  /** MIDI note 0..127. Default 0x48 (C5). */
+  /** MIDI note 0..127 (byte 1). Default 0x48 (C5). `0xFF` = kein neuer Ton. */
   note?: number;
+  /**
+   * v3.306 — Gate-Flag (byte 3). Ohne gesetztes Bit bleibt ein aktiver Step
+   * stumm. Unset → aus `active` abgeleitet.
+   */
+  gate?: boolean;
+  /**
+   * v3.306 — Gate-Länge (byte 4).
+   *
+   * Neu, damit ein Parse→Build-Round-Trip dieses Byte nicht verliert. Ohne das
+   * Feld schrieb der Builder eine Konstante, und die Abweichung gegen echte
+   * Dateien stieg messbar (Init181: <200 → 1188 Bytes).
+   */
+  gateLength?: number;
+  /**
+   * v3.308 — Chord-Noten 2..4 (bytes 5..7). Bis zu 3 Zusatznoten, 0 =
+   * unbenutzter Slot. Aus der Werksbank e2s-2016 abgeleitet (4 392 aktive
+   * Stock-Steps tragen dort Zusatznoten); vorher gingen sie bei jedem
+   * Parse→Build-Round-Trip verloren.
+   */
+  chordNotes?: number[];
 }
 
 export interface E2PartInput {
@@ -174,6 +204,8 @@ export const E2_DEFAULT_NOTE = 0x48;
 export const E2_INACTIVE_STEP_NOTE = 0x00;
 /** Byte 2 of every step record is a constant 0x60 (note-attribute prefix). */
 export const E2_STEP_BYTE2_CONSTANT = 0x60;
+/** Gate-Länge auf klingenden Steps, wenn der Aufrufer keine mitgibt. */
+export const E2_DEFAULT_GATE_LENGTH = 0x3d;
 
 /** Default part volume (Hardware-Standard, observed in 63.4% of bank samples). */
 export const E2_DEFAULT_PART_VOLUME = 127;
@@ -273,33 +305,55 @@ export function writeStepRecord(view: DataView, offset: number, step: E2StepInpu
   let velocityByte: number;
   const hasExplicitVelocity =
     typeof step.velocity === "number" && Number.isFinite(step.velocity);
-  if (!hasExplicitVelocity) {
-    // Unset → KORG "use-default-127" sentinel.
-    velocityByte = E2_DEFAULT_VELOCITY_RAW_BYTE; // 0xFF
-  } else {
-    const v = clampInt(step.velocity, 0, 127, ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE);
-    // Explicit 127 → also 0xFF sentinel (matches KORG hardware encoding,
-    // round-trips to 127 through the parser).
-    velocityByte = v === ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE
-      ? E2_DEFAULT_VELOCITY_RAW_BYTE
-      : v;
-  }
+  // v3.306: KEIN 0xFF-Sentinel mehr auf dem Velocity-Byte. Der stammt aus
+  // Werksdateien und steht dort auf byte 1 (Note = „kein neuer Ton"); auf dem
+  // Velocity-Byte wäre er ein ungültiger Wert. Gerätegemessene Patterns tragen
+  // dort schlicht 0..127 mit der Vorgabe 0x60 = 96.
+  velocityByte = hasExplicitVelocity
+    ? clampInt(step.velocity, 0, 127, E2_STEP_BYTE2_CONSTANT)
+    : E2_STEP_BYTE2_CONSTANT;
 
   // v3.34 — note byte: inactive steps get 0x00 (smaller drift vs real files
   // for sparse patterns; parser doesn't expose per-step note).
+  // v3.306 — Das Noten-Byte wird unabhängig von `active` geschrieben.
+  //
+  // Vorher bekamen inaktive Steps hier 0x00. Das war unter dem ALTEN Layout
+  // richtig, wo byte 4 als Note galt — und dort steht in echten Dateien
+  // tatsächlich 0x00. Unter dem korrigierten Layout liegt die Note auf byte 1,
+  // und dort tragen echte Dateien auch bei inaktiven Steps die Vorgabe 0x48
+  // (Init181: 1020 inaktive Records, alle `00 48 60 00 00`). Das alte Verhalten
+  // erzeugte deshalb ~1020 abweichende Bytes allein aus Leerschritten.
   let noteByte: number;
-  if (!step.active) {
-    noteByte = E2_INACTIVE_STEP_NOTE; // 0x00
+  if (step.note === ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL) {
+    // 0xFF = „kein neuer Ton" — unverändert durchreichen, nicht auf 127
+    // klemmen. Werksdateien nutzen das reichlich (BodyTalk: 98×).
+    noteByte = ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL;
   } else {
     noteByte = clampInt(step.note, 0, 127, E2_DEFAULT_NOTE); // default 0x48
   }
 
+  // v3.306 — korrigiertes Layout: Note @1, Velocity @2, Gate-Flag @3,
+  // Gate-Länge @4. `accent` hat hier kein Byte mehr (s. Feld-Doku).
+  const gateFlag = (step.gate ?? step.active) ? 0x01 : 0x00;
+  const gateLenByte = step.active
+    ? clampInt(step.gateLength, 0, 255, E2_DEFAULT_GATE_LENGTH)
+    : 0x00;
+
   view.setUint8(offset + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET, trigger);
-  view.setUint8(offset + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET, velocityByte);
-  view.setUint8(offset + 2, E2_STEP_BYTE2_CONSTANT);
-  view.setUint8(offset + 3, accent);
   view.setUint8(offset + ELECTRIBE_REAL_STEP_NOTE_OFFSET, noteByte);
-  // bytes 5..11 are already 0 (full file is zero-initialised before fill).
+  view.setUint8(offset + ELECTRIBE_REAL_STEP_VELOCITY_OFFSET, velocityByte);
+  view.setUint8(offset + ELECTRIBE_REAL_STEP_GATE_OFFSET, gateFlag);
+  view.setUint8(offset + ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET, gateLenByte);
+  void accent;
+  // v3.308 — Chord-Noten 2..4 (bytes 5..7): zurückschreiben, was der Parser
+  // geliefert hat (0 = unbenutzt). Bytes 8..11 bleiben 0 (zero-init).
+  const chord = Array.isArray(step.chordNotes) ? step.chordNotes : [];
+  for (let c = 0; c < ELECTRIBE_REAL_STEP_CHORD_NOTE_COUNT; c++) {
+    view.setUint8(
+      offset + ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET + c,
+      clampInt(chord[c], 0, 127, 0)
+    );
+  }
 }
 
 /**

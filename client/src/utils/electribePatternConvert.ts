@@ -113,12 +113,18 @@ export function synthStepCountToE2StepLength(
 /** Convert one Synthstudio step → E2 step. */
 export function convertStepToE2(step: StepData | undefined): E2StepInput {
   if (!step) return { active: false };
+  // v3.309: Chord-Noten (aus E2-Import, im Step-Editor sichtbar) beim Export
+  // zurückgeben — nur gültige MIDI-Werte, max. 3 Slots (E2-Bytes 5..7).
+  const chord = Array.isArray(step.chordNotes)
+    ? step.chordNotes.filter(n => Number.isFinite(n) && n > 0 && n <= 127).slice(0, 3)
+    : [];
   return {
     active: !!step.active,
     velocity:
       typeof step.velocity === "number" ? clampInt(step.velocity, 0, 127) : undefined,
     note: synthPitchToE2Note(step.pitch),
     accent: false, // Synthstudio has no first-class accent flag.
+    ...(chord.length > 0 ? { chordNotes: chord } : {}),
   };
 }
 

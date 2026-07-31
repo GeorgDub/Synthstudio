@@ -287,9 +287,9 @@ describe("electribeImport – Parts + Steps", () => {
     });
     const p  = parseElectribePattern(ab);
     const part0 = p.parts[0];
-    expect(part0.steps[0]).toEqual({ active: true, velocity: 100 });
-    expect(part0.steps[5]).toEqual({ active: true, velocity: 64 });
-    expect(part0.steps[15]).toEqual({ active: true, velocity: 1 });
+    expect(part0.steps[0]).toMatchObject({ active: true, velocity: 100 });
+    expect(part0.steps[5]).toMatchObject({ active: true, velocity: 64 });
+    expect(part0.steps[15]).toMatchObject({ active: true, velocity: 1 });
     expect(part0.steps[1].active).toBe(false);
   });
 
@@ -861,17 +861,22 @@ const REAL_FILE_ADVISORY = "001_Advi$ory1   .e2spat";
       expect(totalActive).toBeLessThanOrEqual(4);
     });
 
-    it("BodyTalk1: Velocity-Default-Sentinel (0xFF) wird zu 127 dekodiert", () => {
+    it("BodyTalk1: 0xFF im NOTEN-Byte leckt nicht in die Velocity", () => {
+      // v3.306: Dieser Test hiess vorher "Velocity-Default-Sentinel (0xFF) wird
+      // zu 127 dekodiert" und las damit das falsche Byte. In der Werksdatei
+      // steht 0xFF auf byte 1 (Note = "kein neuer Ton"), nicht auf byte 2.
+      // Nachgemessen: Part 0 hat 48 aktive Steps, ALLE mit Velocity 96, und
+      // byte 1 traegt 32x 0xFF plus echte Tonhoehen (39/55/34/47/…).
       const buf = loadRealFile(REAL_FILE_BODYTALK);
       if (!buf) return;
       const p = parseElectribePattern(buf);
-      // BodyTalk Part 0 step 0 ist active mit velocity-byte 0xFF im File.
-      // Parser MUSS das auf 127 mappen (nicht 255 oder 0).
       const part0 = p.parts[0];
-      const activeWithMaxVel = part0.steps.find(s => s.active && s.velocity === 127);
-      expect(activeWithMaxVel).toBeDefined();
-      // Keine velocity darf > 127 sein.
+      const activeSteps = part0.steps.filter(s => s.active);
+      expect(activeSteps.length).toBeGreaterThan(0);
+      expect(activeSteps.every(s => s.velocity === 96)).toBe(true);
       expect(part0.steps.every(s => s.velocity <= 127)).toBe(true);
+      // Die 0xFF taucht als NOTE auf und wird unveraendert durchgereicht.
+      expect(activeSteps.some(s => s.note === 0xff)).toBe(true);
     });
 
     it("BodyTalk1: Part 6 (Hi-Hat-typisch) hat klares offbeat-Pattern (steps 2/6/10/...)", () => {
@@ -948,10 +953,13 @@ function buildRealElectribeBufferWithSteps(opts: {
       const recOff = partOffset + 0x30 + s * 12;
       const trig = triggers[s];
       if (trig !== undefined) {
+        // v3.306: Note @1, Velocity @2, Gate @3, Gate-Länge @4 — am Gerät und
+        // an der Werksdatei 245_BodyTalk1 belegt (s. electribeImport.ts).
         buf[recOff + 0] = trig.trigger;
-        buf[recOff + 1] = trig.velocity;
-        buf[recOff + 2] = 0x60;
-        buf[recOff + 4] = trig.note ?? 0x48;
+        buf[recOff + 1] = trig.note ?? 0x48;
+        buf[recOff + 2] = trig.velocity;
+        buf[recOff + 3] = trig.trigger ? 1 : 0;
+        buf[recOff + 4] = trig.trigger ? 0x3d : 0x00;
       }
     }
   }
@@ -968,8 +976,8 @@ describe("electribeImport – v3.12 Step-Encoding (synthetic)", () => {
       ],
     });
     const p = parseElectribePattern(ab);
-    expect(p.parts[0].steps[0]).toEqual({ active: true, velocity: 100 });
-    expect(p.parts[0].steps[4]).toEqual({ active: true, velocity: 64 });
+    expect(p.parts[0].steps[0]).toMatchObject({ active: true, velocity: 100 });
+    expect(p.parts[0].steps[4]).toMatchObject({ active: true, velocity: 64 });
     expect(p.parts[0].steps[1].active).toBe(false);
   });
 
@@ -978,7 +986,7 @@ describe("electribeImport – v3.12 Step-Encoding (synthetic)", () => {
       partTriggers: [{ 0: { trigger: 1, velocity: 0xff } }],
     });
     const p = parseElectribePattern(ab);
-    expect(p.parts[0].steps[0]).toEqual({ active: true, velocity: 127 });
+    expect(p.parts[0].steps[0]).toMatchObject({ active: true, velocity: 127 });
   });
 
   it("inactive trigger (byte0=0) wird als active:false dekodiert auch bei Velocity-Byte != 0", () => {
@@ -998,12 +1006,12 @@ describe("electribeImport – v3.12 Step-Encoding (synthetic)", () => {
       ],
     });
     const p = parseElectribePattern(ab);
-    expect(p.parts[0].steps[0]).toEqual({ active: true, velocity: 50 });
+    expect(p.parts[0].steps[0]).toMatchObject({ active: true, velocity: 50 });
     expect(p.parts[0].steps[7].active).toBe(false);
     expect(p.parts[1].steps[0].active).toBe(false);
     expect(p.parts[1].steps[7].active).toBe(false);
     expect(p.parts[2].steps[0].active).toBe(false);
-    expect(p.parts[2].steps[7]).toEqual({ active: true, velocity: 80 });
+    expect(p.parts[2].steps[7]).toMatchObject({ active: true, velocity: 80 });
   });
 
   it("Out-of-range velocity-byte (0x80..0xFE, exclusive 0xFF) wird auf 127 geclampt", () => {
@@ -1022,7 +1030,7 @@ describe("electribeImport – v3.12 Step-Encoding (synthetic)", () => {
       ),
     });
     const p = parseElectribePattern(ab);
-    expect(p.parts[15].steps[63]).toEqual({ active: true, velocity: 99 });
+    expect(p.parts[15].steps[63]).toMatchObject({ active: true, velocity: 99 });
     expect(p.parts[15].steps[62].active).toBe(false);
   });
 });
@@ -1466,24 +1474,29 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
       expect(maxVol).toBe(127);
     });
 
-    it("Stock-Bank: Pan-Center (64) dominiert, aber hard-L (0) und hard-R (127) kommen vor", () => {
+    it("Stock-Bank: Pan-Center (64) dominiert, Ausreißer auf beiden Seiten", () => {
+      // v3.307: Erwartungen an die korrigierte Pan-Semantik angepasst
+      // (v3.297: Pan = i8 @ part+0x19, 0 = Center). Die alten Zahlen
+      // (hard-L > 50, hard-R > 200) beschrieben das Histogramm des FALSCHEN
+      // Bytes (+0x22 = IFX Edit). Reale Verteilung der 4000 Stock-Parts:
+      // 3573× Center, 427 verteilte Werte 18..127, hard-L kommt nicht vor.
       const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
       const bank = parseElectribeAllPatBank(buf);
-      let centerCount = 0, hardLCount = 0, hardRCount = 0;
+      let centerCount = 0, leftCount = 0, rightCount = 0;
       for (const p of bank.patterns) {
         for (const part of p.parts) {
           expect(part.pan).toBeGreaterThanOrEqual(0);
           expect(part.pan).toBeLessThanOrEqual(127);
           if (part.pan === 64) centerCount++;
-          if (part.pan === 0) hardLCount++;
-          if (part.pan === 127) hardRCount++;
+          else if (part.pan < 64) leftCount++;
+          else rightCount++;
         }
       }
-      // Center dominiert (>40% laut Histogram).
-      expect(centerCount).toBeGreaterThan(1600);
-      // Hard-L und Hard-R existieren in mehreren Patterns.
-      expect(hardLCount).toBeGreaterThan(50);
-      expect(hardRCount).toBeGreaterThan(200);
+      // Center dominiert klar (real: 3573 von 4000).
+      expect(centerCount).toBeGreaterThan(3000);
+      // Beide Seiten kommen in nennenswerter Zahl vor (real: 199 L / 228 R).
+      expect(leftCount).toBeGreaterThan(100);
+      expect(rightCount).toBeGreaterThan(100);
     });
 
     it("Stock-Bank: StepLength-Distribution (16=Init, 32=Edge-Cases, 64=Mehrheit)", () => {
