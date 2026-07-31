@@ -75,6 +75,13 @@ export const E2_PART_STRIDE = 0x330; // 816
 /** OSC/Sample-Referenz innerhalb eines Parts (u16 LE). */
 export const E2_PART_OSC_REF_OFFSET = 0x08;
 /**
+ * Höchste gültige Sample-/OSC-Referenz. Die Geräte-Slots enden bei 999
+ * (Factory ≤ ~421, User ab 501); die Stock-Bank e2s-2016 nutzt max. 419.
+ * Vorher clampte der Export auf 0xFFFF — damit konnten Bodies mit
+ * Referenzen auf nicht existierende Samples entstehen.
+ */
+export const E2_MAX_SAMPLE_REF = 999;
+/**
  * Part-Volume = Amp Level (u8 0..127) @ +0x18.
  *
  * v3.297-KORREKTUR (am Gerät bestätigt): vorher wurde 0x15 geschrieben —

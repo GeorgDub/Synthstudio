@@ -111,6 +111,7 @@ import {
   buildE2AllPatFile,
   buildE2PatternBody,
 } from "@/utils/e2sExport";
+import { verifyE2AllpatBank } from "@/utils/korg/e2AllpatVerify";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
 import { wrapPatternBodyAsFile } from "@/utils/korg/e2NativeSysex";
 import { requestPatternFromDevice, sendPatternToDevice } from "@/audio/E2NativeSysexTransfer";
@@ -4897,6 +4898,17 @@ function DrumMachineInner({
                       convertSynthstudioPatternToE2(p, { globalBpm: bpm })
                     );
                   const buffer = buildE2AllPatFile(e2Inputs);
+                  // v3.307: Struktur-Check gegen die stock-verifizierten
+                  // Bank-Invarianten, BEVOR die Datei gespeichert wird.
+                  const verdict = verifyE2AllpatBank(new Uint8Array(buffer));
+                  if (!verdict.ok) {
+                    throw new Error(
+                      `Bank-Validierung fehlgeschlagen: ${verdict.errors[0]}` +
+                        (verdict.errors.length > 1
+                          ? ` (+${verdict.errors.length - 1} weitere)`
+                          : "")
+                    );
+                  }
                   const dropped =
                     allPatterns.length > 250 ? allPatterns.length - 250 : 0;
 

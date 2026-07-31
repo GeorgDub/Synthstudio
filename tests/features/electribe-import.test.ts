@@ -1474,24 +1474,29 @@ const REAL_E2SALLPAT_AVAILABLE = (() => {
       expect(maxVol).toBe(127);
     });
 
-    it("Stock-Bank: Pan-Center (64) dominiert, aber hard-L (0) und hard-R (127) kommen vor", () => {
+    it("Stock-Bank: Pan-Center (64) dominiert, Ausreißer auf beiden Seiten", () => {
+      // v3.307: Erwartungen an die korrigierte Pan-Semantik angepasst
+      // (v3.297: Pan = i8 @ part+0x19, 0 = Center). Die alten Zahlen
+      // (hard-L > 50, hard-R > 200) beschrieben das Histogramm des FALSCHEN
+      // Bytes (+0x22 = IFX Edit). Reale Verteilung der 4000 Stock-Parts:
+      // 3573× Center, 427 verteilte Werte 18..127, hard-L kommt nicht vor.
       const buf = new Uint8Array(fs.readFileSync(REAL_E2SALLPAT_PATH));
       const bank = parseElectribeAllPatBank(buf);
-      let centerCount = 0, hardLCount = 0, hardRCount = 0;
+      let centerCount = 0, leftCount = 0, rightCount = 0;
       for (const p of bank.patterns) {
         for (const part of p.parts) {
           expect(part.pan).toBeGreaterThanOrEqual(0);
           expect(part.pan).toBeLessThanOrEqual(127);
           if (part.pan === 64) centerCount++;
-          if (part.pan === 0) hardLCount++;
-          if (part.pan === 127) hardRCount++;
+          else if (part.pan < 64) leftCount++;
+          else rightCount++;
         }
       }
-      // Center dominiert (>40% laut Histogram).
-      expect(centerCount).toBeGreaterThan(1600);
-      // Hard-L und Hard-R existieren in mehreren Patterns.
-      expect(hardLCount).toBeGreaterThan(50);
-      expect(hardRCount).toBeGreaterThan(200);
+      // Center dominiert klar (real: 3573 von 4000).
+      expect(centerCount).toBeGreaterThan(3000);
+      // Beide Seiten kommen in nennenswerter Zahl vor (real: 199 L / 228 R).
+      expect(leftCount).toBeGreaterThan(100);
+      expect(rightCount).toBeGreaterThan(100);
     });
 
     it("Stock-Bank: StepLength-Distribution (16=Init, 32=Edge-Cases, 64=Mehrheit)", () => {

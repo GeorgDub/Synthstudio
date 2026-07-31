@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.306.0",
+    version: "3.307.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-31T12:30:00.000Z",
+      done: [
+        "v3.307.0 — Bank-Builder gegen die Werksbank e2s-2016.e2sallpat verifiziert und gehaertet. Die Bank (250 echte Factory-Patterns, 4 161 792 B) wurde vollstaendig differenziell analysiert: Prefix (KORG-Header + GLST..GLED + 0xFF-Pad) ist byte-identisch zu unserem Output, unser Init-Template verletzt KEINE der 9869 ueber alle 250 Bodies konstanten Byte-Invarianten, und der GLST-Block ist byte-identisch. Der Template-Overlay-Ansatz ist damit gegen Werksdaten bestaetigt.",
+        "GEFUNDENER BUILDER-FEHLER: sampleId wurde auf 0xFFFF geclampt — Geraete-Slots enden bei 999 (Stock nutzt max. 419). Ein Part mit sampleId>999 bekam eine Referenz ins Leere. Jetzt Clamp auf E2_MAX_SAMPLE_REF=999 (neue Konstante in e2Layout.ts).",
+        "ZWEITER FEHLER: der 0xFF-Tie-Sentinel ('kein neuer Ton', 15 177 aktive Steps im Stock) wurde beim Body-Build auf 127 geclampt — Ties gingen bei jedem Re-Export verloren. Jetzt Durchreichung.",
+        "DRITTENS: Velocity-Clamp 0..127 -> 1..127 (Stock hat keine einzige Velocity 0; ein aktiver Step mit 0 waere unhoerbar) und gate/gateLength aus E2StepInput werden jetzt auch im e2sExport-Pfad geschrieben (vorher Konstante 0x3D, Roundtrip-Verlust).",
+        "DOKU-KORREKTUR aus den Stock-Zahlen: das Gate-Flag (Byte 3) ist KEIN Pflicht-Bit — 38% der aktiven Stock-Steps (16 337 von 43 099) haben 0. Bytes 5..7 sind Chord-Noten 2..4 (<=127), Bytes 8..11 in allen 256 000 Stock-Records 0. Gate-Laenge-Spanne 0..106.",
+        "NEUER VALIDATOR client/src/utils/korg/e2AllpatVerify.ts: verifyE2AllpatBank prueft jede gebaute Bank gegen die stock-verifizierten Invarianten (Prefix, PTST/PTED-Marker, BPM<=3000, StepLen in {0,1,3}, Sample-Ref<=999, Note<=127|0xFF, Velocity<=127, Reserved-Bytes 0). Eingehaengt VOR dem Save in beiden Bank-Export-Pfaden: DrumMachine-Export und esxToE2sBank. Eine strukturell kaputte Bank verlaesst SynthStudio nicht mehr.",
+        "Neue Testdatei e2s-allpat-verify.test.ts (16 Tests): Werksbank passiert den Validator fehlerfrei (Ground-Truth-Test), Builder-Output fehlerfrei, alle v3.307-Fixes einzeln byte-genau geprueft, 8 Korruptions-Szenarien fallen mit praezisen Meldungen durch.",
+        "Vorbestehend roten Pan-Histogramm-Test repariert: seine Zahlen (hard-L>50, hard-R>200) beschrieben das Histogramm des FALSCHEN Bytes (+0x22 = IFX Edit, vor der v3.297-Pan-Korrektur). Reale Verteilung mit korrekter Semantik: 3573x Center, 199 L / 228 R, hard-L existiert nicht. Vollsuite 11448 gruen, 0 rot."
+      ],
+      next: [
+        "Chord-Noten (Step-Bytes 5..7) sind im Datenmodell noch nicht abgebildet — ein Parse->Build-Roundtrip ueber E2PatternInput verliert sie (der Patch-Pfad writePatternBodyIntoAllpat erhaelt sie). Falls Chord-Support gewuenscht: E2StepInput um notes[] erweitern.",
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt — der Nutzer hat die Vorlage dafuer schon angelegt."
+      ],
+      changed: [
+        "client/src/utils/korg/e2AllpatVerify.ts",
+        "client/src/utils/korg/e2Layout.ts",
+        "client/src/utils/e2sExport.ts",
+        "client/src/utils/korg/esxToE2sBank.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/e2s-allpat-verify.test.ts",
+        "tests/features/electribe-import.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-31T10:00:00.000Z",

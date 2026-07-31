@@ -49,9 +49,11 @@
  *         byte 0  trigger     (1 = active, 0 = off)
  *         byte 1  note        (0x48 = C5 default)
  *         byte 2  velocity    (0x60 = 96 default, 0x7F max)
- *         byte 3  gate flag   (1 on active steps — MUST be set or the step is silent)
- *         byte 4  gate length (0x3D ≈ typical; never 0 on active steps)
- *         bytes 5..11  reserved 0
+ *         byte 3  gate flag   (Gerät schreibt 1 bei Live-Input; Stock-Bank hat
+ *                              38 % aktive Steps mit 0 — kein Pflicht-Bit)
+ *         byte 4  gate length (0x3D ≈ typical; Stock-Spanne 0..106, quasi nie 0)
+ *         bytes 5..7   Chord-Noten 2..4 (0 = unbenutzt; nur via Template/Patch-Pfad)
+ *         bytes 8..11  reserved 0 (in allen 256 000 Stock-Records)
  *
  * Pure TypeScript, isomorphic (no Electron/DOM deps) — safe in Node test ctx.
  *
@@ -71,6 +73,7 @@ import {
   E2_ALLPAT_PATTERN_OFFSET,
   E2_ALLPAT_SLOT_COUNT,
   E2_ALLPAT_FILE_SIZE,
+  E2_MAX_SAMPLE_REF,
   e2PanUiToDevice,
 } from "./korg/e2Layout";
 
@@ -256,10 +259,12 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
     // Per-part sample reference @ +0x08 (u16 LE). Only written when the caller
     // provides one (e.g. repointing parts to imported user samples at 501+);
     // otherwise the template's factory sample assignment is preserved.
+    // v3.307: Clamp auf 999 statt 0xFFFF — Geräte-Slots enden bei 999, die
+    // Stock-Bank e2s-2016 nutzt max. 419. Ein 0xFFFF-Ref zeigt ins Leere.
     if (typeof part.sampleId === "number" && Number.isFinite(part.sampleId)) {
       view.setUint16(
         partStart + PART_SAMPLE_OFF,
-        clampInt(part.sampleId, 0, 0xffff, 0),
+        clampInt(part.sampleId, 0, E2_MAX_SAMPLE_REF, 0),
         true
       );
     }
@@ -270,15 +275,31 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
       const step = steps[s];
       if (step && step.active) {
         body[so + STEP_TRIGGER] = 0x01;
-        body[so + STEP_NOTE] = clampInt(step.note, 0, 127, DEFAULT_NOTE);
+        // v3.307: 0xFF ist der Geräte-Sentinel "kein neuer Ton" (Tie) und muss
+        // durchgereicht werden — die Stock-Bank trägt ihn auf 15 177 aktiven
+        // Steps. Vorher wurde er auf 127 geclampt und Ties gingen verloren.
+        body[so + STEP_NOTE] =
+          step.note === 0xff ? 0xff : clampInt(step.note, 0, 127, DEFAULT_NOTE);
+        // v3.307: Minimum 1 — die Stock-Bank hat keine einzige Velocity 0;
+        // ein aktiver Step mit Velocity 0 wäre unhörbar.
         body[so + STEP_VELOCITY] = clampInt(
           step.velocity,
-          0,
+          1,
           127,
           DEFAULT_VELOCITY
         );
-        body[so + STEP_GATE] = 0x01; // gate ON — required or the step is silent
-        body[so + STEP_GATELEN] = DEFAULT_GATELEN;
+        // Gate-Flag: default 1 (so schreibt es auch das Gerät bei Live-Input);
+        // die Stock-Bank zeigt aber 38 % aktive Steps mit 0 — ein explizites
+        // `gate: false` aus einem Parse-Roundtrip wird deshalb respektiert.
+        body[so + STEP_GATE] = step.gate === false ? 0x00 : 0x01;
+        // v3.307: Gate-Länge aus dem Input übernehmen (Roundtrip-Treue);
+        // Stock-Spanne ist 0..106, wir clampen auf 1..127 (0 wäre stumm).
+        body[so + STEP_GATELEN] = clampInt(
+          step.gateLength,
+          1,
+          127,
+          DEFAULT_GATELEN
+        );
       } else {
         // canonical inactive record (template already matches; enforce for safety)
         body[so + STEP_TRIGGER] = 0x00;
