@@ -184,6 +184,16 @@ export interface DrumMachineActions {
     condition: StepCondition
   ) => void;
   setStepReverse: (partId: string, stepIndex: number, reverse: boolean) => void;
+  /**
+   * v3.309: KORG-E2-Chord-Noten 2..4 (Step-Bytes 5..7) setzen/entfernen —
+   * kommen aus dem Electribe-Import, werden im Step-Editor angezeigt und
+   * beim E2-Export zurückgeschrieben. `undefined` löscht den Akkord.
+   */
+  setStepChordNotes: (
+    partId: string,
+    stepIndex: number,
+    chordNotes: number[] | undefined
+  ) => void;
   setStepParamLock: (
     partId: string,
     stepIndex: number,
@@ -1355,6 +1365,25 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     [updatePatterns]
   );
 
+  const setStepChordNotes = useCallback(
+    (partId: string, stepIndex: number, chordNotes: number[] | undefined) => {
+      updatePatterns(
+        ps =>
+          ps.map(p => ({
+            ...p,
+            parts: p.parts.map(pt => {
+              if (pt.id !== partId) return pt;
+              const steps = [...pt.steps];
+              steps[stepIndex] = { ...steps[stepIndex], chordNotes };
+              return { ...pt, steps };
+            }),
+          })),
+        false
+      );
+    },
+    [updatePatterns]
+  );
+
   const quantizePartSteps = useCallback(
     (
       partId: string,
@@ -1657,6 +1686,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     setStepSlide,
     setStepCondition,
     setStepReverse,
+    setStepChordNotes,
     setStepParamLock,
     setStepLength,
     setStepChainNext,

@@ -99,6 +99,7 @@ import {
 import { synthstudioPatternToBody } from "@/utils/korg/synthstudioToE2Pattern";
 import { e2FilterToImportedFilter } from "@/utils/korg/e2FilterMap";
 import type { E2PatternDecoded } from "@/utils/korg/e2Sysex";
+import { stepChordNotes } from "@/utils/korg/e2Sysex";
 import { encodeWavStereo } from "@/audio/wavEncoder";
 import {
   requireProFeature,
@@ -1868,6 +1869,13 @@ function DrumMachineInner({
           vels[s] = src.velocities[s];
         }
         dm.setPartSteps(part.id, steps, vels);
+        // v3.309: Chord-Noten (E2-Bytes 5..7) in die Step-Daten übernehmen —
+        // sichtbar im Step-Editor, verlustfrei beim Re-Export. Immer setzen:
+        // `undefined` räumt Akkorde eines früheren Imports ab (setPartSteps
+        // spreadet alte Step-Props weiter).
+        for (let s = 0; s < targetSteps; s++) {
+          dm.setStepChordNotes(part.id, s, s < cap ? src.chords[s] : undefined);
+        }
         dm.setPartVolume(part.id, src.volume);
         dm.setPartPan(part.id, src.pan);
 
@@ -1960,6 +1968,8 @@ function DrumMachineInner({
                 active: act,
                 velocity: dp.velocities[i] ?? 100,
                 pitch: dp.pitchSemitones,
+                // v3.309: Chord-Noten aus dem Bank-Import mitnehmen.
+                chordNotes: dp.chords[i],
               })),
               fx: { ...DEFAULT_CHANNEL_FX },
             };
@@ -2348,6 +2358,12 @@ function DrumMachineInner({
           vels[s] = src.steps[s].velocity || 100;
         }
         dm.setPartSteps(part.id, steps, vels);
+        // v3.309: Chord-Noten (Roh-Bytes 5..7) auch im Sysex-Pfad übernehmen.
+        // Immer setzen — `undefined` räumt Akkorde eines früheren Imports ab.
+        for (let s = 0; s < target; s++) {
+          const chord = s < cap ? stepChordNotes(src.steps[s]) : [];
+          dm.setStepChordNotes(part.id, s, chord.length > 0 ? chord : undefined);
+        }
         dm.setPartVolume(part.id, src.volume);
         dm.setPartPan(part.id, src.pan);
         // Verifizierten Part-Filter (Type/Cutoff/Res) auf die ChannelFx mappen.
@@ -5750,6 +5766,9 @@ function DrumMachineInner({
               }
               onSetChainNext={chain =>
                 dm.setStepChainNext(insPart.id, selectedStep.stepIndex, chain)
+              }
+              onSetChordNotes={chord =>
+                dm.setStepChordNotes(insPart.id, selectedStep.stepIndex, chord)
               }
               onToggle={() => dm.toggleStep(insPart.id, selectedStep.stepIndex)}
               onClose={() => setSelectedStep(null)}

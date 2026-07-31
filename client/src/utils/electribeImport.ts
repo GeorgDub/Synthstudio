@@ -1467,6 +1467,11 @@ export interface SynthstudioPatternImport {
     pitchSemitones: number;
     steps: boolean[];
     velocities: number[];
+    /**
+     * v3.309 — Chord-Noten 2..4 pro Step (aus den E2-Step-Bytes 5..7),
+     * undefined wenn der Step keinen Akkord trägt. Index-aligned mit `steps`.
+     */
+    chords: Array<number[] | undefined>;
   }>;
   /**
    * Automation-Lanes aus den Motion-Sequencer-Slots. Pro aktiviertem Slot
@@ -1509,9 +1514,15 @@ export function convertParsedPatternToSynthstudio(
       // Velocity-Bit aus Step-Byte trennen → eigene velocity-Arrays.
       const stepsArr = new Array<boolean>(stepCount).fill(false);
       const velocitiesArr = new Array<number>(stepCount).fill(100);
+      // v3.309 — Chord-Noten (Bytes 5..7) index-aligned mitführen.
+      const chordsArr = new Array<number[] | undefined>(stepCount).fill(undefined);
       for (let s = 0; s < cap; s++) {
         stepsArr[s] = p.steps[s].active;
         velocitiesArr[s] = p.steps[s].velocity > 0 ? p.steps[s].velocity : 100;
+        const chord = p.steps[s].chordNotes;
+        if (Array.isArray(chord) && chord.some((n) => n > 0)) {
+          chordsArr[s] = chord.slice(0, 3);
+        }
       }
       // Sample-Hint Label: "Part 1" / "Synth 9" etc. Index 0..7 = Drum, 8..13 = Synth, 14..15 = Stretch.
       let sampleHint: string;
@@ -1528,6 +1539,7 @@ export function convertParsedPatternToSynthstudio(
         pitchSemitones: p.pitch,
         steps: stepsArr,
         velocities: velocitiesArr,
+        chords: chordsArr,
       };
     }
   );

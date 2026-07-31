@@ -123,7 +123,31 @@ export function getPageRangeLabel(page: number, stepCount: number): string {
   return `${start + 1}-${end}`;
 }
 
-export const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","A","A#","B"];
+// v3.309-FIX: "G#" fehlte — mit 11 Einträgen waren alle Labels oberhalb von G
+// einen Halbton verrutscht und `NOTE_NAMES[11]` (B) war undefined.
+export const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+/**
+ * v3.309 — MIDI-Note → Anzeigename ("C5"-Konvention wie am E2-Gerät:
+ * 60 = C4). Für die Chord-Noten-Anzeige im Step-Editor.
+ */
+export function midiNoteLabel(midi: number): string {
+  if (!Number.isFinite(midi) || midi < 0 || midi > 127) return "—";
+  const n = Math.round(midi);
+  return `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`;
+}
+
+/**
+ * v3.309 — Chord-Noten (E2-Step-Bytes 5..7) als kompaktes Label,
+ * z. B. "A#2 · C3". Leerstring, wenn kein Akkord.
+ */
+export function chordNotesLabel(chordNotes: number[] | undefined): string {
+  if (!Array.isArray(chordNotes)) return "";
+  return chordNotes
+    .filter(n => Number.isFinite(n) && n > 0 && n <= 127)
+    .map(midiNoteLabel)
+    .join(" · ");
+}
 
 /**
  * v2.51 (TASK-129 Welle 3): liefert das Badge-Label + Tooltip für den

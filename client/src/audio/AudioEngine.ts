@@ -350,6 +350,13 @@ export interface StepData {
    * Sample-Parts ignorieren das Flag.
    */
   slide?: boolean;
+  /**
+   * v3.309: KORG-E2-Chord-Noten 2..4 (MIDI 1..127, max. 3 Einträge) — aus den
+   * Step-Bytes 5..7 importierter Electribe-Patterns. Die Engine spielt sie
+   * derzeit NICHT ab (Anzeige + verlustfreier Re-Export); Werksbank e2s-2016
+   * trägt sie auf 4 392 aktiven Steps.
+   */
+  chordNotes?: number[];
 }
 
 /**

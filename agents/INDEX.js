@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.308.0",
+    version: "3.309.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-07-31T15:00:00.000Z",
+      done: [
+        "v3.309.0 — E2-Chord-Noten im Step-Editor sichtbar (schliesst das v3.308-'next': UI zeigte Akkorde nirgends an). StepData.chordNotes (AudioEngine.ts) + Store-Action setStepChordNotes; die Engine spielt Akkorde weiterhin NICHT ab — Anzeige + verlustfreier Re-Export.",
+        "Import-Pfade verdrahtet: convertParsedPatternToSynthstudio fuehrt chords index-aligned mit (Bank-/Datei-Import), Sysex-Pfad ('Von Korg') nutzt stepChordNotes(); beide setzen auch undefined, damit Alt-Akkorde eines frueheren Imports abgeraeumt werden. Export: convertStepToE2 reicht chordNotes (gefiltert 1..127, max 3) in E2StepInput durch.",
+        "UI: ♫-Indikator auf der Step-Zelle (ChannelStrip, inkl. aria-label/Tooltip), Akkord-Chips mit Notennamen + Entfernen-Button im StepInspector, CollabSplitView-Adapter no-op.",
+        "BUGFIX drumMachineHelpers.NOTE_NAMES: 'G#' fehlte — alle Pitch-Labels oberhalb von G waren einen Halbton verrutscht und NOTE_NAMES[11] war undefined. Neu: midiNoteLabel() (E2-Konvention 60=C4) + chordNotesLabel().",
+        "10 neue Tests (tests/features/e2-chord-step-editor.test.ts): Import-Konvertierung, Export-Rueckweg bis in die Bytes 5..7, Werksbank-Sichtbarkeit (>3000 Chord-Steps), Notennamen inkl. Regression fuer den G#-Fix."
+      ],
+      next: [
+        "Akkord-EDITIEREN (Noten hinzufuegen/aendern) fehlt noch — aktuell nur anzeigen + entfernen; Abspielen in der Engine waere der Schritt danach.",
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt (offen aus v3.306)."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts",
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/utils/electribeImport.ts",
+        "client/src/utils/electribePatternConvert.ts",
+        "client/src/components/DrumMachine/drumMachineHelpers.ts",
+        "client/src/components/DrumMachine/ChannelStrip.tsx",
+        "client/src/components/DrumMachine/StepInspector.tsx",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/e2-chord-step-editor.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-31T13:00:00.000Z",
