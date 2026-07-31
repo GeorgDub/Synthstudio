@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.310.0",
+    version: "3.311.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,24 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "audio",
+      timestamp: "2026-07-31T17:45:00.000Z",
+      done: [
+        "v3.311.0 — E2-Chord-Noten KLINGEN jetzt in der Engine (schliesst das v3.310-'next'). _scheduleStep triggert pro gueltiger Chord-Note (MIDI 1..127, 0-Slots gefiltert) eine zusaetzliche Stimme: Sample-Pfad via _triggerBufferWithFx mit Pitch = Note−72 (E2-Basis C5, identisch zu synthPitchToE2Note), Synth-Pfad via _triggerSynthOnChannel mit 440*2^((Note−72)/12). Gleiche Velocity/Laenge/Buffer (inkl. reverse/stretch) wie die Hauptnote.",
+        "Neuer auxVoice-Parameter an _triggerSynthOnChannel: Chord-Stimmen lesen/schreiben den _partSlideState NICHT — sonst wuerde der naechste TB-303-Slide von der letzten Chord-Note statt von der Hauptnote starten. Chord-Stimmen sliden selbst nie.",
+        "Exportierte pure Helper chordVoicePitches() + E2_CHORD_BASE_NOTE=72 in AudioEngine.ts; StepData.chordNotes-JSDoc aktualisiert (spielte vorher bewusst nicht ab).",
+        "7 neue Tests (tests/features/e2-chord-playback.test.ts, Muster aus audio-schedule-step-alloc): pure Umrechnung, Sample-Pfad 1+N Voices mit richtigen Pitches, Keine-Regression ohne Akkord, Synth-Pfad Frequenzen + auxVoice-Flags, Slide-State bleibt auf der Hauptnote."
+      ],
+      next: [
+        "Melodischer Pfad (Piano Roll) spielt chordNotes nicht — bewusst: Akkorde sind ein Drum-Step-Feature aus dem E2-Import.",
+        "Am Geraet pruefen: 'Von Korg'-Velocities (offen aus v3.306) + editierte Akkorde nach Push hoerbar; jetzt auch Preview-Vergleich SynthStudio vs. Geraet moeglich."
+      ],
+      changed: [
+        "client/src/audio/AudioEngine.ts",
+        "tests/features/e2-chord-playback.test.ts"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-07-31T16:30:00.000Z",
