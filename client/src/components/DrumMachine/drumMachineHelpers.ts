@@ -149,6 +149,58 @@ export function chordNotesLabel(chordNotes: number[] | undefined): string {
     .join(" · ");
 }
 
+// ─── v3.310: E2-Akkord editieren ────────────────────────────────────────────
+// Pure Helpers für den StepInspector. Ein Step trägt maximal 3 Zusatznoten
+// (E2-Step-Bytes 5..7); 0 markiert dort einen unbenutzten Slot, gültig ist
+// MIDI 1..127. Alle Funktionen geben neue Arrays zurück (Store-Immutability).
+
+export const E2_CHORD_MAX_NOTES = 3;
+
+function clampChordNote(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(127, Math.max(1, Math.round(n)));
+}
+
+/**
+ * Zusatznote anhängen. Vorschlag: große Terz (+4) über der letzten Zusatznote
+ * bzw. über `baseNote` (Hauptnote des Steps, E2-Konvention C5=72 + Pitch);
+ * bereits belegte Töne werden in Terzschritten übersprungen. Bei vollen
+ * 3 Slots kommt das Array unverändert zurück.
+ */
+export function addChordNote(
+  chordNotes: number[] | undefined,
+  baseNote: number = 72
+): number[] {
+  const chord = (chordNotes ?? []).filter(n => Number.isFinite(n) && n > 0 && n <= 127);
+  if (chord.length >= E2_CHORD_MAX_NOTES) return chord;
+  let candidate = clampChordNote((chord.length > 0 ? chord[chord.length - 1] : clampChordNote(baseNote)) + 4);
+  for (let tries = 0; tries < 40 && chord.includes(candidate); tries++) {
+    candidate = clampChordNote(candidate >= 127 ? candidate - 3 : candidate + 3);
+  }
+  return [...chord, candidate];
+}
+
+/** Zusatznote an Position `index` ersetzen (Wert wird auf 1..127 geklemmt). */
+export function updateChordNoteAt(
+  chordNotes: number[],
+  index: number,
+  note: number
+): number[] {
+  return chordNotes.map((n, i) => (i === index ? clampChordNote(note) : n));
+}
+
+/**
+ * Zusatznote an Position `index` entfernen. `undefined` wenn danach keine
+ * Note übrig ist — so räumt der Store das Feld komplett ab.
+ */
+export function removeChordNoteAt(
+  chordNotes: number[],
+  index: number
+): number[] | undefined {
+  const next = chordNotes.filter((_, i) => i !== index);
+  return next.length > 0 ? next : undefined;
+}
+
 /**
  * v2.51 (TASK-129 Welle 3): liefert das Badge-Label + Tooltip für den
  * aktuellen sourceType eines Parts. Wird in ChannelStrip neben dem

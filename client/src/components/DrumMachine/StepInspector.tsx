@@ -10,7 +10,15 @@ import { X } from "lucide-react";
 import type { StepData, StepCondition, StepParamLock } from "@/audio/AudioEngine";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { ResizablePanelHandle } from "@/components/UI/ResizablePanelHandle";
-import { pitchToLabel, conditionToLabel, CONDITION_OPTIONS, NOTE_LENGTH_PRESETS, midiNoteLabel } from "./drumMachineHelpers";
+import {
+  pitchToLabel, conditionToLabel, CONDITION_OPTIONS, NOTE_LENGTH_PRESETS,
+  midiNoteLabel, addChordNote, updateChordNoteAt, removeChordNoteAt,
+  E2_CHORD_MAX_NOTES,
+} from "./drumMachineHelpers";
+
+// v3.310: Auswahlliste für die Akkord-Dropdowns — alle gültigen E2-Werte
+// (MIDI 1..127; 0 = unbenutzter Slot und darum nicht wählbar).
+const CHORD_NOTE_OPTIONS = Array.from({ length: 127 }, (_, i) => i + 1);
 
 export interface StepInspectorProps {
   partName: string;
@@ -118,31 +126,64 @@ export function StepInspector({
           </>
         )}
 
-        {/* v3.309: E2-Chord-Noten (Step-Bytes 5..7 aus Electribe-Import).
-            Anzeige als Notennamen; ✕ entfernt den Akkord vom Step. */}
-        {chordNotes.length > 0 && (
+        {/* v3.309: E2-Chord-Noten (Step-Bytes 5..7). v3.310: editierbar —
+            Dropdown pro Zusatznote, ✕ pro Note, ＋ hängt eine Note an
+            (Terzvorschlag über Hauptnote C5+Pitch). Ohne onSetChordNotes
+            (z. B. Remote-Ansicht) bleiben die Chips read-only. */}
+        {(chordNotes.length > 0 || onSetChordNotes) && (
           <>
             <div className="h-4 w-px bg-border-color mx-1" aria-hidden="true" />
             <span className="text-[10px] text-text-dim uppercase tracking-wide flex-shrink-0">♫ E2-Akkord</span>
             <div className="flex gap-1 items-center" data-testid="step-inspector-chord">
-              {chordNotes.map((n, i) => (
-                <span
-                  key={i}
-                  className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-accent-secondary/60 bg-accent-secondary/15 text-accent-secondary"
-                  title={`Zusatznote ${i + 2} (MIDI ${n}) — vom Electribe-Pattern importiert, wird beim E2-Export zurückgeschrieben`}
-                >
-                  {midiNoteLabel(n)}
-                </span>
-              ))}
-              {onSetChordNotes && (
+              {chordNotes.map((n, i) =>
+                onSetChordNotes ? (
+                  <span
+                    key={i}
+                    className="flex items-center gap-0.5 pl-1 pr-0.5 py-0.5 rounded border border-accent-secondary/60 bg-accent-secondary/15"
+                  >
+                    <select
+                      value={n}
+                      onChange={e =>
+                        onSetChordNotes(updateChordNoteAt(chordNotes, i, Number(e.target.value)))
+                      }
+                      className="bg-transparent text-[10px] font-mono text-accent-secondary outline-none cursor-pointer"
+                      aria-label={`Zusatznote ${i + 2}`}
+                      title={`Zusatznote ${i + 2} (MIDI ${n}) — wird beim E2-Export in Step-Byte ${5 + i} geschrieben`}
+                      data-testid={`step-inspector-chord-note-${i}`}
+                    >
+                      {CHORD_NOTE_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{midiNoteLabel(opt)}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => onSetChordNotes(removeChordNoteAt(chordNotes, i))}
+                      className="text-[10px] text-text-dim hover:text-accent-danger px-0.5"
+                      title={`Zusatznote ${i + 2} entfernen`}
+                      data-testid={`step-inspector-chord-remove-${i}`}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    key={i}
+                    className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-accent-secondary/60 bg-accent-secondary/15 text-accent-secondary"
+                    title={`Zusatznote ${i + 2} (MIDI ${n})`}
+                  >
+                    {midiNoteLabel(n)}
+                  </span>
+                )
+              )}
+              {onSetChordNotes && chordNotes.length < E2_CHORD_MAX_NOTES && (
                 <button
                   type="button"
-                  onClick={() => onSetChordNotes(undefined)}
-                  className="text-[10px] text-text-dim hover:text-accent-danger px-1"
-                  title="Akkord-Noten von diesem Step entfernen"
-                  data-testid="step-inspector-chord-clear"
+                  onClick={() => onSetChordNotes(addChordNote(chordNotes, 72 + pitch))}
+                  className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-border-color text-text-dim hover:text-accent-secondary hover:border-accent-secondary transition-colors"
+                  title="Zusatznote anhängen (Vorschlag: Terz über der letzten Note; wird beim E2-Export in die Step-Bytes 5..7 geschrieben)"
+                  data-testid="step-inspector-chord-add"
                 >
-                  ✕
+                  ＋
                 </button>
               )}
             </div>
