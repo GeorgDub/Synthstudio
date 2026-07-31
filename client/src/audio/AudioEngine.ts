@@ -352,11 +352,33 @@ export interface StepData {
   slide?: boolean;
   /**
    * v3.309: KORG-E2-Chord-Noten 2..4 (MIDI 1..127, max. 3 Einträge) — aus den
-   * Step-Bytes 5..7 importierter Electribe-Patterns. Die Engine spielt sie
-   * derzeit NICHT ab (Anzeige + verlustfreier Re-Export); Werksbank e2s-2016
-   * trägt sie auf 4 392 aktiven Steps.
+   * Step-Bytes 5..7 importierter Electribe-Patterns. Werksbank e2s-2016
+   * trägt sie auf 4 392 aktiven Steps. Seit v3.311 spielt die Engine sie als
+   * zusätzliche Stimmen ab (siehe `chordVoicePitches`).
    */
   chordNotes?: number[];
+}
+
+/**
+ * v3.311 — E2-Basis der Chord-Noten: die Hauptnote eines Steps ist auf dem
+ * Gerät C5 (0x48 = 72) + Pitch (identisch zu `synthPitchToE2Note` beim
+ * Export). Eine Chord-Note N klingt also `N − 72` Halbtöne gegenüber dem
+ * ungeshifteten Sample bzw. der Basis-Frequenz.
+ */
+export const E2_CHORD_BASE_NOTE = 72;
+
+/**
+ * v3.311 — gültige Chord-Noten eines Steps → Halbton-Offsets relativ zur
+ * ungeshifteten Basis (gleiche Skala wie `step.pitch`). 0-Slots und Werte
+ * außerhalb MIDI 1..127 fallen raus.
+ */
+export function chordVoicePitches(chordNotes: number[] | undefined): number[] {
+  if (!Array.isArray(chordNotes)) return [];
+  const out: number[] = [];
+  for (const n of chordNotes) {
+    if (Number.isFinite(n) && n > 0 && n <= 127) out.push(n - E2_CHORD_BASE_NOTE);
+  }
+  return out;
 }
 
 /**
@@ -4260,6 +4282,11 @@ class AudioEngineClass {
       const isSynthPart =
         !!part.synthParams &&
         (part.sourceType === "wavetable" || part.sourceType === "fm");
+      // v3.311: E2-Chord-Noten (Step-Bytes 5..7) als zusätzliche Stimmen —
+      // gleiche Velocity/Länge wie die Hauptnote, Pitch aus der absoluten
+      // MIDI-Note relativ zur E2-Basis C5 (72). Leer bei Steps ohne Akkord.
+      const chordPitches = chordVoicePitches(step.chordNotes);
+
       if (isSynthPart) {
         const vol = (scheduled.velocity / 127) * (part.volume ?? 1.0);
         // Drum-Step hat keine eigene Note — A4 (440 Hz) als Basis, step.pitch
@@ -4273,6 +4300,20 @@ class AudioEngineClass {
           part,
           !!step.slide
         );
+        // Chord-Stimmen NACH der Hauptnote (sie lassen den Slide-State in
+        // Ruhe, auxVoice=true) und ohne Slide — Portamento auf gestapelten
+        // Stimmen schmiert, und der E2 slidet Akkorde nicht.
+        for (let cv = 0; cv < chordPitches.length; cv++) {
+          this._triggerSynthOnChannel(
+            scheduled.time,
+            440 * Math.pow(2, chordPitches[cv] / 12),
+            vol,
+            scheduled.pan,
+            part,
+            false,
+            true
+          );
+        }
       } else if (part.sampleUrl) {
         const stepLength = step.length ?? 1;
         const partRef = part;
@@ -4303,6 +4344,19 @@ class AudioEngineClass {
             partRef,
             stepLength
           );
+          // Chord-Stimmen: gleiches (ggf. reversetes/gestretchtes) Buffer,
+          // eigener playbackRate-Pitch pro Zusatznote.
+          for (let cv = 0; cv < chordPitches.length; cv++) {
+            this._triggerBufferWithFx(
+              playBuf,
+              scheduled.time,
+              vol,
+              scheduled.pan,
+              chordPitches[cv],
+              partRef,
+              stepLength
+            );
+          }
         })();
       }
     }
@@ -4580,7 +4634,8 @@ class AudioEngineClass {
     volume: number,
     pan: number,
     part: PartData,
-    slide = false
+    slide = false,
+    auxVoice = false
   ): boolean {
     if (!this.ctx) return false;
     if (!part.synthParams) return false;
@@ -4598,7 +4653,10 @@ class AudioEngineClass {
 
     // v2.14: Per-Step-Slide. Wenn der vorherige Step `slide=true` hatte,
     // ramp der neue Note von der alten Frequenz auf die aktuelle.
-    const prevState = this._partSlideState.get(part.id);
+    // v3.311: aux-Stimmen (E2-Chord-Noten) gleiten nicht und fassen den
+    // Slide-State nicht an — sonst würde der nächste Slide von der letzten
+    // Chord-Note statt von der Hauptnote des Steps starten.
+    const prevState = auxVoice ? undefined : this._partSlideState.get(part.id);
     const stepDur = this._stepDuration();
     let synthParams = part.synthParams;
     let prevFreq: number | undefined = undefined;
@@ -4624,8 +4682,9 @@ class AudioEngineClass {
     noteGain.connect(nodes.input);
     eng.triggerNote(freq, synthParams, now, prevFreq, part.id, noteGain);
 
-    // State für die nächste Note merken
-    this._partSlideState.set(part.id, { lastFreq: freq, lastHadSlide: slide });
+    // State für die nächste Note merken (aux-Stimmen: s. o.)
+    if (!auxVoice)
+      this._partSlideState.set(part.id, { lastFreq: freq, lastHadSlide: slide });
     return true;
   }
 
