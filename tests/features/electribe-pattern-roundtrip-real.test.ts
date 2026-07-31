@@ -143,6 +143,7 @@ import {
   ELECTRIBE_REAL_STEP_TRIGGER_OFFSET,
   ELECTRIBE_REAL_STEP_VELOCITY_OFFSET,
   ELECTRIBE_REAL_STEP_NOTE_OFFSET,
+  ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET,
   type ParsedPattern,
   type ParsedPart,
   type SynthstudioPatternImport,
@@ -209,9 +210,16 @@ function projectParsedToBuilderInput(parsed: ParsedPattern): E2PatternInput {
       // Velocity 0 round-trips through builder as default 96; we explicitly
       // forward the parsed value (incl. 0) so the assertion is precise.
       velocity: s.velocity,
-      // Note isn't exposed by the parser (it only returns active+velocity).
-      // We default to the builder's default 0x48; the real file uses the same
-      // default for ~99% of step records (verified in v3.12 RE).
+      // v3.306 — Note, Gate-Flag und Gate-Länge werden jetzt vom Parser
+      // mitgeführt und hier weitergereicht. Ohne sie schrieb der Builder
+      // Vorgabewerte, und die Abweichung gegen echte Dateien stieg deutlich
+      // (Init181: <200 → 1188 Bytes) — genau diese Lücke schließt der Umbau.
+      note: s.note,
+      gate: s.gate,
+      gateLength: s.gateLength,
+      // v3.308 — Chord-Noten (Bytes 5..7) mitführen; ohne sie verlor der
+      // Round-Trip Akkorde (BodyTalk trägt welche).
+      chordNotes: s.chordNotes,
     }));
     return {
       volume: p.volume,
@@ -696,9 +704,11 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
     }
   });
 
-  it("v3.34: Builder writes 0xFF velocity sentinel on active steps with vel===127", () => {
-    // Construct minimal pattern with one active step at velocity 127. The
-    // v3.34 builder must encode byte 1 as 0xFF (the KORG sentinel).
+  it("v3.306: Velocity 127 landet als 0x7F auf Byte 2, NICHT als 0xFF-Sentinel", () => {
+    // Vorher hiess dieser Test "Builder writes 0xFF velocity sentinel" und
+    // schrieb die Velocity nach Byte 1. Am Geraet gemessen (2026-07-30) liegt
+    // die Velocity auf Byte 2 und traegt echte Werte; 0xFF gehoert zum
+    // NOTEN-Byte und bedeutet dort "kein neuer Ton".
     const input: E2PatternInput = {
       name: "Test",
       bpm: 120,
@@ -709,14 +719,31 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
     };
     input.parts[0].steps[0] = { active: true, velocity: 127 };
     const built = new Uint8Array(buildE2PatternFile(input));
-    // part 0 step 0 record: offset = 0x900 + 0x30 = 0x930. byte 1 = velocity.
-    expect(built[0x930 + 1]).toBe(0xff);
-    // Parse-round-trip: still decodes as velocity 127.
+    // part 0 step 0 record: offset = 0x900 + 0x30 = 0x930.
+    expect(built[0x930 + 1]).toBe(0x48); // Note: Vorgabe C5
+    expect(built[0x930 + 2]).toBe(0x7f); // Velocity: echter Wert
     const reparsed = parseElectribePattern(built.buffer);
     expect(reparsed.parts[0].steps[0].velocity).toBe(127);
   });
 
-  it("v3.34: Builder writes 0x00 on byte 4 of every INACTIVE step", () => {
+  it("v3.306: 0xFF im Noten-Byte ueberlebt den Round-Trip unveraendert", () => {
+    // Werksdateien nutzen das reichlich (BodyTalk: 98x). Ein Klemmen auf 127
+    // wuerde aus "kein neuer Ton" eine echte Note machen.
+    const input: E2PatternInput = {
+      name: "Test",
+      bpm: 120,
+      stepLength: 16,
+      parts: new Array(16).fill(0).map(() => ({
+        steps: new Array(64).fill(0).map(() => ({ active: false } as E2StepInput)),
+      })),
+    };
+    input.parts[0].steps[0] = { active: true, velocity: 96, note: 0xff };
+    const built = new Uint8Array(buildE2PatternFile(input));
+    expect(built[0x930 + 1]).toBe(0xff);
+    expect(parseElectribePattern(built.buffer).parts[0].steps[0].note).toBe(0xff);
+  });
+
+  it("v3.306: inaktive Steps tragen Note 0x48 und Gate-Länge 0x00", () => {
     const real = loadReal(REAL_FILE_INIT_181);
     const parsed = parseElectribePattern(real);
     const built = new Uint8Array(buildE2PatternFile(projectParsedToBuilderInput(parsed)));
@@ -732,7 +759,15 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
         const trig = built[off + ELECTRIBE_REAL_STEP_TRIGGER_OFFSET];
         if (trig === 0x00) {
           inactiveTotal++;
-          if (built[off + ELECTRIBE_REAL_STEP_NOTE_OFFSET] === 0x00) {
+          // v3.306: Unter dem korrigierten Layout liegt die Note auf byte 1 und
+          // steht in echten Dateien AUCH bei inaktiven Steps auf 0x48; die
+          // Gate-Länge (byte 4) ist dort 0x00. Vorher prüfte dieser Test
+          // NOTE_OFFSET (damals byte 4) auf 0x00 — nach der Korrektur wäre das
+          // die falsche Stelle.
+          if (
+            built[off + ELECTRIBE_REAL_STEP_NOTE_OFFSET] === 0x48 &&
+            built[off + ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET] === 0x00
+          ) {
             inactiveByte4Zero++;
           }
         }
@@ -740,8 +775,9 @@ runner("electribePatternBuilder – Real-File Round-Trip (v3.33.0)", () => {
     }
     // Init181 has 4 active steps total → 16×64 - 4 = 1020 inactive steps.
     expect(inactiveTotal).toBeGreaterThan(1000);
-    // EVERY inactive step record must have byte 4 = 0x00.
-    expect(inactiveByte4Zero, "inactive steps with note byte 0x00").toBe(inactiveTotal);
+    expect(inactiveByte4Zero, "inaktive Steps mit Note 0x48 + Gate-Länge 0x00").toBe(
+      inactiveTotal,
+    );
   });
 
   // ─── 7. Builder produces 16640 bytes for every real input ─────────────────

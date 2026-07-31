@@ -9,7 +9,7 @@ import React, { useState, useRef, useEffect } from "react";
 import type { PartData, ChannelFx, StepResolution } from "@/audio/AudioEngine";
 import { AudioEngine } from "@/audio/AudioEngine";
 import { FxPanel } from "./FxPanel";
-import { velocityColor, stepGroupBorder, getSourceTypeBadge } from "./drumMachineHelpers";
+import { velocityColor, stepGroupBorder, getSourceTypeBadge, chordNotesLabel } from "./drumMachineHelpers";
 import { getStepCellColor } from "./stepCellColors";
 import { WaveformMini } from "./WaveformMini";
 import { useMidiContext } from "@/context/MidiContext";
@@ -414,6 +414,9 @@ export function ChannelStrip({
             const isCurrentStep = i === currentStep;
             const isActiveStep = step?.active ?? false;
             const velocity = step?.velocity ?? 100;
+            // v3.309: E2-Chord-Noten (Step-Bytes 5..7) — Label für
+            // Indikator + Tooltip, leer wenn kein Akkord.
+            const chordLabel = chordNotesLabel(step?.chordNotes);
 
             let touchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -465,10 +468,10 @@ export function ChannelStrip({
                 ),
                 boxShadow: isCurrentStep ? "inset 0 0 0 2px var(--ss-accent-secondary)" : undefined,
               }}
-              aria-label={`Step ${i + 1}: ${isActiveStep ? "aktiv" : "inaktiv"}, Velocity ${velocity}${step?.slide ? ", slide" : ""}`}
+              aria-label={`Step ${i + 1}: ${isActiveStep ? "aktiv" : "inaktiv"}, Velocity ${velocity}${step?.slide ? ", slide" : ""}${chordLabel ? `, Akkord ${chordLabel}` : ""}`}
               aria-pressed={isActiveStep}
               role="button"
-              title={`Step ${i + 1} | Vel: ${velocity} | Pitch: ${part.steps[i]?.pitch ?? 0} | P: ${part.steps[i]?.probability ?? 100}%${step?.slide ? " | ↝ Slide" : ""}${stepMapping ? ` · CC${stepMapping.cc}` : " · Rechtsklick: MIDI-Learn"}`}
+              title={`Step ${i + 1} | Vel: ${velocity} | Pitch: ${part.steps[i]?.pitch ?? 0} | P: ${part.steps[i]?.probability ?? 100}%${step?.slide ? " | ↝ Slide" : ""}${chordLabel ? ` | ♫ ${chordLabel}` : ""}${stepMapping ? ` · CC${stepMapping.cc}` : " · Rechtsklick: MIDI-Learn"}`}
             >
               {stepMapping && (
                 <span className="absolute top-0 right-0 w-1 h-1 bg-accent-secondary rounded-full pointer-events-none" />
@@ -498,6 +501,18 @@ export function ChannelStrip({
                   aria-hidden="true"
                 >
                   ↝
+                </span>
+              )}
+              {/* v3.309: Chord-Indikator: ♫ oben links, wenn der Step
+                  E2-Chord-Noten (Bytes 5..7) trägt. Details im Tooltip +
+                  Step Inspector. */}
+              {chordLabel && (
+                <span
+                  className="absolute top-0 left-0.5 text-[8px] leading-none text-accent-secondary font-bold pointer-events-none"
+                  aria-hidden="true"
+                  data-testid={`step-chord-indicator-${i}`}
+                >
+                  ♫
                 </span>
               )}
             </button>

@@ -174,6 +174,7 @@ function useRemoteDmAdapter(
       setStepProbability: noop,
       setStepSlide: noop,
       setStepCondition: (_partId: string, _stepIndex: number, _condition: StepCondition) => { /* no-op */ },
+      setStepChordNotes: noop,
       setPartEuclidean: noop,
       clearPattern: noop,
       resetAll: noop,

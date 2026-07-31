@@ -19,6 +19,7 @@
 import type { EsxBank, EsxPattern, EsxSample } from "./esxParser";
 import { buildE2sBank, type E2sSlotInput } from "./e2sBankBuilder";
 import { buildE2AllPatFile } from "../e2sExport";
+import { verifyE2AllpatBank } from "./e2AllpatVerify";
 import type { E2PatternInput } from "../electribePatternBuilder";
 
 /** E2S User-Sample-Nummerierung beginnt bei 501 (Factory 1..~500). */
@@ -163,8 +164,17 @@ export function convertEsxToE2sBank(
     return { name: p.name || "ESX Pattern", bpm: p.bpm, stepLength, parts };
   });
 
-  // 5) Bytes bauen.
+  // 5) Bytes bauen. v3.307: Struktur-Validierung gegen die stock-verifizierten
+  // Invarianten — eine fehlerhafte Bank verlässt diesen Converter nicht mehr.
   const allpat = new Uint8Array(buildE2AllPatFile(e2Inputs));
+  const verdict = verifyE2AllpatBank(allpat);
+  if (!verdict.ok) {
+    throw new Error(
+      `ESX→E2S: gebaute .e2sallpat verletzt Bank-Invarianten — ${verdict.errors
+        .slice(0, 3)
+        .join("; ")}${verdict.errors.length > 3 ? ` (+${verdict.errors.length - 3} weitere)` : ""}`
+    );
+  }
   const all = new Uint8Array(buildE2sBank(slots).buffer);
 
   // 6) Mapping/Anleitung.
