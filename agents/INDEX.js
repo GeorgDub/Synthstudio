@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.309.0",
+    version: "3.310.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,25 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "frontend",
+      timestamp: "2026-07-31T16:30:00.000Z",
+      done: [
+        "v3.310.0 — E2-Akkord EDITIEREN im StepInspector (schliesst das v3.309-'next': bisher nur Anzeigen/Entfernen). Dropdown pro Zusatznote (MIDI 1..127 als Notennamen), ✕ pro Note, ＋ haengt eine Note an; Sektion jetzt auch ohne bestehenden Akkord sichtbar, solange onSetChordNotes verdrahtet ist (Remote-Ansicht bleibt read-only).",
+        "Pure Edit-Helper in drumMachineHelpers: addChordNote (Terzvorschlag ueber Hauptnote C5+Pitch bzw. letzter Zusatznote, ueberspringt belegte Toene, klemmt an 127, ignoriert 0-Slots aus dem Roh-Import), updateChordNoteAt (Clamp 1..127), removeChordNoteAt (undefined bei leer → Store raeumt Feld ab), Konstante E2_CHORD_MAX_NOTES=3.",
+        "Kein neuer Store-/Engine-Code noetig — setStepChordNotes aus v3.309 traegt das Editieren komplett; die Engine spielt Akkorde weiterhin nicht ab.",
+        "13 neue Tests (tests/features/e2-chord-editing.test.ts): Terz-Stapelung, Duplikat-Skip, MIDI-Rand-Clamp, 0-Slot-Filter, Immutability, Edit→Export byte-genau bis in die Step-Bytes 5..7."
+      ],
+      next: [
+        "Akkord-ABSPIELEN in der AudioEngine (chordNotes klingen in der Preview bisher nicht).",
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt (offen aus v3.306) — und ob editierte Akkorde nach Push hoerbar sind."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/drumMachineHelpers.ts",
+        "client/src/components/DrumMachine/StepInspector.tsx",
+        "tests/features/e2-chord-editing.test.ts"
+      ]
+    },
     {
       agent:     "frontend",
       timestamp: "2026-07-31T15:00:00.000Z",
