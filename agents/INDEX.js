@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.305.0",
+    version: "3.306.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,33 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-31T10:00:00.000Z",
+      done: [
+        "v3.306.0 — Step-Record-Layout korrigiert: Note @1, Velocity @2, Gate-Flag @3, Gate-Laenge @4. Vorher galten Velocity @1 und Note @4. Der Import zeigte deshalb fuer JEDEN Step die Velocity 72 an — das ist 0x48, die Vorgabe-Note C5.",
+        "AUSLOESER war ein Nutzerbefund am Geraet: vier Steps mit deutlich unterschiedlicher Betonung gesetzt (laut/leise/laut/leise), SynthStudio zeigte viermal die 72. Eigener Sysex-Pull bestaetigte es byteweise: Byte 1 konstant 0x48, Byte 2 folgt exakt der Betonung (127/8/127/25).",
+        "ZWEITER BELEG aus der Werksdatei 245_BodyTalk1.e2spat: Byte 1 traegt musikalische Tonhoehen (C5 dominant, dazu B2/D2/C#3/F2) plus 98x 0xFF fuer 'kein neuer Ton'; Byte 2 traegt 96 (299x) mit 127 (14x) als Akzent; Byte 4 streut ueber 32..80 wie eine Gate-Laenge. e2sExport.ts hatte das Layout von Anfang an richtig — die beiden Pfade widersprachen sich.",
+        "EIGENE FEHLLEISTUNG dokumentiert: ich hatte den Fix zunaechst gebaut, dann wegen eines vermeintlichen Widerspruchs zur Werksdatei zurueckgenommen. Der Widerspruch existierte nicht — ich hatte Byte 4 nur in den ersten Steps EINES Parts angesehen und daraus 'konstant 0x48 = Note' geschlossen. Ueber die ganze Datei gerechnet loest er sich auf. Lehre: bei Byte-Semantik immer ueber die ganze Datei zaehlen, nicht ueber eine Handvoll Records.",
+        "DER EIGENTLICHE UMBAU war noetig, weil Parser und electribePatternBuilder ein positionstreues Paar bilden, dessen Byte-Treue 13 Tests gegen echte Dateien pruefen. Nur den Parser zu korrigieren bricht die Symmetrie; beide zu korrigieren liess Byte 4 seinen Rueckweg verlieren (Init181-Abweichung stieg von <200 auf 1188 Bytes), weil E2StepInput kein Gate-Laengen-Feld hatte. Geloest durch: ParsedPartStep + E2StepInput um note/gate/gateLength erweitert, Parser fuellt sie, Builder schreibt sie zurueck.",
+        "ZUSATZFUND dabei: der Builder schrieb inaktiven Steps 0x00 aufs Noten-Byte. Das war unter dem ALTEN Layout richtig (byte 4 ist dort 0x00), unter dem korrigierten aber falsch — echte Dateien tragen auch bei inaktiven Steps die Vorgabe 0x48 (Init181: 1020x '00 48 60 00 00'). Das allein erzeugte ~1020 abweichende Bytes.",
+        "0xFF-SENTINEL neu eingeordnet: er stammt aus Werksdateien und steht dort auf dem NOTEN-Byte ('kein neuer Ton'), nicht auf der Velocity. Der Builder schreibt ihn nicht mehr als Velocity; das Noten-Byte reicht ihn unveraendert durch statt auf 127 zu klemmen.",
+        "Neuer Regressionstest e2-step-layout-device.test.ts haelt die Geraetemessung woertlich fest (die gemessenen Bytes stehen als Konstanten drin). Faellt er, ist die Zuordnung wieder verrutscht — gegen echte Hardware, nicht gegen eine Annahme. Bestehende Tests nachgezogen: synthetische Fixtures, der BodyTalk-Sentinel-Test (dessen Praemisse das falsche Byte las) und 9 toEqual->toMatchObject (der Parser liefert jetzt drei Felder mehr)."
+      ],
+      next: [
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt — der Nutzer hat die Vorlage dafuer schon angelegt.",
+        "Offen aus §6 des Pruefprotokolls: 228 von 250 Patterns der Nutzer-Bank haben KEIN Insert-FX zugewiesen; ob das die Beobachtung 'Parts ueber Effekte nicht veraenderbar' vollstaendig erklaert, ist noch nicht bestaetigt.",
+        "Vorbestehend rot und NICHT aus dieser Arbeit: electribe-import.test.ts Pan-Histogramm ueber die lokale e2s-2016.e2sallpat (skippt auf CI)."
+      ],
+      changed: [
+        "client/src/utils/electribeImport.ts",
+        "client/src/utils/electribePatternBuilder.ts",
+        "tests/features/e2-step-layout-device.test.ts",
+        "tests/features/electribe-import.test.ts",
+        "tests/features/electribe-pattern-write.test.ts",
+        "tests/features/electribe-pattern-roundtrip-real.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-30T18:45:00.000Z",

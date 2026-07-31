@@ -199,15 +199,18 @@ describe("Step encoding round-trip", () => {
     expect(view.getUint8(stepArea + 1 * 12)).toBe(0x00); // step 1 trigger
   });
 
-  it("writes velocity at byte 1 and note at byte 4", () => {
+  it("v3.306: schreibt Note auf Byte 1 und Velocity auf Byte 2", () => {
+    // Vorher hiess dieser Test "writes velocity at byte 1 and note at byte 4".
+    // Am Geraet gemessen (2026-07-30) und an der Werksdatei 245_BodyTalk1
+    // bestaetigt: Note @1, Velocity @2, Gate-Flag @3, Gate-Laenge @4.
     const input = makeMinimalInput();
     input.parts[0].steps[0] = { active: true, velocity: 100, note: 60 };
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
     const stepOffset = 0x900 + 0x30;
-    expect(view.getUint8(stepOffset + 1)).toBe(100); // velocity
-    expect(view.getUint8(stepOffset + 4)).toBe(60); // note
-    expect(view.getUint8(stepOffset + 2)).toBe(0x60); // constant
+    expect(view.getUint8(stepOffset + 1)).toBe(60);  // Note
+    expect(view.getUint8(stepOffset + 2)).toBe(100); // Velocity
+    expect(view.getUint8(stepOffset + 3)).toBe(1);   // Gate-Flag
   });
 
   it("v3.34: writes 0xFF velocity sentinel and default note 0x48 for ACTIVE unset step", () => {
@@ -216,13 +219,11 @@ describe("Step encoding round-trip", () => {
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
     const stepOffset = 0x900 + 0x30;
-    // v3.34: byte 1 = 0xFF KORG sentinel (parser maps → 127).
-    expect(view.getUint8(stepOffset + 1)).toBe(E2_DEFAULT_VELOCITY_RAW_BYTE);
-    expect(E2_DEFAULT_VELOCITY_RAW_BYTE).toBe(0xff);
-    // Decoded velocity is still the canonical default 127.
-    expect(E2_DEFAULT_VELOCITY).toBe(127);
-    // Active step still gets default note 0x48 (C5).
-    expect(view.getUint8(stepOffset + 4)).toBe(E2_DEFAULT_NOTE);
+    // v3.306: KEIN 0xFF mehr auf dem Velocity-Byte — der Sentinel gehoert zum
+    // NOTEN-Byte ("kein neuer Ton"). Ein Step ohne Angabe bekommt die
+    // Geraete-Vorgabe 0x60 = 96 auf Byte 2 und die Vorgabe-Note C5 auf Byte 1.
+    expect(view.getUint8(stepOffset + 1)).toBe(E2_DEFAULT_NOTE);
+    expect(view.getUint8(stepOffset + 2)).toBe(0x60);
   });
 
   it("reads back active flags + velocities via parseElectribePattern", () => {
@@ -280,8 +281,8 @@ describe("v3.34: KORG-native encoding conventions", () => {
     input.parts[0].steps[0] = { active: true, velocity: 127 };
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
-    expect(view.getUint8(0x900 + 0x30 + 1)).toBe(0xff);
-    // Parser maps 0xFF → 127, so the decoded velocity round-trips.
+    // v3.306: 127 landet als 0x7F auf Byte 2 — kein Sentinel-Umweg.
+    expect(view.getUint8(0x900 + 0x30 + 2)).toBe(0x7f);
     const parsed = parseElectribePattern(buffer) as ParsedPattern;
     expect(parsed.parts[0].steps[0].velocity).toBe(127);
   });
@@ -296,14 +297,15 @@ describe("v3.34: KORG-native encoding conventions", () => {
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
     const base = 0x900 + 0x30;
-    expect(view.getUint8(base + 0 * 12 + 1)).toBe(100);
-    expect(view.getUint8(base + 1 * 12 + 1)).toBe(64);
-    expect(view.getUint8(base + 2 * 12 + 1)).toBe(0);
-    expect(view.getUint8(base + 3 * 12 + 1)).toBe(1);
-    expect(view.getUint8(base + 4 * 12 + 1)).toBe(126);
+    // v3.306: Velocity liegt auf Byte 2.
+    expect(view.getUint8(base + 0 * 12 + 2)).toBe(100);
+    expect(view.getUint8(base + 1 * 12 + 2)).toBe(64);
+    expect(view.getUint8(base + 2 * 12 + 2)).toBe(0);
+    expect(view.getUint8(base + 3 * 12 + 2)).toBe(1);
+    expect(view.getUint8(base + 4 * 12 + 2)).toBe(126);
   });
 
-  it("v3.34: Inactive step byte 4 (note) = 0x00 (NOT 0x48)", () => {
+  it("v3.306: Inaktiver Step hat Gate-Laenge 0x00 auf Byte 4", () => {
     const input = makeMinimalInput();
     // Leave all steps inactive (the makeMinimalInput default).
     const buffer = buildE2PatternFile(input);
@@ -311,31 +313,34 @@ describe("v3.34: KORG-native encoding conventions", () => {
     const stepBase = 0x900 + 0x30;
     // Spot-check the first 16 inactive steps of part 0.
     for (let s = 0; s < 16; s++) {
-      expect(view.getUint8(stepBase + s * 12 + 4), `inactive step ${s} note byte`).toBe(
-        E2_INACTIVE_STEP_NOTE,
-      );
-      expect(view.getUint8(stepBase + s * 12 + 4), `inactive step ${s} == 0x00`).toBe(0x00);
+      // Byte 4 ist unter dem korrigierten Layout die Gate-Laenge; sie ist auf
+      // stummen Steps 0. Die NOTE (Byte 1) traegt dagegen die Vorgabe 0x48 —
+      // so wie es echte Geraetedateien tun (Init181: 1020x `00 48 60 00 00`).
+      expect(view.getUint8(stepBase + s * 12 + 4), `inaktiver Step ${s} Gate-Laenge`).toBe(0x00);
+      expect(view.getUint8(stepBase + s * 12 + 1), `inaktiver Step ${s} Note`).toBe(0x48);
     }
   });
 
-  it("v3.34: Inactive step byte 1 (velocity) = 0xFF sentinel (unset → 0xFF)", () => {
+  it("v3.306: Inaktiver Step hat Velocity-Vorgabe 0x60 auf Byte 2", () => {
     const input = makeMinimalInput();
     // makeMinimalInput uses `{ active: false }` so velocity is unset.
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
     const stepBase = 0x900 + 0x30;
     for (let s = 0; s < 16; s++) {
-      expect(view.getUint8(stepBase + s * 12 + 1), `inactive step ${s} vel byte`).toBe(0xff);
+      expect(view.getUint8(stepBase + s * 12 + 2), `inaktiver Step ${s} Velocity`).toBe(0x60);
     }
   });
 
-  it("v3.34: Active step with explicit note still writes that note byte", () => {
+  it("v3.306: Aktiver Step mit ausdruecklicher Note schreibt sie auf Byte 1", () => {
     const input = makeMinimalInput();
     input.parts[0].steps[0] = { active: true, note: 60, velocity: 80 };
     const buffer = buildE2PatternFile(input);
     const view = new DataView(buffer);
-    expect(view.getUint8(0x900 + 0x30 + 4)).toBe(60);
-    expect(view.getUint8(0x900 + 0x30 + 1)).toBe(80);
+    expect(view.getUint8(0x900 + 0x30 + 1)).toBe(60); // Note
+    expect(view.getUint8(0x900 + 0x30 + 2)).toBe(80); // Velocity
+    // Gate-Laenge bekommt die Vorgabe, wenn der Aufrufer keine mitgibt.
+    expect(view.getUint8(0x900 + 0x30 + 4)).toBe(0x3d);
   });
 });
 

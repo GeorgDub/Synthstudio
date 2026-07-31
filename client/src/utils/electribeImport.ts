@@ -225,18 +225,44 @@ export const ELECTRIBE_REAL_STEP_RECORD_BYTES = 12;
 export const ELECTRIBE_REAL_STEPS_PER_PART = 64;
 
 /**
- * v3.12: Real-File Step-Record Byte-Layout (12 Bytes each):
+ * Real-File Step-Record Byte-Layout (12 Bytes each):
  *   byte 0:  Trigger-Flag (0x00 = off, 0x01 = on)
- *   byte 1:  Velocity (0x00..0x7F = explicit, 0xFF = default-velocity-127)
- *   byte 2:  Konstante 0x60 (vermutlich note-attribute prefix)
- *   byte 3:  Accent/Tied-Flag (0x00 oder 0x01 — Encoding noch nicht 100% klar)
- *   byte 4:  Note-Nummer / Pitch (MIDI 0..127, 0x48 = C5 default)
- *   bytes 5..11: Reserved / nicht reverse-engineered (mostly 0x00)
+ *   byte 1:  Note / Pitch (MIDI 0..127, 0x48 = C5; 0xFF = "kein neuer Ton")
+ *   byte 2:  Velocity (0x00..0x7F, Vorgabe 0x60 = 96)
+ *   byte 3:  Gate-Flag (0x01 auf klingenden Steps)
+ *   byte 4:  Gate-Länge
+ *   bytes 5..11: Reserved (mostly 0x00)
+ *
+ * ⚠️ v3.306 — KORREKTUR. Vorher galten byte 1 als Velocity und byte 4 als Note.
+ * Zwei unabhängige Belege widerlegen das:
+ *
+ * 1) Am Gerät gemessen (2026-07-30): der Nutzer setzte auf einem Part vier
+ *    Steps mit deutlich unterschiedlicher Betonung; im per Sysex geholten
+ *    Pattern stand byte 1 konstant 0x48, während byte 2 exakt der Betonung
+ *    folgte (127 / 8 / 127 / 25). Der Import zeigte deshalb für JEDEN Step
+ *    die 72 (= 0x48) — das Noten-Byte.
+ * 2) Die Werksdatei `245_BodyTalk1   .e2spat` über die ganze Datei gerechnet:
+ *    byte 1 trägt musikalische Tonhöhen (C5 dominant, dazu B2/D2/C#3/F2) und
+ *    98× 0xFF; byte 2 trägt 96 (299×) mit 127 (14×) als Akzent; byte 4 streut
+ *    über 32..80 wie eine Gate-Länge.
+ *
+ * `e2sExport.ts` beschrieb das Layout von Anfang an richtig.
+ * Beleg: omnitribe/docs/hwtest/e2s_native_layer_bringup.md §7.
  */
 export const ELECTRIBE_REAL_STEP_TRIGGER_OFFSET = 0;
-export const ELECTRIBE_REAL_STEP_VELOCITY_OFFSET = 1;
-export const ELECTRIBE_REAL_STEP_NOTE_OFFSET = 4;
-/** Sentinel-Wert: 0xFF in velocity-Byte = "use default-velocity 127". */
+export const ELECTRIBE_REAL_STEP_NOTE_OFFSET = 1;
+export const ELECTRIBE_REAL_STEP_VELOCITY_OFFSET = 2;
+export const ELECTRIBE_REAL_STEP_GATE_OFFSET = 3;
+export const ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET = 4;
+/**
+ * 0xFF → Vorgabe-Velocity 127 (defensiv beibehalten).
+ *
+ * ⚠️ Herkunft: die 0xFF-Beobachtung stammt aus Werksdateien und steht dort auf
+ * byte 1 — nach der v3.306-Korrektur also dem NOTEN-Byte, wo sie „kein neuer
+ * Ton" bedeutet. Ob das Velocity-Byte denselben Sentinel kennt, ist NICHT
+ * belegt; die Behandlung bleibt nur bestehen, damit ein 0xFF dort keinen
+ * ungültigen Wert erzeugt.
+ */
 export const ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL = 0xff;
 export const ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE = 127;
 
@@ -451,6 +477,24 @@ export interface ParsedPartStep {
   active: boolean;
   /** 0..127. */
   velocity: number;
+  /**
+   * v3.306 — MIDI-Note des Steps (Byte 1), Vorgabe `0x48` = C5.
+   *
+   * Neu mitgeführt, damit der Builder sie zurückschreiben kann. Vorher ging sie
+   * beim Round-Trip verloren; die Werksdateien tragen dort echte Melodien.
+   * `0xFF` bedeutet „kein neuer Ton" und wird unverändert durchgereicht.
+   */
+  note?: number;
+  /**
+   * v3.306 — Gate-Länge (Byte 4).
+   *
+   * Ebenfalls nur zum Durchreichen: der Parser deutet sie nicht, aber ohne sie
+   * schreibt der Builder eine Konstante und die Abweichung gegen echte Dateien
+   * steigt messbar (Init181: <200 → 1188 Bytes).
+   */
+  gateLength?: number;
+  /** v3.306 — Gate-Flag (Byte 3). Auf klingenden Steps gesetzt. */
+  gate?: boolean;
 }
 
 export interface ParsedPart {
@@ -803,7 +847,17 @@ function parseRealPartBlock(
           // Out-of-range (z.B. 0x80..0xFE) — defensive clamp auf 127.
           velocity = 127;
         }
-        steps[s] = { active, velocity };
+        // v3.306 — Note, Gate-Flag und Gate-Länge werden mitgeführt, damit der
+        // Builder sie unverändert zurückschreiben kann. Sie werden bewusst
+        // NICHT gedeutet oder geklemmt: 0xFF auf dem Noten-Byte heißt „kein
+        // neuer Ton" und muss genau so erhalten bleiben.
+        steps[s] = {
+          active,
+          velocity,
+          note: safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_NOTE_OFFSET),
+          gate: safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_GATE_OFFSET) === 0x01,
+          gateLength: safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET),
+        };
       } else {
         steps[s] = { active: false, velocity: 0 };
       }
