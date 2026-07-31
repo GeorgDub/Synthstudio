@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.307.0",
+    version: "3.308.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -4256,6 +4256,30 @@ const INDEX = {
   // Each agent appends an entry here after completing work.
   // Format: { agent, timestamp, done[], next[], changed[] }
   workLog: [
+    {
+      agent:     "backend",
+      timestamp: "2026-07-31T13:00:00.000Z",
+      done: [
+        "v3.308.0 — Chord-Noten (Step-Bytes 5..7 = Noten 2..4, 0 = unbenutzt) durch die gesamte Pattern-Pipeline gezogen. Die Semantik stammt aus der Werksbank e2s-2016: 4 392 aktive Stock-Steps tragen Zusatznoten (z.B. '01 41 60 01 2e 30' = Zweiklang), Werte nie ueber 127; Bytes 8..11 sind in allen 256 000 Records 0.",
+        "ParsedPartStep + E2StepInput um chordNotes?: number[] erweitert; Parser fuellt das Feld (nur wenn belegt), electribePatternBuilder.writeStepRecord und e2sExport.buildE2PatternBody schreiben es zurueck (Clamp 0..127 pro Slot). Vorher gingen Akkorde bei JEDEM Parse->Build-Roundtrip verloren — der Patch-Pfad writePatternBodyIntoAllpat war der einzige verlustfreie Weg.",
+        "e2Sysex.ts: Die 7 'motion'-Bytes sind damit teilentschluesselt — Doku korrigiert (der alte Verdacht Motion-/Param-Lock ist vom Tisch), neuer Helper stepChordNotes(). Feldname motion bleibt fuer API-Kompatibilitaet.",
+        "Neue Layout-Konstanten E2_STEP_CHORD_NOTES_OFFSET/COUNT (e2Layout.ts) + ELECTRIBE_REAL_STEP_CHORD_* (electribeImport.ts); veraltete Step-Record-Doku-Bloecke in electribeImport.ts auf das korrigierte Layout gehoben (standen noch auf Velocity@1/Note@4).",
+        "2 neue Tests: synthetischer Chord-Write (Clamp-Verhalten) + Stock-Ground-Truth-Roundtrip: 5 akkordtragende Werks-Patterns geparst, durch buildE2PatternBody gebaut, Chord-Bytes byte-genau identisch; Parser sieht >4000 Chord-Steps in der Werksbank. projectParsedToBuilderInput im Roundtrip-Real-Test reicht chordNotes jetzt durch."
+      ],
+      next: [
+        "Am Geraet pruefen, ob 'Von Korg' jetzt die echten Velocities anzeigt — der Nutzer hat die Vorlage dafuer schon angelegt.",
+        "UI zeigt Chord-Noten noch nirgends an — Datenmodell und Roundtrip sind da, ein Editor-Feature waere der naechste Schritt."
+      ],
+      changed: [
+        "client/src/utils/korg/e2Layout.ts",
+        "client/src/utils/electribeImport.ts",
+        "client/src/utils/electribePatternBuilder.ts",
+        "client/src/utils/e2sExport.ts",
+        "client/src/utils/korg/e2Sysex.ts",
+        "tests/features/e2s-allpat-verify.test.ts",
+        "tests/features/electribe-pattern-roundtrip-real.test.ts"
+      ]
+    },
     {
       agent:     "backend",
       timestamp: "2026-07-31T12:30:00.000Z",

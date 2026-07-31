@@ -331,18 +331,29 @@ export interface E2Step {
   gate: boolean; // gate-flag (byte 3) — muss bei aktiven Steps gesetzt sein
   gateLen: number; // gate-length (byte 4)
   /**
-   * Opake Step-Bytes +0x05..+0x0B (7 Bytes). SEMANTIK UNBEKANNT — vermutlich
-   * Motion-/Param-Lock, aber in allen verfügbaren Files (Stock-Init + Testbank,
-   * 250×16×64 Steps) durchgehend NULL, daher nicht reverse-engineert. Wird hier
-   * roh erhalten, damit ein Motion-haltiges Device-Pattern die Daten nicht still
-   * verliert. Siehe docs/reverse/pattern_format.md.
+   * Roh-Step-Bytes +0x05..+0x0B (7 Bytes), unverändert durchgereicht.
+   *
+   * v3.308 — SEMANTIK GEKLÄRT (Werksbank e2s-2016, alle 250×16×64 Records):
+   * Bytes +5..+7 sind die Chord-Noten 2..4 (0 = unbenutzt, sonst ≤ 127;
+   * 4 392 aktive Stock-Steps tragen welche), Bytes +8..+11 sind Reserved und
+   * ausnahmslos 0. Der alte Verdacht "Motion-/Param-Lock" ist damit vom Tisch;
+   * der Feldname bleibt für API-Kompatibilität. `stepChordNotes()` liefert die
+   * gedeutete Sicht.
    */
   motion: number[]; // 7 Bytes
 }
 
-/** true, wenn ein Step Nicht-Null-Motion-Bytes trägt. */
+/** true, wenn ein Step Nicht-Null-Bytes im Roh-Bereich +5..+11 trägt. */
 export function stepHasMotion(step: E2Step): boolean {
   return step.motion.some(b => b !== 0);
+}
+
+/**
+ * v3.308 — Chord-Noten 2..4 des Steps (aus den Roh-Bytes +5..+7).
+ * Leeres Array, wenn der Step keinen Akkord trägt.
+ */
+export function stepChordNotes(step: E2Step): number[] {
+  return step.motion.slice(0, 3).filter(n => n > 0 && n <= 127);
 }
 export interface E2PartDecoded {
   sampleRef: number; // u16 LE @ +0x08 (Sample/OSC-Nummer)

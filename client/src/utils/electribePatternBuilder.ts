@@ -72,6 +72,8 @@ import {
   ELECTRIBE_REAL_STEP_NOTE_OFFSET,
   ELECTRIBE_REAL_STEP_GATE_OFFSET,
   ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET,
+  ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET,
+  ELECTRIBE_REAL_STEP_CHORD_NOTE_COUNT,
   ELECTRIBE_REAL_VELOCITY_DEFAULT_SENTINEL,
   ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE,
   ELECTRIBE_MOTION_PARAM_TABLE_OFFSET,
@@ -116,6 +118,13 @@ export interface E2StepInput {
    * Dateien stieg messbar (Init181: <200 → 1188 Bytes).
    */
   gateLength?: number;
+  /**
+   * v3.308 — Chord-Noten 2..4 (bytes 5..7). Bis zu 3 Zusatznoten, 0 =
+   * unbenutzter Slot. Aus der Werksbank e2s-2016 abgeleitet (4 392 aktive
+   * Stock-Steps tragen dort Zusatznoten); vorher gingen sie bei jedem
+   * Parse→Build-Round-Trip verloren.
+   */
+  chordNotes?: number[];
 }
 
 export interface E2PartInput {
@@ -336,7 +345,15 @@ export function writeStepRecord(view: DataView, offset: number, step: E2StepInpu
   view.setUint8(offset + ELECTRIBE_REAL_STEP_GATE_OFFSET, gateFlag);
   view.setUint8(offset + ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET, gateLenByte);
   void accent;
-  // bytes 5..11 are already 0 (full file is zero-initialised before fill).
+  // v3.308 — Chord-Noten 2..4 (bytes 5..7): zurückschreiben, was der Parser
+  // geliefert hat (0 = unbenutzt). Bytes 8..11 bleiben 0 (zero-init).
+  const chord = Array.isArray(step.chordNotes) ? step.chordNotes : [];
+  for (let c = 0; c < ELECTRIBE_REAL_STEP_CHORD_NOTE_COUNT; c++) {
+    view.setUint8(
+      offset + ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET + c,
+      clampInt(chord[c], 0, 127, 0)
+    );
+  }
 }
 
 /**

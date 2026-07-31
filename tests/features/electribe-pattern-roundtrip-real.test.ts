@@ -217,6 +217,9 @@ function projectParsedToBuilderInput(parsed: ParsedPattern): E2PatternInput {
       note: s.note,
       gate: s.gate,
       gateLength: s.gateLength,
+      // v3.308 — Chord-Noten (Bytes 5..7) mitführen; ohne sie verlor der
+      // Round-Trip Akkorde (BodyTalk trägt welche).
+      chordNotes: s.chordNotes,
     }));
     return {
       volume: p.volume,

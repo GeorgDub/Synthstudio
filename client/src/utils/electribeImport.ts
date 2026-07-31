@@ -68,13 +68,14 @@
  *                 Pro Part-Block:
  *                   +0x00..0x2F  48 Bytes Part-Header (Sample-Ref + Volume + Pan + Pitch + FX-Settings)
  *                   +0x30..0x32F 64 Steps × 12 Bytes Step-Records (v3.12-VERIFIED encoding)
- *                 Per Step-Record (12 Bytes):
+ *                 Per Step-Record (12 Bytes) — v3.306/v3.308 korrigiertes Layout:
  *                   byte 0:    Trigger (0x00=off, 0x01=on)
- *                   byte 1:    Velocity (0x00..0x7F = explicit 0..127, 0xFF = use-default = 127)
- *                   byte 2:    Constant 0x60 (note-attribute prefix?)
- *                   byte 3:    Accent/Tied-Flag (0x00 or 0x01 — Tied-Step?)
- *                   byte 4:    Note-Number / Pitch (0x48 = MIDI 72 = C5, varies)
- *                   bytes 5-11: Reserved (mostly 0x00, observed non-zero in BodyTalk)
+ *                   byte 1:    Note (0x48 = C5 Default, 0xFF = "kein neuer Ton")
+ *                   byte 2:    Velocity (1..127, Stock kennt keine 0)
+ *                   byte 3:    Gate-Flag (0/1 — kein Pflicht-Bit, 38% aktive Stock-Steps haben 0)
+ *                   byte 4:    Gate-Länge (Stock-Spanne 0..106)
+ *                   bytes 5-7: Chord-Noten 2..4 (0 = unbenutzt; Werksbank e2s-2016: 4392 Steps)
+ *                   bytes 8-11: Reserved (in allen 256 000 Stock-Records 0x00)
  *   0x3C00  1280  Pattern-Footer (16 × 80 Bytes? — globals incl. step-length, motion)
  *                 NICHT vollstaendig reverse-engineered (v3.12). Wir ueberlesen.
  *
@@ -254,6 +255,13 @@ export const ELECTRIBE_REAL_STEP_NOTE_OFFSET = 1;
 export const ELECTRIBE_REAL_STEP_VELOCITY_OFFSET = 2;
 export const ELECTRIBE_REAL_STEP_GATE_OFFSET = 3;
 export const ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET = 4;
+/**
+ * v3.308 — Chord-Noten 2..4 @ bytes 5..7 (0 = unbenutzt, sonst ≤ 127).
+ * Aus der Werksbank e2s-2016 abgeleitet: 4 392 aktive Stock-Steps tragen dort
+ * Zusatznoten; Bytes 8..11 sind in allen 256 000 Stock-Records 0.
+ */
+export const ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET = 5;
+export const ELECTRIBE_REAL_STEP_CHORD_NOTE_COUNT = 3;
 /**
  * 0xFF → Vorgabe-Velocity 127 (defensiv beibehalten).
  *
@@ -495,6 +503,13 @@ export interface ParsedPartStep {
   gateLength?: number;
   /** v3.306 — Gate-Flag (Byte 3). Auf klingenden Steps gesetzt. */
   gate?: boolean;
+  /**
+   * v3.308 — Chord-Noten 2..4 (Bytes 5..7), nur gesetzt wenn mindestens ein
+   * Slot belegt ist. 0 = unbenutzter Slot. Vorher gingen Akkorde bei jedem
+   * Parse→Build-Round-Trip verloren (die Werksbank e2s-2016 trägt sie auf
+   * 4 392 aktiven Steps).
+   */
+  chordNotes?: number[];
 }
 
 export interface ParsedPart {
@@ -751,14 +766,15 @@ export function detectElectribeFormatKind(
  * Untersucht einen 816-Byte Part-Block (Stride confirmed by RE 2026-05-18)
  * und parsed die 64 Step-Records (à 12 Bytes) ab Offset +0x30.
  *
- * Step-Record Layout (12 Bytes pro Step):
+ * Step-Record Layout (12 Bytes pro Step) — v3.306/v3.308 korrigiert
+ * (Gerätemessung + Werksdateien 245_BodyTalk1 und e2s-2016.e2sallpat):
  *   byte 0:  Trigger-Flag (0x00 = inactive, 0x01 = active) — VERIFIED
- *   byte 1:  Velocity (0x00..0x7F = explicit 0..127,
- *            0xFF = sentinel "use default 127") — VERIFIED
- *   byte 2:  Konstante 0x60 (note-attribute prefix?) — observed
- *   byte 3:  Accent/Tied-Flag (0x00 oder 0x01) — observed but semantics TBD
- *   byte 4:  Note-Number (MIDI 0..127, default 0x48=C5) — VERIFIED
- *   bytes 5..11: Reserved/unknown (mostly 0x00) — NOT DECODED
+ *   byte 1:  Note (0x48 = C5 Default; 0xFF = "kein neuer Ton") — VERIFIED
+ *   byte 2:  Velocity (1..127; Vorgabe 0x60 = 96) — DEVICE-VERIFIED
+ *   byte 3:  Gate-Flag (0/1; kein Pflicht-Bit) — VERIFIED
+ *   byte 4:  Gate-Länge (Stock-Spanne 0..106) — VERIFIED
+ *   bytes 5..7:  Chord-Noten 2..4 (0 = unbenutzt) — v3.308, aus e2s-2016
+ *   bytes 8..11: Reserved (in allen 256 000 Stock-Records 0x00)
  *
  * Verifikation:
  *   Init181 enthaelt 1024 identische records mit konstantem stride-12
@@ -858,6 +874,15 @@ function parseRealPartBlock(
           gate: safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_GATE_OFFSET) === 0x01,
           gateLength: safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_GATE_LENGTH_OFFSET),
         };
+        // v3.308 — Chord-Noten (Bytes 5..7) mitführen, damit der Builder sie
+        // zurückschreiben kann. Nur gesetzt, wenn tatsächlich belegt — der
+        // Builder schreibt fehlende Slots ohnehin als 0.
+        const chord = [
+          safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET),
+          safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET + 1),
+          safeU8(recOffsetWithinPart + ELECTRIBE_REAL_STEP_CHORD_NOTES_OFFSET + 2),
+        ];
+        if (chord.some((n) => n !== 0)) steps[s].chordNotes = chord;
       } else {
         steps[s] = { active: false, velocity: 0 };
       }

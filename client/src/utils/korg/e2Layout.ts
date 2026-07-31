@@ -134,6 +134,16 @@ export const E2_STEP_VELOCITY_OFFSET = 2;
 export const E2_STEP_GATE_OFFSET = 3;
 /** gate-length @ +4. */
 export const E2_STEP_GATELEN_OFFSET = 4;
+/**
+ * Chord-Noten 2..4 @ +5..+7 (0 = unbenutzt, sonst MIDI-Note ≤ 127).
+ *
+ * v3.308 — aus der Werksbank e2s-2016 abgeleitet: 4 392 aktive Stock-Steps
+ * tragen dort Zusatznoten (z. B. `01 41 60 01 2e 30 …` = Zweiklang), Werte
+ * gehen nie über 127. Bytes +8..+11 sind dagegen in allen 256 000
+ * Stock-Records 0 (Reserved).
+ */
+export const E2_STEP_CHORD_NOTES_OFFSET = 5;
+export const E2_STEP_CHORD_NOTE_COUNT = 3;
 
 /** Byte-Offset des Pattern-Slots `i` (0..249) im AllPat-Container. */
 export function e2AllpatSlotOffset(index: number): number {

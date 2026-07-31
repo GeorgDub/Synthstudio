@@ -145,6 +145,85 @@ describe("verifyE2AllpatBank — Builder-Output", () => {
     expect(body[s0 + 4]).toBe(1); // Gate-Länge min 1
   });
 
+  it("v3.308: chordNotes landen in den Bytes 5..7 (geclampt, 0 = unbenutzt)", () => {
+    const body = buildE2PatternBody({
+      name: "Chord",
+      bpm: 120,
+      stepLength: 16,
+      parts: [
+        {
+          steps: [
+            { active: true, note: 0x41, chordNotes: [0x2e, 0x30, 300] },
+            { active: true }, // kein Akkord → 0 0 0
+          ],
+        },
+      ],
+    });
+    const s0 = E2_PART_TABLE_OFFSET + E2_PART_SEQ_OFFSET;
+    expect([body[s0 + 5], body[s0 + 6], body[s0 + 7]]).toEqual([0x2e, 0x30, 127]);
+    expect([body[s0 + 12 + 5], body[s0 + 12 + 6], body[s0 + 12 + 7]]).toEqual([0, 0, 0]);
+  });
+
+  it.skipIf(!hasStock)(
+    "v3.308: Stock-Akkorde überleben den Parse→Build-Roundtrip byte-genau",
+    async () => {
+      const { parseElectribeAllPatBank } = await import(
+        "../../client/src/utils/electribeImport"
+      );
+      const stock = new Uint8Array(fs.readFileSync(STOCK_BANK));
+      const bank = parseElectribeAllPatBank(stock);
+      // Alle Steps mit Chord-Noten einsammeln (Werksbank: 4392 aktive Steps).
+      let chordSteps = 0;
+      let checked = 0;
+      for (let pi = 0; pi < bank.patterns.length; pi++) {
+        const pat = bank.patterns[pi];
+        const hasChord = pat.parts.some((part) =>
+          part.steps.some((s) => Array.isArray(s.chordNotes))
+        );
+        if (!hasChord) continue;
+        chordSteps += pat.parts.reduce(
+          (n, part) => n + part.steps.filter((s) => s.chordNotes).length,
+          0
+        );
+        if (checked < 5) {
+          // Roundtrip: geparste Steps in den Overlay-Builder füttern und die
+          // Chord-Bytes gegen die Original-Body-Bytes prüfen.
+          const bodyOff = e2AllpatSlotOffset(pi);
+          const orig = stock.subarray(bodyOff, bodyOff + 0x4000);
+          const rebuilt = buildE2PatternBody({
+            name: pat.name,
+            bpm: pat.bpm,
+            stepLength: (pat.stepLength === 32 ? 32 : pat.stepLength === 64 ? 64 : 16),
+            parts: pat.parts.map((part) => ({
+              steps: part.steps.map((s) => ({
+                active: s.active,
+                note: s.note,
+                velocity: s.velocity,
+                gate: s.gate,
+                gateLength: s.gateLength,
+                chordNotes: s.chordNotes,
+              })),
+            })),
+          });
+          for (let p = 0; p < 16; p++) {
+            for (let s = 0; s < 64; s++) {
+              const so = E2_PART_TABLE_OFFSET + p * 0x330 + E2_PART_SEQ_OFFSET + s * 12;
+              if (orig[so] !== 1) continue; // nur aktive Steps vergleichen
+              expect(
+                [rebuilt[so + 5], rebuilt[so + 6], rebuilt[so + 7]],
+                `slot ${pi} part ${p} step ${s} chord bytes`
+              ).toEqual([orig[so + 5], orig[so + 6], orig[so + 7]]);
+            }
+          }
+          checked++;
+        }
+      }
+      // Die Werksbank trägt Akkorde auf tausenden Steps — der Parser muss sie sehen.
+      expect(chordSteps).toBeGreaterThan(4000);
+      expect(checked).toBe(5);
+    }
+  );
+
   it("v3.307: gate/gateLength aus dem Input landen in den Bytes", () => {
     const body = buildE2PatternBody({
       name: "Gate",

@@ -128,6 +128,8 @@ const STEP_NOTE = 1;
 const STEP_VELOCITY = 2;
 const STEP_GATE = 3;
 const STEP_GATELEN = 4;
+/** v3.308: Chord-Noten 2..4 @ bytes 5..7 (0 = unbenutzt). */
+const STEP_CHORD = 5;
 
 // step-record defaults (match the normalized template / observed real files)
 const DEFAULT_NOTE = 0x48; // C5
@@ -300,6 +302,13 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
           127,
           DEFAULT_GATELEN
         );
+        // v3.308: Chord-Noten 2..4 (bytes 5..7; 0 = unbenutzt). Die Werksbank
+        // e2s-2016 trägt sie auf 4 392 aktiven Steps — vorher gingen sie bei
+        // jedem Re-Export verloren (Template-Bytes blieben einfach 0).
+        const chord = Array.isArray(step.chordNotes) ? step.chordNotes : [];
+        for (let c = 0; c < 3; c++) {
+          body[so + STEP_CHORD + c] = clampInt(chord[c], 0, 127, 0);
+        }
       } else {
         // canonical inactive record (template already matches; enforce for safety)
         body[so + STEP_TRIGGER] = 0x00;
