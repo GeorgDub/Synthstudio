@@ -619,7 +619,11 @@ function buildKorgSubchunk(
 
   // Fixed-value fields the device expects (Oe2sSLE "_UFix"; verified constant
   // across real factory/user banks). Oe2sSLE warns if these differ → set them.
-  chunk[bodyOffset + 0x1d] = 0x02;
+  // v3.316-Fix: +0x1D ist KEIN Fix-Byte, sondern das MSB von importNum
+  // (u16 @0x1C = sampleNumber+50)! In den Referenz-Banken lagen alle
+  // importNums zufaellig in 0x200..0x2FF, daher sah das Byte konstant 0x02
+  // aus. Der Hardcode hat ab sampleNumber 718 (importNum >= 0x300) das MSB
+  // zerstoert — Befund beim Bau der 233-Slot-Bank "hunnel" (Slots bis 733).
   chunk[bodyOffset + 0x21] = 0x7f;
   chunk[bodyOffset + 0x23] = 0x01;
   chunk[bodyOffset + 0x4b] = 0x01;

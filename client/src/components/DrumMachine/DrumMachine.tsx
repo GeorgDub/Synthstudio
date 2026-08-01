@@ -114,6 +114,7 @@ import {
 } from "@/utils/e2sExport";
 import { verifyE2AllpatBank } from "@/utils/korg/e2AllpatVerify";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
+import { buildE2ExportGuide, downloadGuideMarkdown } from "@/utils/e2ExportGuide";
 import { wrapPatternBodyAsFile } from "@/utils/korg/e2NativeSysex";
 import { requestPatternFromDevice, sendPatternToDevice } from "@/audio/E2NativeSysexTransfer";
 import { useElectron } from "../../../../electron/useElectron";
@@ -4851,12 +4852,19 @@ function DrumMachineInner({
                       .slice(0, 60) || "pattern";
                   const filename = `${safeName}.e2spat`;
 
+                  // v3.314: Zuweisungsdatei — was das .e2spat NICHT trägt
+                  // (Sample-Zuordnung, Channel-FX) zum Nachbauen am Gerät.
+                  const guide = buildE2ExportGuide([currentPattern], {
+                    title: filename,
+                  });
+
                   if (electron.isElectron) {
                     const result = await electron.saveE2Pattern(
                       filename,
                       buffer
                     );
                     if (result.success) {
+                      downloadGuideMarkdown(`${safeName}-zuweisung.md`, guide);
                       toast(`E2 Pattern gespeichert: ${result.filePath}`, {
                         kind: "success",
                       });
@@ -4878,6 +4886,7 @@ function DrumMachineInner({
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
+                    downloadGuideMarkdown(`${safeName}-zuweisung.md`, guide);
                     toast(`E2 Pattern heruntergeladen: ${filename}`, {
                       kind: "success",
                     });
@@ -4929,6 +4938,11 @@ function DrumMachineInner({
                     allPatterns.length > 250 ? allPatterns.length - 250 : 0;
 
                   const filename = "synthstudio-bank.e2sallpat";
+                  // v3.314: Zuweisungsdatei für die ganze Bank (Sample-
+                  // Zuordnung + Channel-FX zum Nachbauen am Gerät).
+                  const guide = buildE2ExportGuide(allPatterns.slice(0, 250), {
+                    title: filename,
+                  });
 
                   if (electron.isElectron) {
                     const result = await electron.saveE2AllPat(
@@ -4936,6 +4950,7 @@ function DrumMachineInner({
                       buffer
                     );
                     if (result.success) {
+                      downloadGuideMarkdown("synthstudio-bank-zuweisung.md", guide);
                       toast(
                         `E2 Pattern-Bank gespeichert (${e2Inputs.length} Patterns${dropped ? `, ${dropped} übersprungen` : ""}): ${result.filePath}`,
                         { kind: "success" }
@@ -4957,6 +4972,7 @@ function DrumMachineInner({
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
+                    downloadGuideMarkdown("synthstudio-bank-zuweisung.md", guide);
                     toast(
                       `E2 Pattern-Bank heruntergeladen (${e2Inputs.length} Patterns${dropped ? `, ${dropped} übersprungen` : ""}): ${filename}`,
                       { kind: "success" }
