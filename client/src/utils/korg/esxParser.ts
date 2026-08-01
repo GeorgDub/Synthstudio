@@ -958,6 +958,8 @@ function decodeDrumPart(
       pitch: number;
       fxAmount: number;
       egTime: number;
+      fxSend: boolean;
+      fxSelect: number;
       filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
@@ -1007,6 +1009,8 @@ function decodeStretchSlicePart(
       pitch: number;
       fxAmount: number;
       egTime: number;
+      fxSend: boolean;
+      fxSelect: number;
       filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
