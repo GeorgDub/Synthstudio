@@ -143,6 +143,13 @@ export interface E2PartInput {
   /** 0..127 — Effect-Send. Default 0. */
   fxSend?: number;
   /**
+   * v3.312 — Amp-EG-Zeit (EG Decay/Release) @ part+0x15. 0..127, Default 127
+   * (Init-Wert; klingt voll aus). ESX-Import: das Part-egtime-Byte trug die
+   * perkussiven Hüllkurven — ohne Übernahme klangen kurze ESX-Parts auf dem
+   * E2S dauerhaft lang und verschoben den gehörten Mix.
+   */
+  egTime?: number;
+  /**
    * v3.288: Part-Mute-Zustand. Wird beim Export in das E2-Pattern geschrieben
    * (Offset aus verifizierter Reverse-Eng), damit die exportierte Bank die
    * Mutes wie im Quell-Pattern hat. Default false.

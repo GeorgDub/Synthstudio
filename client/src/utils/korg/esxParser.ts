@@ -255,6 +255,13 @@ export interface EsxPart {
   pitch: number;
   /** 0..127. */
   fxAmount: number;
+  /**
+   * v3.312 — Amp-EG-Zeit (egtime) 0..127, 127 = klingt voll aus. Layout
+   * (lammas/electribe drumpart.js + open-electribe-editor): Drum/Keyboard
+   * @+11, Stretch/Slice @+9 (Block um -2 verschoben). Traegt die perkussiven
+   * Huellkurven — Verlust verschiebt den gehoerten Mix auf dem E2S.
+   */
+  egTime?: number;
   /** v3.293: Verifizierte Per-Part Filter/Mod-Werte (siehe EsxPartFilter). */
   filter?: EsxPartFilter;
   /** Trigger-Steps, Laenge === ESX1_DEFAULT_STEPS. */
@@ -283,6 +290,8 @@ export interface EsxKeyboardPart {
   volume: number;
   /** 0..127 (64 = center). */
   pan: number;
+  /** v3.312 — Amp-EG-Zeit (egtime @+11), 0..127. */
+  egTime?: number;
   /** 128 Note-Bytes (roh — die Note-Semantik ist nicht öffentlich RE-d). */
   note: Uint8Array;
   /** 128 Gate-Bytes (roh — Gate-Länge pro Step). */
@@ -869,6 +878,7 @@ function decodeDrumPart(
       pan: number;
       pitch: number;
       fxAmount: number;
+      egTime: number;
       filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
@@ -881,6 +891,8 @@ function decodeDrumPart(
   const pitch = decodePitchByte(raw[partOff + 8] ?? ESX1_PITCH_NEUTRAL_RAW);
   const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  // v3.312: egtime @+11 (lammas drumpart.js: ...level@9, pan@10, egtime@11)
+  const egTime = Math.max(0, Math.min(127, raw[partOff + 11] ?? 127));
   const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_DRUM);
   const steps = bitmaskToSteps(raw, partOff + ESX1_PART_HEADER_BYTES);
   return {
@@ -889,6 +901,7 @@ function decodeDrumPart(
     pan,
     pitch,
     fxAmount: 0,
+    egTime,
     filter,
     steps,
   };
@@ -910,6 +923,7 @@ function decodeStretchSlicePart(
       pan: number;
       pitch: number;
       fxAmount: number;
+      egTime: number;
       filter: EsxPartFilter;
       steps: EsxStepEvent[];
     }
@@ -921,6 +935,8 @@ function decodeStretchSlicePart(
   const pitch = decodePitchByte(raw[partOff + 6] ?? ESX1_PITCH_NEUTRAL_RAW);
   const volume = Math.max(0, Math.min(127, raw[partOff + 7] ?? 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 8] ?? 64));
+  // v3.312: egtime @+9 (Stretch/Slice-Block um -2 verschoben, s. v3.293)
+  const egTime = Math.max(0, Math.min(127, raw[partOff + 9] ?? 127));
   const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_STRETCHSLICE);
   const steps = bitmaskToSteps(raw, partOff + ESX1_STRETCHSLICE_STEPS_OFFSET);
   return {
@@ -929,6 +945,7 @@ function decodeStretchSlicePart(
     pan,
     pitch,
     fxAmount: 0,
+    egTime,
     filter,
     steps,
   };
@@ -959,6 +976,9 @@ function decodeKeyboardPart(
   const { sampleId, off } = decodeSamplePointer(raw, partOff);
   const volume = Math.max(0, Math.min(127, raw[partOff + 9] ?? 100));
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
+  // v3.312: egtime @+11 — Keyboard teilt die Level/Pan/EG-Offsets mit Drum
+  // (nur der Filter-Sub-Block ist um +1 verschoben, s. v3.293).
+  const egTime = Math.max(0, Math.min(127, raw[partOff + 11] ?? 127));
   const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_KEYBOARD);
   const noteOff = partOff + ESX1_KEYBOARD_NOTE_OFFSET;
   const gateOff = partOff + ESX1_KEYBOARD_GATE_OFFSET;
@@ -978,6 +998,7 @@ function decodeKeyboardPart(
     sampleId: off ? 0 : sampleId,
     volume,
     pan,
+    egTime,
     note,
     gate,
     filter,
@@ -1092,6 +1113,7 @@ export function parseEsxPattern(
           pan: number;
           pitch: number;
           fxAmount: number;
+          egTime?: number;
           filter?: EsxPartFilter;
           steps: EsxStepEvent[];
         }
@@ -1124,10 +1146,28 @@ export function parseEsxPattern(
   for (let k = 0; k < ESX1_KEYBOARD_PART_COUNT; k++) {
     const kp = decodeKeyboardPart(raw, k);
     if (kp) {
-      const { steps, note, gate, sampleId, volume, pan, partIndex, filter } =
-        kp;
-      keyboardParts.push({ partIndex, sampleId, volume, pan, note, gate });
-      pushPart({ sampleId, volume, pan, pitch: 0, fxAmount: 0, filter, steps });
+      const {
+        steps,
+        note,
+        gate,
+        sampleId,
+        volume,
+        pan,
+        egTime,
+        partIndex,
+        filter,
+      } = kp;
+      keyboardParts.push({ partIndex, sampleId, volume, pan, egTime, note, gate });
+      pushPart({
+        sampleId,
+        volume,
+        pan,
+        pitch: 0,
+        fxAmount: 0,
+        egTime,
+        filter,
+        steps,
+      });
     } else {
       pushPart(undefined);
     }

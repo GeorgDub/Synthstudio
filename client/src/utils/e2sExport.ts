@@ -117,6 +117,11 @@ const PART_VOLUME_OFF = 0x18;
 /** Amp Pan (i8, 0 = Center) @ +0x19 — v3.297-Korrektur: vorher u8@0x22
  *  (= IFX Edit). UI-0..127 wird via e2PanUiToDevice konvertiert. */
 const PART_PAN_OFF = 0x19;
+/** EG Decay/Release (u8) @ +0x15 (Korg TABLE 6 "EG"). Init/Default 127 =
+ *  klingt voll aus. v3.312: nimmt beim ESX-Import das Part-egtime auf —
+ *  vorher blieben alle Parts auf 127 und kurze perkussive ESX-Hüllkurven
+ *  gingen verloren (Gerätebefund: Mix klingt anders als auf der ESX). */
+const PART_EGTIME_OFF = 0x15;
 const PART_STEPS_OFF = 0x30;
 const STEP_RECORD_SIZE = 12;
 const STEPS_PER_PART = 64;
@@ -257,6 +262,11 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
       body[partStart + PART_PAN_OFF] = e2PanUiToDevice(
         clampInt(part.pan, 0, 127, 64)
       );
+    }
+    // v3.312: Amp-EG-Zeit @ +0x15 — nur überlagern, wenn der Aufrufer einen
+    // Wert liefert (ESX-Import); sonst bleibt der Template-Wert (127) stehen.
+    if (typeof part.egTime === "number") {
+      body[partStart + PART_EGTIME_OFF] = clampInt(part.egTime, 0, 127, 127);
     }
     // Per-part sample reference @ +0x08 (u16 LE). Only written when the caller
     // provides one (e.g. repointing parts to imported user samples at 501+);

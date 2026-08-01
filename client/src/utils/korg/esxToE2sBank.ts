@@ -150,6 +150,10 @@ export function convertEsxToE2sBank(
       return {
         volume: part.volume,
         pan: part.pan,
+        // v3.312: Amp-EG-Zeit (ESX egtime) mitnehmen — sonst stehen alle
+        // E2-Parts auf Decay 127 und kurze perkussive Hüllkurven gehen
+        // verloren (Gerätebefund: Mix klingt anders als auf der ESX).
+        egTime: part.egTime,
         sampleId: mapped ? mapped.hwNumber : undefined,
         // v3.288: Mute-Zustand aus dem ESX-Pattern in den E2-Export übernehmen.
         muted: part.muted === true,
