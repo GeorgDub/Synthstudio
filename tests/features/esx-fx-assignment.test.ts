@@ -68,8 +68,11 @@ const ESX_PATH = path.join(__dirname, "..", "..", "Korg ESX files", "lukn kicks.
 
       const r = convertEsxToE2sBank(esx);
       expect(r.mapping).toContain("## FX-Zuweisung (am Gerät nachbauen)");
-      expect(r.mapping).toContain("Compressor");
-      expect(r.mapping).toMatch(/- Part \d+.* → FX[123] \(/);
+      expect(r.mapping).toContain("Compressor [Sens ");
+      // v3.315: EQ als Low/High relativ zur Mitte (Pattern 1: 99/67 → +35/+3)
+      expect(r.mapping).toContain("EQ [Low +35 (Boost) / High +3 (≈neutral)]");
+      expect(r.mapping).toContain("EQ-Lesehilfe");
+      expect(r.mapping).toMatch(/- Part \d+.* → FX[123]: /);
     });
   }
 );
