@@ -262,6 +262,16 @@ export interface EsxPart {
    * Huellkurven — Verlust verschiebt den gehoerten Mix auf dem E2S.
    */
   egTime?: number;
+  /**
+   * v3.313 — FX-Send an/aus (fxflags bit 2). fxflags-Byte: Drum/Keyboard
+   * @+13, Stretch/Slice @+11. Bit-Layout lt. lammas Common.FXFlags:
+   * bits 0-1 = FxSelect (FX1/2/3), bit 2 = FxSend, bit 3 = Roll,
+   * bit 4 = AmpEg, bit 5 = Reverse. Ein Part mit FxSend=an laeuft auf der
+   * ESX insert-artig DURCH den gewaehlten FX-Prozessor.
+   */
+  fxSend?: boolean;
+  /** v3.313 — Gewaehlter FX-Prozessor 0..2 (= FX1..FX3), fxflags bits 0-1. */
+  fxSelect?: number;
   /** v3.293: Verifizierte Per-Part Filter/Mod-Werte (siehe EsxPartFilter). */
   filter?: EsxPartFilter;
   /** Trigger-Steps, Laenge === ESX1_DEFAULT_STEPS. */
@@ -292,6 +302,10 @@ export interface EsxKeyboardPart {
   pan: number;
   /** v3.312 — Amp-EG-Zeit (egtime @+11), 0..127. */
   egTime?: number;
+  /** v3.313 — FX-Send an/aus (fxflags @+13, bit 2). */
+  fxSend?: boolean;
+  /** v3.313 — Gewaehlter FX-Prozessor 0..2 (fxflags bits 0-1). */
+  fxSelect?: number;
   /** 128 Note-Bytes (roh — die Note-Semantik ist nicht öffentlich RE-d). */
   note: Uint8Array;
   /** 128 Gate-Bytes (roh — Gate-Länge pro Step). */
@@ -343,8 +357,55 @@ export interface EsxPattern {
    * daten). Additiv zu `parts` — verifiziert gegen open-electribe-editor.
    */
   keyboardParts: EsxKeyboardPart[];
+  /**
+   * v3.313 — Die 3 Pattern-FX-Prozessoren (FX1..FX3) @ Pattern+1148, je 4 B
+   * (fxtype, edit1, edit2, motionseqstatus — lammas fxparam.js). Empirisch
+   * verifiziert (lukn kicks Pattern 1: EQ 99/67 · Compressor 62/38 ·
+   * Short Delay 127/0 — alles plausibel dekodiert).
+   */
+  fx?: EsxFxSlot[];
+  /**
+   * v3.313 — FX-Chain-Routing @ Pattern-Byte 12 (lammas pattern.js FXChain):
+   * 0 = keine Kette, 1 = FX1→FX2, 2 = FX2→FX3, 3 = FX1→FX2→FX3.
+   */
+  fxChain?: number;
   /** Rohbytes des 4280-Byte Pattern-Blocks. Hilft beim Debugging + Diff. */
   raw?: Uint8Array;
+}
+
+/** v3.313 — Ein Pattern-FX-Prozessor (fxtype + 2 Edit-Parameter). */
+export interface EsxFxSlot {
+  /** 0..15 (siehe ESX_FX_TYPE_NAMES). */
+  fxType: number;
+  /** Edit-1-Parameter 0..127. */
+  edit1: number;
+  /** Edit-2-Parameter 0..127. */
+  edit2: number;
+}
+
+/** v3.313 — ESX-FX-Typnamen (lammas fxparam.js Enum 0..15). */
+export const ESX_FX_TYPE_NAMES: readonly string[] = [
+  "Reverb",
+  "BPM Sync Delay",
+  "Short Delay",
+  "Mod Delay",
+  "Grain Shifter",
+  "Cho/Flg",
+  "Phaser",
+  "Ring Mod",
+  "Talking Mod",
+  "Pitch Shifter",
+  "Compressor",
+  "Distortion",
+  "Decimator",
+  "EQ",
+  "LPF",
+  "HPF",
+];
+
+/** v3.313 — Name eines ESX-FX-Typs (unbekannte Werte → "FX <n>"). */
+export function esxFxTypeName(fxType: number): string {
+  return ESX_FX_TYPE_NAMES[fxType] ?? `FX ${fxType}`;
 }
 
 /**
@@ -688,6 +749,24 @@ const ESX1_STRETCHSLICE_STRIDE = 32;
 const ESX1_STRETCHSLICE_STEPS_OFFSET = 16;
 const ESX1_PITCH_NEUTRAL_RAW = 0x40;
 
+// v3.313: Pattern-FX (lammas fxparam.js/pattern.js). 3 Prozessoren à 4 Byte
+// direkt hinter dem Accent-Part (1130 + 18 = 1148); FX-Chain @ Byte 12.
+const ESX1_FXPARAM_OFFSET = 1148;
+const ESX1_FXPARAM_STRIDE = 4;
+const ESX1_FX_SLOT_COUNT = 3;
+const ESX1_FXCHAIN_OFFSET = 12;
+// fxflags-Bits (lammas Common.FXFlags): bits 0-1 FxSelect, bit 2 FxSend.
+const ESX1_FXFLAGS_SELECT_MASK = 0x03;
+const ESX1_FXFLAGS_SEND_BIT = 0x04;
+
+/** v3.313: fxflags-Byte → { fxSend, fxSelect }. */
+function decodeFxFlags(byte: number): { fxSend: boolean; fxSelect: number } {
+  return {
+    fxSend: (byte & ESX1_FXFLAGS_SEND_BIT) !== 0,
+    fxSelect: byte & ESX1_FXFLAGS_SELECT_MASK,
+  };
+}
+
 // ─── Mute-Status (Pattern-Header) ────────────────────────────────────────────
 // PatternHeader-Offset 16: 16-Bit muteStatus (per-Part). Storage-Order der
 // Parts: Drum 0..8 → Bits 0..8, Keyboard 0..1 → Bits 9..10, Stretch/Slice 0..2
@@ -893,6 +972,8 @@ function decodeDrumPart(
   const pan = Math.max(0, Math.min(127, raw[partOff + 10] ?? 64));
   // v3.312: egtime @+11 (lammas drumpart.js: ...level@9, pan@10, egtime@11)
   const egTime = Math.max(0, Math.min(127, raw[partOff + 11] ?? 127));
+  // v3.313: fxflags @+13 (egtime@11, startpoint@12, fxflags@13)
+  const { fxSend, fxSelect } = decodeFxFlags(raw[partOff + 13] ?? 0);
   const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_DRUM);
   const steps = bitmaskToSteps(raw, partOff + ESX1_PART_HEADER_BYTES);
   return {
@@ -902,6 +983,8 @@ function decodeDrumPart(
     pitch,
     fxAmount: 0,
     egTime,
+    fxSend,
+    fxSelect,
     filter,
     steps,
   };
@@ -937,6 +1020,8 @@ function decodeStretchSlicePart(
   const pan = Math.max(0, Math.min(127, raw[partOff + 8] ?? 64));
   // v3.312: egtime @+9 (Stretch/Slice-Block um -2 verschoben, s. v3.293)
   const egTime = Math.max(0, Math.min(127, raw[partOff + 9] ?? 127));
+  // v3.313: fxflags @+11 (Block -2 gegenueber Drum: 13-2)
+  const { fxSend, fxSelect } = decodeFxFlags(raw[partOff + 11] ?? 0);
   const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_STRETCHSLICE);
   const steps = bitmaskToSteps(raw, partOff + ESX1_STRETCHSLICE_STEPS_OFFSET);
   return {
@@ -946,6 +1031,8 @@ function decodeStretchSlicePart(
     pitch,
     fxAmount: 0,
     egTime,
+    fxSend,
+    fxSelect,
     filter,
     steps,
   };
@@ -979,6 +1066,8 @@ function decodeKeyboardPart(
   // v3.312: egtime @+11 — Keyboard teilt die Level/Pan/EG-Offsets mit Drum
   // (nur der Filter-Sub-Block ist um +1 verschoben, s. v3.293).
   const egTime = Math.max(0, Math.min(127, raw[partOff + 11] ?? 127));
+  // v3.313: fxflags @+13 (geteilte Fx-Offsets mit Drum, s. v3.293)
+  const { fxSend, fxSelect } = decodeFxFlags(raw[partOff + 13] ?? 0);
   const filter = decodeEsxFilter(raw, partOff, ESX_FILTER_LAYOUT_KEYBOARD);
   const noteOff = partOff + ESX1_KEYBOARD_NOTE_OFFSET;
   const gateOff = partOff + ESX1_KEYBOARD_GATE_OFFSET;
@@ -999,6 +1088,8 @@ function decodeKeyboardPart(
     volume,
     pan,
     egTime,
+    fxSend,
+    fxSelect,
     note,
     gate,
     filter,
@@ -1114,6 +1205,8 @@ export function parseEsxPattern(
           pitch: number;
           fxAmount: number;
           egTime?: number;
+          fxSend?: boolean;
+          fxSelect?: number;
           filter?: EsxPartFilter;
           steps: EsxStepEvent[];
         }
@@ -1154,10 +1247,22 @@ export function parseEsxPattern(
         volume,
         pan,
         egTime,
+        fxSend,
+        fxSelect,
         partIndex,
         filter,
       } = kp;
-      keyboardParts.push({ partIndex, sampleId, volume, pan, egTime, note, gate });
+      keyboardParts.push({
+        partIndex,
+        sampleId,
+        volume,
+        pan,
+        egTime,
+        fxSend,
+        fxSelect,
+        note,
+        gate,
+      });
       pushPart({
         sampleId,
         volume,
@@ -1165,6 +1270,8 @@ export function parseEsxPattern(
         pitch: 0,
         fxAmount: 0,
         egTime,
+        fxSend,
+        fxSelect,
         filter,
         steps,
       });
@@ -1172,6 +1279,19 @@ export function parseEsxPattern(
       pushPart(undefined);
     }
   }
+
+  // v3.313: Pattern-FX (3 Prozessoren @1148, je fxtype/edit1/edit2) + Chain
+  // (Byte 12). Werte defensiv geklemmt; motionseqstatus (4. Byte) ignoriert.
+  const fx: EsxFxSlot[] = [];
+  for (let f = 0; f < ESX1_FX_SLOT_COUNT; f++) {
+    const fo = ESX1_FXPARAM_OFFSET + f * ESX1_FXPARAM_STRIDE;
+    fx.push({
+      fxType: (raw[fo] ?? 0) & 0x0f,
+      edit1: Math.min(127, raw[fo + 1] ?? 0),
+      edit2: Math.min(127, raw[fo + 2] ?? 0),
+    });
+  }
+  const fxChain = (raw[ESX1_FXCHAIN_OFFSET] ?? 0) & 0x03;
 
   return {
     index: patternIndex,
@@ -1184,6 +1304,8 @@ export function parseEsxPattern(
     muteMask,
     parts,
     keyboardParts,
+    fx,
+    fxChain,
     raw,
   };
 }

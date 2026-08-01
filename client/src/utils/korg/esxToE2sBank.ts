@@ -16,6 +16,7 @@
  * überzähligen weggelassen (Report) — das verhindert den "Import-Fehler".
  */
 
+import { esxFxTypeName } from "./esxParser";
 import type { EsxBank, EsxPattern, EsxSample } from "./esxParser";
 import { buildE2sBank, type E2sSlotInput } from "./e2sBankBuilder";
 import { buildE2AllPatFile } from "../e2sExport";
@@ -202,6 +203,58 @@ export function convertEsxToE2sBank(
   lines.push("|---:|---|---:|");
   for (const [esxIdx, m] of [...sampleMap.entries()].sort((a, b) => a[1].hwNumber - b[1].hwNumber)) {
     lines.push(`| ${m.hwNumber} | ${m.name} | ${esxIdx} |`);
+  }
+
+  // v3.313: FX-Zuweisung — die ESX routet Parts insert-artig durch ihre 3
+  // Master-FX; auf der E2S muss das pro Part von Hand (IFX) nachgebaut werden.
+  // Ohne diese Liste klingen die betroffenen Parts trocken/leiser als im
+  // Original (Geraetebefund 2026-08-01).
+  const CHAIN_LABEL = ["keine Kette", "FX1→FX2", "FX2→FX3", "FX1→FX2→FX3"];
+  const fxSections: string[] = [];
+  selected.forEach((p, bankIdx) => {
+    const routed = p.parts.filter(
+      (pt) => pt.fxSend === true && pt.steps.some((s) => s.active)
+    );
+    if (routed.length === 0) return;
+    const fxDesc = (p.fx ?? [])
+      .map(
+        (f, i) =>
+          `FX${i + 1} = ${esxFxTypeName(f.fxType)} (${f.edit1}/${f.edit2})`
+      )
+      .join(" · ");
+    fxSections.push(`### Pattern ${bankIdx + 1}${p.name ? ` „${p.name}"` : ""}`);
+    fxSections.push(`Prozessoren: ${fxDesc} · Chain: ${CHAIN_LABEL[p.fxChain ?? 0]}`);
+    for (const pt of routed) {
+      const sel = typeof pt.fxSelect === "number" ? pt.fxSelect : 0;
+      const fxSlot = (p.fx ?? [])[sel];
+      const fxName = fxSlot ? esxFxTypeName(fxSlot.fxType) : `FX${sel + 1}`;
+      const sample = sampleMap.get(pt.sampleId);
+      const label = sample ? ` (${sample.hwNumber} ${sample.name})` : "";
+      fxSections.push(
+        `- Part ${pt.partIndex + 1}${label} → FX${sel + 1} (${fxName}` +
+          (fxSlot ? ` ${fxSlot.edit1}/${fxSlot.edit2}` : "") +
+          `)`
+      );
+    }
+    fxSections.push("");
+  });
+  if (fxSections.length > 0) {
+    lines.push("");
+    lines.push("## FX-Zuweisung (am Gerät nachbauen)");
+    lines.push("");
+    lines.push(
+      "Die ESX-1 schickt diese Parts DURCH ihre Master-FX (insert-artig — das"
+    );
+    lines.push(
+      "macht sie lauter/dichter). Die E2S bekommt keine automatische"
+    );
+    lines.push(
+      "FX-Zuweisung: pro Part am Gerät ein passendes IFX wählen und AN schalten,"
+    );
+    lines.push("sonst klingen genau diese Parts trockener/leiser als im Original.");
+    lines.push("Edit-Werte (x/y) sind die ESX-Regler Edit1/Edit2 als Anhaltspunkt.");
+    lines.push("");
+    lines.push(...fxSections);
   }
   const mapping = lines.join("\n") + "\n";
 
