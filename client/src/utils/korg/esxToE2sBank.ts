@@ -16,6 +16,7 @@
  * überzähligen weggelassen (Report) — das verhindert den "Import-Fehler".
  */
 
+import { esxFxTypeName } from "./esxParser";
 import type { EsxBank, EsxPattern, EsxSample } from "./esxParser";
 import { buildE2sBank, type E2sSlotInput } from "./e2sBankBuilder";
 import { buildE2AllPatFile } from "../e2sExport";
@@ -150,6 +151,10 @@ export function convertEsxToE2sBank(
       return {
         volume: part.volume,
         pan: part.pan,
+        // v3.312: Amp-EG-Zeit (ESX egtime) mitnehmen — sonst stehen alle
+        // E2-Parts auf Decay 127 und kurze perkussive Hüllkurven gehen
+        // verloren (Gerätebefund: Mix klingt anders als auf der ESX).
+        egTime: part.egTime,
         sampleId: mapped ? mapped.hwNumber : undefined,
         // v3.288: Mute-Zustand aus dem ESX-Pattern in den E2-Export übernehmen.
         muted: part.muted === true,
@@ -198,6 +203,97 @@ export function convertEsxToE2sBank(
   lines.push("|---:|---|---:|");
   for (const [esxIdx, m] of [...sampleMap.entries()].sort((a, b) => a[1].hwNumber - b[1].hwNumber)) {
     lines.push(`| ${m.hwNumber} | ${m.name} | ${esxIdx} |`);
+  }
+
+  // v3.313: FX-Zuweisung — die ESX routet Parts insert-artig durch ihre 3
+  // Master-FX; auf der E2S muss das pro Part von Hand (IFX) nachgebaut werden.
+  // Ohne diese Liste klingen die betroffenen Parts trocken/leiser als im
+  // Original (Geraetebefund 2026-08-01). v3.315: Regler-Labels statt roher
+  // Edit1/Edit2-Zahlen; EQ als Low/High relativ zur Mitte (2-Band, KEIN Mid).
+  const CHAIN_LABEL = ["keine Kette", "FX1→FX2", "FX2→FX3", "FX1→FX2→FX3"];
+  // Edit1/Edit2-Beschriftungen lt. ESX-1-Manual; Typen ohne gesichertes
+  // Label (Grain Shifter, Talking Mod) bleiben bei "Edit1/Edit2".
+  const EDIT_LABELS: Record<number, [string, string]> = {
+    0: ["Time", "Level"],
+    1: ["Beat", "Depth"],
+    2: ["Time", "Depth"],
+    3: ["Time", "Depth"],
+    5: ["Speed", "Depth"],
+    6: ["Speed", "Depth"],
+    7: ["Freq", "Balance"],
+    9: ["Pitch", "Balance"],
+    10: ["Sens", "Attack"],
+    11: ["Gain", "Level"],
+    12: ["Freq", "Balance"],
+    14: ["Cutoff", "Reso"],
+    15: ["Cutoff", "Reso"],
+  };
+  const eqBand = (val: number, band: string): string => {
+    const d = val - 64; // 64 = Reglermitte = neutral
+    const qual = Math.abs(d) <= 5 ? "≈neutral" : d > 0 ? "Boost" : "Cut";
+    return `${band} ${d >= 0 ? "+" : ""}${d} (${qual})`;
+  };
+  const fxSlotDesc = (f: { fxType: number; edit1: number; edit2: number }): string => {
+    if (f.fxType === 13) {
+      // EQ: 2-Band — Edit1 = LOW, Edit2 = HIGH (ESX-1-Manual), kein Mid.
+      return `EQ [${eqBand(f.edit1, "Low")} / ${eqBand(f.edit2, "High")}]`;
+    }
+    const lab = EDIT_LABELS[f.fxType];
+    const name = esxFxTypeName(f.fxType);
+    return lab
+      ? `${name} [${lab[0]} ${f.edit1} / ${lab[1]} ${f.edit2}]`
+      : `${name} [Edit1 ${f.edit1} / Edit2 ${f.edit2}]`;
+  };
+  const fxSections: string[] = [];
+  selected.forEach((p, bankIdx) => {
+    const routed = p.parts.filter(
+      (pt) => pt.fxSend === true && pt.steps.some((s) => s.active)
+    );
+    if (routed.length === 0) return;
+    const fxDesc = (p.fx ?? [])
+      .map((f, i) => `FX${i + 1} = ${fxSlotDesc(f)}`)
+      .join(" · ");
+    fxSections.push(`### Pattern ${bankIdx + 1}${p.name ? ` „${p.name}"` : ""}`);
+    fxSections.push(`Prozessoren: ${fxDesc} · Chain: ${CHAIN_LABEL[p.fxChain ?? 0]}`);
+    for (const pt of routed) {
+      const sel = typeof pt.fxSelect === "number" ? pt.fxSelect : 0;
+      const fxSlot = (p.fx ?? [])[sel];
+      const sample = sampleMap.get(pt.sampleId);
+      const label = sample ? ` (${sample.hwNumber} ${sample.name})` : "";
+      fxSections.push(
+        `- Part ${pt.partIndex + 1}${label} → FX${sel + 1}: ` +
+          (fxSlot ? fxSlotDesc(fxSlot) : `FX${sel + 1}`)
+      );
+    }
+    fxSections.push("");
+  });
+  if (fxSections.length > 0) {
+    lines.push("");
+    lines.push("## FX-Zuweisung (am Gerät nachbauen)");
+    lines.push("");
+    lines.push(
+      "Die ESX-1 schickt diese Parts DURCH ihre Master-FX (insert-artig — das"
+    );
+    lines.push(
+      "macht sie lauter/dichter). Die E2S bekommt keine automatische"
+    );
+    lines.push(
+      "FX-Zuweisung: pro Part am Gerät ein passendes IFX wählen und AN schalten,"
+    );
+    lines.push("sonst klingen genau diese Parts trockener/leiser als im Original.");
+    lines.push("");
+    lines.push(
+      "**EQ-Lesehilfe:** Der ESX-EQ ist ein 2-Band-EQ — NUR Low und High, kein"
+    );
+    lines.push(
+      "Mid. Werte relativ zur Reglermitte (±0 = neutral); am E2S das IFX"
+    );
+    lines.push(
+      "„2band EQ“ verwenden (gleiche Logik). Andere FX: [Reglername Wert] ="
+    );
+    lines.push("ESX-Drehregler Edit1/Edit2 (0–127).");
+    lines.push("");
+    lines.push(...fxSections);
   }
   const mapping = lines.join("\n") + "\n";
 
