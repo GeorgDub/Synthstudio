@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.311.0",
+    version: "3.317.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -15797,6 +15797,28 @@ const INDEX = {
         "Hacktribe-Note-Map (TASK-281) braucht finale Hardware-Verifikation durch User (E2 Sampler am Geraet)."
       ],
       changed:   []
+    },
+    {
+      agent:     "host",
+      timestamp: "2026-08-09T00:00:00.000Z",
+      done: [
+        "TASK (User-Entscheidung nach Audit von Omnitribe/docs/hwtest/e2s_native_layer_bringup.md §3): Chord-Notes-Bug im Push-Pfad der DrumMachine-Buttons 'ihr Geraet'/'Gerat' behoben. stepToE2() in client/src/utils/korg/synthstudioToE2Pattern.ts:32-41 baute bisher nur {active, velocity, note} und liess StepData.chordNotes fallen, obwohl der Pull-Pfad (DrumMachine.tsx applyE2DecodedToActivePattern:2364-2367, v3.309) Akkord-Noten aktiv aus dem gepullten Body uebernimmt (stepChordNotes()). Ein gepulltes-dann-gepushtes Pattern verlor also stillschweigend jeden Akkord. Fix: chordNotes: step.chordNotes in stepToE2() ergaenzt — buildE2PatternBody() (e2sExport.ts) kannte das Byte-Layout (+0x05..+0x07, max. 3 Slots, 0..127 geclampt, nur bei aktiven Steps) bereits, kein neuer Encoder-Code noetig.",
+        "TDD befolgt: 2 neue Tests zuerst rot verifiziert (vitest run vor dem Fix zeigte genau 'carries chord notes through push -> decode' und 'more notes than the format holds are truncated to the first 3' fehlschlagend, erwartetes [] statt [64,67,71]/[10,20,30] — die 3 anderen neuen Edge-Case-Tests waren schon vor dem Fix gruen, weil sie leere Arrays erwarten). Nach dem Fix alle 5 gruen.",
+        "5 neue Tests in tests/features/korg-e2-pattern-push.test.ts (describe 'round-trip: chord notes (push must not drop them)'): Normalfall [64,67,71], leeres chordNotes ([] -> kein Akkord), 4 Noten bei nur 3 Format-Slots (Truncation auf die ersten 3, nachvollziehbar per bestehender buildE2PatternBody-Logik, nicht still), inaktiver Step mit Akkord-Daten (wird nicht geschrieben — matched das bestehende Verhalten fuer note/velocity/gate bei inaktiven Steps), kein chordNotes (unveraendertes Verhalten). Tests lesen ueber decodePatternBody()+stepChordNotes() (aus e2Sysex.ts) — derselbe Decode-Pfad, den DrumMachine.tsx im Pull-Handler tatsaechlich benutzt, nicht nur die (chordNotes-blinde) e2PatternToSynthstudio()-Huelle.",
+        "Bewusst NICHT angefasst (User-Entscheidung, separate Punkte aus dem Audit): Template-Overlay-Reset von Sample-Ref/Filter beim Push (Punkte 1/2 des Audits, dokumentiertes Design in e2sExport.ts-Kommentarkopf), fehlender isPlaying-Guard in useE2sDeviceStore.ts:112 (Punkt 6, separate Entscheidung).",
+        "Verifikation: pnpm check (tsc --noEmit) sauber. pnpm test (voller Vitest-Lauf): 526 Testdateien, 11493 Tests gruen, 37 skipped, 0 rot. pnpm build erfolgreich (nur vorbestehende Chunk-Size-/Dynamic-Import-Warnings, kein Bezug zur Aenderung). Playwright tests/web/e2-sysex-toolbar.spec.ts (Nachbar-Feature, deckt den alten Buttons-Pfad ab) 2/2 gruen unter CI_HEADLESS=1.",
+        "package.json + agents/INDEX.js project.version 3.316.0 -> 3.317.0 (war zuvor bereits auseinandergelaufen, 3.311.0 in INDEX.js vs 3.316.0 in package.json — mit dieser Aenderung wieder synchron)."
+      ],
+      next: [
+        "Omnitribe docs/hwtest/e2s_native_layer_bringup.md §3 (Sequencer-Push/Pull am echten Geraet) bleibt offen — der Fix behebt einen im Code-Audit gefundenen Roundtrip-Bug, ersetzt aber nicht den HW-Test der Buttons 'Geraet'/'Geraet' selbst (weiterhin ohne jede Test-Abdeckung ausserhalb dieses einen Encode/Decode-Roundtrips: kein Playwright-Spec, kein Test referenziert e2s-push-pattern/e2s-pull-pattern/handlePushPatternToDevice/handlePullPatternFromDevice).",
+        "Template-Overlay-Reset (Sample-Ref/Filter beim Push) und der unverdrahtete isPlaying-Guard bleiben offene, separate Entscheidungen — nicht in diesem Fix behandelt."
+      ],
+      changed: [
+        "client/src/utils/korg/synthstudioToE2Pattern.ts",
+        "tests/features/korg-e2-pattern-push.test.ts",
+        "package.json",
+        "agents/INDEX.js"
+      ]
     }
   ],
 
