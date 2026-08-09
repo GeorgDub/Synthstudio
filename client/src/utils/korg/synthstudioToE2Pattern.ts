@@ -7,7 +7,10 @@
  * Rein & seiteneffektfrei. Inverse der Import-Mappings:
  *  - stepCount → stepLength (16/32/64).
  *  - Part-Volume 0..1 → 0..127; Pan −1..+1 → 0..127 (64 = center).
- *  - Step: active/velocity 1:1; note = pitch + E2-Default-Note (0x48).
+ *  - Step: active/velocity 1:1; note = pitch + E2-Default-Note (0x48);
+ *    chordNotes 1:1 durchgereicht (buildE2PatternBody clamped/kürzt auf die
+ *    3 Chord-Slots, nur bei aktiven Steps geschrieben — v3.309-Symmetrie
+ *    zum Pull-Pfad, der stepChordNotes() aus dem gepullten Body anwendet).
  *  - sampleId: aus dem Part-Namen geparst ("#501" → 501), damit ein Import→Push-
  *    Round-Trip die Sample-Referenz erhält. Fehlt sie, bleibt der Slot leer.
  * buildE2PatternBody clamped note/velocity/pan/volume selbst auf gültige Ranges.
@@ -34,6 +37,13 @@ function stepToE2(step: StepData): E2StepInput {
     active: !!step.active,
     velocity: step.velocity,
     note: E2_DEFAULT_NOTE + (step.pitch ?? 0),
+    // v3.309 gave the pull path (DrumMachine.applyE2DecodedToActivePattern)
+    // chord-note support via stepChordNotes(decoded step) — but the push
+    // direction never carried StepData.chordNotes back into E2StepInput, so
+    // a pulled-then-pushed pattern silently lost its chords. buildE2PatternBody
+    // already knows how to encode this field (bytes +0x05..+0x07, max 3 notes,
+    // 0..127 clamped, only written for active steps) — just pass it through.
+    chordNotes: step.chordNotes,
   };
 }
 

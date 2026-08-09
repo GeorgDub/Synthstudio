@@ -5,7 +5,10 @@ import {
   parseSampleIdFromName,
 } from "../../client/src/utils/korg/synthstudioToE2Pattern";
 import { e2PatternToSynthstudio } from "../../client/src/utils/korg/e2PatternToSynthstudio";
-import { decodePatternBody } from "../../client/src/utils/korg/e2Sysex";
+import {
+  decodePatternBody,
+  stepChordNotes,
+} from "../../client/src/utils/korg/e2Sysex";
 import type { PatternData } from "../../client/src/audio/AudioEngine";
 import { DEFAULT_CHANNEL_FX } from "../../client/src/audio/AudioEngine";
 import {
@@ -155,6 +158,63 @@ describe("round-trip: SynthStudio → E2 body → decode → import", () => {
     expect(decoded.parts[0].pan).toBe(1); // hard left (±63-Clamp)
     expect(decoded.parts[1].pan).toBe(64); // center
     expect(decoded.parts[2].pan).toBe(127); // hard right
+  });
+});
+
+// v3.309 gave the pull path chord-note support (DrumMachine.tsx applies
+// stepChordNotes() from the decoded body). stepToE2() in
+// synthstudioToE2Pattern.ts never carried StepData.chordNotes into
+// E2StepInput, so pushing a pattern that was itself pulled from a device
+// silently dropped every chord — a one-way round-trip. This locks the fix
+// against the same decode path the pull handler actually uses.
+describe("round-trip: chord notes (push must not drop them)", () => {
+  function chordBody(chordNotes: number[] | undefined, active = true) {
+    const src = pattern({
+      stepCount: 16,
+      parts: [
+        part("Lead · #501", {
+          steps: [
+            { active, velocity: 100, pitch: 0, chordNotes },
+            { active: false, velocity: 100, pitch: 0 },
+          ],
+        }),
+      ],
+    });
+    return decodePatternBody(synthstudioPatternToBody(src));
+  }
+
+  it("carries chord notes through push → decode", () => {
+    const decoded = chordBody([64, 67, 71]);
+    expect(stepChordNotes(decoded.parts[0].steps[0])).toEqual([64, 67, 71]);
+  });
+
+  it("empty chordNotes encodes as no chord (not a crash, not stale data)", () => {
+    const decoded = chordBody([]);
+    expect(stepChordNotes(decoded.parts[0].steps[0])).toEqual([]);
+  });
+
+  it("more notes than the format holds are truncated to the first 3, not silently corrupted", () => {
+    // Byte layout only has 3 chord slots (+0x05..+0x07) — a 4th note has
+    // nowhere to go. buildE2PatternBody already truncates deterministically;
+    // this asserts the push path actually reaches that code instead of
+    // dropping the whole array before it gets there.
+    const decoded = chordBody([10, 20, 30, 40]);
+    expect(stepChordNotes(decoded.parts[0].steps[0])).toEqual([10, 20, 30]);
+  });
+
+  it("an inactive step's chord data is not written (matches the existing active-step gate)", () => {
+    // buildE2PatternBody only writes chord bytes inside the `step.active`
+    // branch; an inactive step resets bytes 0..4 and leaves 5..11 at the
+    // template's zero. Chord data on an inactive step is therefore dropped
+    // by design, same as note/velocity/gate — documented here, not assumed.
+    const decoded = chordBody([64, 67, 71], /* active */ false);
+    expect(decoded.parts[0].steps[0].active).toBe(false);
+    expect(stepChordNotes(decoded.parts[0].steps[0])).toEqual([]);
+  });
+
+  it("no chordNotes at all round-trips to no chord (unaffected by the fix)", () => {
+    const decoded = chordBody(undefined);
+    expect(stepChordNotes(decoded.parts[0].steps[0])).toEqual([]);
   });
 });
 
