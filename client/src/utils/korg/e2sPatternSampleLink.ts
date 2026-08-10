@@ -7,16 +7,42 @@
  * Verknüpft werden sie über die GERÄTE-SAMPLE-NUMMER:
  *   - Pattern-Part trägt seine Sample-Ref bei esli/part +0x08 (z.B. 501+) →
  *     `ParsedPart.sampleId` bzw. `SynthstudioDrumPartImport.sampleId`.
- *   - .all-Sample trägt dieselbe Nummer als OSC_0index (esli +0x08) →
+ *   - .all-Sample trägt seine Nummer als OSC_0index (esli +0x08) →
  *     `E2sSlot.sampleNumber`.
  * Match per VALUE (Nummer), nicht per Offset-Tabellen-Position — robust auch bei
  * Lücken/Nicht-501-Basis (Position bzw. "id − 501" bräche bei realen Bänken).
+ *
+ * ☠ v3.321: Hier stand „dieselbe Nummer". Das ist widerlegt — siehe
+ * `e2PatternRefToBankNumber`: der Bank-Slot liegt um **eins höher** als die
+ * Pattern-Referenz. Wer die Zahlen direkt vergleicht, bekommt immer ein
+ * plausibles, aber falsches Sample.
  *
  * Dieser Helper ist rein (kein Audio/DOM). Das WAV-Encoding + Blob-URL bleibt
  * im Aufrufer (Seiteneffekt), analog zum ESX-Pfad (KorgBankModal).
  */
 
 import type { E2sBank, E2sSlot } from "./e2sBankReader";
+
+/**
+ * v3.321 — Pattern-Referenz → Bank-Slot-Nummer. **Am Gerät gemessen**
+ * (2026-08-10, echtes E2S):
+ *
+ *     Bank-Slot (OSC_0index) == Pattern-Referenz + 1
+ *
+ * Der Fehler war besonders schwer zu sehen: ein Versatz von eins liefert
+ * **immer ein plausibles Sample**, nur eben das falsche — nichts bleibt leer,
+ * nichts schlägt fehl.
+ *
+ * Beleg (dreifach, unabhängig): Die Parts 1..3 referenzieren 584/586/588, das
+ * Gerät spielt bei allen dreien `Jumpkick`; in der Bank liegt `Jumpkick` auf
+ * 585/587/589, während 584/586/588 `KICK9`/`L3oN_HaT`/`ZaHnI_ki` sind. Deckt
+ * sich mit der Anzeige-Regel vom 2026-08-09 (`Anzeige = Pattern-OSC + 1`).
+ *
+ * 0 heisst „kein Sample" und bleibt 0 — sonst bände ein leerer Part an Slot 1.
+ */
+export function e2PatternRefToBankNumber(ref: number): number {
+  return ref > 0 ? ref + 1 : ref;
+}
 
 /**
  * Baut eine Lookup-Map `Geräte-Sample-Nummer (OSC_0index) → E2sSlot`.

@@ -89,6 +89,7 @@ import { parseE2sBank } from "@/utils/korg/e2sBankReader";
 import {
   bankSamplesToLibraryEntries,
   buildE2sSampleMap,
+  e2PatternRefToBankNumber,
   summarizeE2sSampleLink,
 } from "@/utils/korg/e2sPatternSampleLink";
 // v3.297: Pattern ⇄ Gerät (Korg E2/E2S SysEx) direkt im Sequenzer.
@@ -1894,10 +1895,12 @@ function DrumMachineInner({
         // v3.272: Sample aus mitgeladener .all-Bank verlinken (Part-Ref +0x08
         // 501+ → OSC_0index). Nur Parts mit aktiven Steps; ohne Treffer bleibt der
         // Part unverändert (kein Mislink, kein Crash) — analog zum ESX-Pfad.
-        if (steps.some(a => a) && src.sampleId > 0) {
-          requestedSampleIds.push(src.sampleId);
+        // v3.321: gleiche Korrektur wie im Geraete-Pull — Bank-Slot = Ref + 1.
+        const bankNr = e2PatternRefToBankNumber(src.sampleId);
+        if (steps.some(a => a) && bankNr > 0) {
+          requestedSampleIds.push(bankNr);
           if (sampleLink) {
-            const s = sampleLink.resolve(src.sampleId);
+            const s = sampleLink.resolve(bankNr);
             if (s) {
               dm.setPartSample(partId, s.url, s.name);
               linked++;
@@ -1960,10 +1963,12 @@ function DrumMachineInner({
           bpm: conv.bpm,
           parts: conv.drumParts.map(dp => {
             const active = dp.steps.some(a => a);
-            if (active && dp.sampleId > 0) requestedSampleIds.push(dp.sampleId);
+            // v3.321: Bank-Slot = Pattern-Referenz + 1 (am Gerät gemessen).
+            const bankNr = e2PatternRefToBankNumber(dp.sampleId);
+            if (active && bankNr > 0) requestedSampleIds.push(bankNr);
             const linked =
-              sampleLink && active && dp.sampleId > 0
-                ? sampleLink.resolve(dp.sampleId)
+              sampleLink && active && bankNr > 0
+                ? sampleLink.resolve(bankNr)
                 : null;
             if (linked) totalLinked++;
             return {
@@ -2376,9 +2381,13 @@ function DrumMachineInner({
       for (let i = 0; i < decoded.parts.length; i++) {
         const partId = partIds[i];
         const src = decoded.parts[i];
-        const treffer =
-          bank && src.sampleRef > 0 ? bank.link.resolve(src.sampleRef) : null;
-        if (src.sampleRef > 0) angefragt.push(src.sampleRef);
+        // v3.321: Der Bank-Slot liegt um EINS hoeher als die Pattern-Referenz
+        // (am Geraet gemessen, siehe e2PatternRefToBankNumber). Direkt
+        // verglichen bekommt jeder Part das Sample davor — plausibel, aber
+        // falsch.
+        const bankNr = e2PatternRefToBankNumber(src.sampleRef);
+        const treffer = bank && bankNr > 0 ? bank.link.resolve(bankNr) : null;
+        if (bankNr > 0) angefragt.push(bankNr);
         if (treffer) {
           dm.setPartSample(partId, treffer.url, treffer.name);
           verlinkt++;

@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.320.0",
+    version: "3.321.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -15890,6 +15890,30 @@ const INDEX = {
         "client/src/components/DrumMachine/DrumMachine.tsx",
         "client/src/utils/korg/e2PatternToSynthstudio.ts",
         "tests/features/korg-e2-pull-parts.test.ts",
+        "package.json",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "host",
+      timestamp: "2026-08-10T20:00:00.000Z",
+      done: [
+        "AM GERAET WIDERLEGT: 'Pattern-Ref == Bank-OSC_0index'. Der Kopfkommentar von e2sPatternSampleLink.ts behauptete 'dieselbe Nummer' — gemessen gilt Bank-Slot == Pattern-Referenz + 1. Beleg dreifach und unabhaengig: Parts 1..3 referenzieren 584/586/588, das Geraet spielt bei allen dreien 'Jumpkick'; in der Bank liegt Jumpkick auf 585/587/589, waehrend 584/586/588 KICK9/L3oN_HaT/ZaHnI_ki sind. Deckt sich mit der Anzeige-Regel vom 2026-08-09 (Anzeige = Pattern-OSC + 1).",
+        "Warum das so lange unsichtbar blieb: ein Versatz von EINS liefert immer ein plausibles Sample, nur das falsche. Nichts bleibt leer, nichts schlaegt fehl — der User meldete es als 'die Samples passen irgendwie nicht zusammen'.",
+        "Neuer Pure-Helper e2PatternRefToBankNumber(ref) (0 bleibt 0, sonst +1) mit der Messung als Begruendung im Kommentar. Angewendet an ALLEN drei Verbrauchsstellen (Geraete-Pull, importElectribePatternIntoActive, Pattern-Picker-Vorschau) — Fehlerklasse statt Fundstelle, die Lehre von heute Vormittag.",
+        "4 Tests aus den echten Geraetewerten, 3 zuerst rot. Einer davon haelt ausdruecklich fest, was der direkte Vergleich geliefert HAETTE (KICK9/L3oN_HaT/ZaHnI_ki) — sonst waere nicht dokumentiert, dass der Test den Bug trifft.",
+        "Nebenbefund fuer den User: seine luknkicks.all ist zwar laut Geometrie-Check fehlnummeriert (konstanter Versatz -1 zwischen Tabellen-Index und esli), fuer die AUFLOESUNG aber unschaedlich — der Resolver matcht ueber esli, und die esli-Werte stimmen. Relevant bliebe das nur beim Flashen der Bank.",
+        "Verifikation: tsc sauber; volle Suite 11519 gruen (einziger Rotstand die vorbestehende CRLF-Falle). Kein bestehender Test brach durch die +1-Aenderung — was zugleich zeigt, wie duenn die Abdeckung des Datei-Import-Links war."
+      ],
+      next: [
+        "Am Geraet gegenpruefen: nach dem Pull muessen die Kanaele Jumpkick/clydesna/CB_Hat-M usw. heissen UND klingen.",
+        "Danach die Push-Haelfte von §3.",
+        "OFFEN (User-Meldung, noch nicht untersucht): FX/IFX in den MIDI-Einstellungen und das RAM-Werkzeug 'gehen nicht' — Symptome unbekannt."
+      ],
+      changed: [
+        "client/src/utils/korg/e2sPatternSampleLink.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "tests/features/korg-e2-sample-ref-offset.test.ts",
         "package.json",
         "agents/INDEX.js"
       ]
