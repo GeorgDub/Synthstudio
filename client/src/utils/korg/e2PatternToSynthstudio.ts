@@ -54,9 +54,18 @@ function makeId(seed: string): string {
 export function e2PulledPartName(
   existingName: string | undefined,
   sampleRef: number,
-  index: number
+  index: number,
+  /**
+   * v3.320: Name aus einer geladenen `.all`-Bank, falls die Nummer dort
+   * auflösbar war. Das Pattern selbst trägt **nur** die Nummer — ohne Bank
+   * kann hier niemand „Jumpkick" wissen. Liegt er vor, gewinnt er: der Kanal
+   * soll heissen wie das Sample, das er spielt.
+   */
+  sampleName?: string
 ): string {
+  const aufgeloest = (sampleName ?? "").trim();
   const basis =
+    aufgeloest ||
     (existingName ?? "").replace(/\s*·\s*#\d+\s*$/, "").trim() ||
     `Kanal ${index + 1}`;
   return sampleRef > 0 ? `${basis} · #${sampleRef}` : basis;

@@ -118,4 +118,25 @@ describe("e2PulledPartName — Sample-Nummer im Part-Namen führen", () => {
 
     expect(parseSampleIdFromName(name)).toBe(519);
   });
+
+  // v3.320: Das Pattern trägt nur die NUMMER. Liegt eine .all-Bank im Projekt,
+  // kann die Nummer zu einem echten Namen aufgelöst werden — dann soll der
+  // Kanal so heissen wie das Sample, nicht wie Synthstudios Vorbelegung.
+  it("nimmt den aufgelösten Sample-Namen als Basis, wenn eine Bank ihn liefert", () => {
+    expect(e2PulledPartName("Kick", 584, 0, "Jumpkick")).toBe("Jumpkick · #584");
+  });
+
+  it("bleibt beim bisherigen Namen, wenn die Bank die Nummer nicht kennt", () => {
+    expect(e2PulledPartName("Kick", 584, 0, undefined)).toBe("Kick · #584");
+  });
+
+  it("faellt bei leerem Sample-Namen nicht auf einen leeren Kanalnamen zurueck", () => {
+    expect(e2PulledPartName("Kick", 584, 0, "   ")).toBe("Kick · #584");
+  });
+
+  it("ersetzt beim zweiten Pull den aufgelösten Namen sauber", () => {
+    expect(e2PulledPartName("Jumpkick · #584", 590, 0, "clydesna")).toBe(
+      "clydesna · #590"
+    );
+  });
 });

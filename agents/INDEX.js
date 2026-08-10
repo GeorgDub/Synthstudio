@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.319.0",
+    version: "3.320.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -15867,6 +15867,29 @@ const INDEX = {
         "tests/features/korg-import-part-truncation.test.ts",
         "tests/features/korg-e2-mute-roundtrip.test.ts",
         "tests/web/e2-sysex-toolbar.spec.ts",
+        "package.json",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "host",
+      timestamp: "2026-08-10T18:00:00.000Z",
+      done: [
+        "AM GERAET BESTAETIGT (v3.319): der Pull traegt 16 Parts ohne manuelles Anlegen, die Sample-Referenz stimmt exakt (Synthstudio '#584' == Geraete-OSC 584, per RAM-Peek gegengelesen) und der Mute-Zustand kommt korrekt an (13 von 16 stumm hier wie dort). Dass diesmal der GEFIXTE Pfad lief, ist an den '· #NNN'-Namen erkennbar — die gibt es nur dort.",
+        "v3.320 SAMPLE-AUFLOESUNG BEIM GERAETE-PULL (User-Wunsch): Ein Pattern vom Geraet traegt nur Sample-NUMMERN — Name und Klang stehen ausschliesslich in der .all-Bank. Neuer bankLinkRef merkt sich den Resolver, sobald irgendwo eine .all geladen wurde (processElectribeFiles); der Pull loest damit Nummer -> Name + Blob-URL auf, setzt dm.setPartSample und benennt den Kanal nach dem Sample ('Jumpkick · #584'). Der Resolver (makeE2sSampleResolver, Match ueber OSC_0index) existierte bereits, hing aber nur am Datei-Import.",
+        "e2PulledPartName um optionalen sampleName erweitert: aufgeloester Name gewinnt, sonst bleibt der bisherige Kanalname, leerer/whitespace-Name faellt sauber zurueck. 4 neue Tests, 2 davon zuerst rot (die anderen 2 pruefen unveraendertes Verhalten).",
+        "Rueckmeldung statt Ratespiel: ohne Bank meldet der Pull 'Pattern traegt nur Sample-Nummern — lade die .all-Bank', mit Bank aber ohne Treffer 'keine der N Nummern steht in <Datei>'. Vorher sah beides gleich aus wie ein stiller Fehlschlag.",
+        "Verifikation: tsc sauber; Vitest 11515 gruen (einziger Rotstand ist die vorbestehende CRLF-Falle in script-sandbox-codegen, faellt auch mit unveraendertem Baum); Playwright e2-sysex-toolbar 3/3."
+      ],
+      next: [
+        "Am Geraet: .all-Bank laden, erneut pullen — die Kanaele muessen 'Jumpkick', 'clydesna', 'CB_Hat-M' usw. heissen UND klingen.",
+        "Danach die Push-Haelfte von §3: zwei Steps verschieben, pushen, mit tools/hwtest/pattern_steps.py --vergleichen gegenmessen.",
+        "OFFEN geblieben: Datei-Import liest Mute nicht; Motion-Lanes fehlen im verbliebenen Paar; der Pull uebernimmt die stepLength des Geraets nicht."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/utils/korg/e2PatternToSynthstudio.ts",
+        "tests/features/korg-e2-pull-parts.test.ts",
         "package.json",
         "agents/INDEX.js"
       ]

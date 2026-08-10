@@ -1457,6 +1457,15 @@ function DrumMachineInner({
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
   // v3.319: `e2SysexBusy` entfiel mit den „Von/Zur Korg"-Zwillingen — das
   // verbliebene Paar sperrt sich über `e2sDevice.busy` aus dem Geräte-Store.
+  /**
+   * v3.320: zuletzt geladene `.all`-Sample-Bank. Ein Pattern vom Gerät trägt
+   * nur Sample-NUMMERN — Name und Klang stehen ausschliesslich in der Bank.
+   * Ein Ref (kein State), weil nur Handler ihn lesen: ein Re-Render bringt
+   * hier nichts, und der Resolver hält Blob-URLs, die stabil bleiben sollen.
+   */
+  const bankLinkRef = useRef<{ link: E2sSampleLink; quelle: string } | null>(
+    null
+  );
   // TASK-237: nach Bank-Parse haelt der Dialog die Pattern-Liste fuer User-Auswahl.
   const [electribePicker, setElectribePicker] = useState<{
     fileName: string;
@@ -2102,6 +2111,10 @@ function DrumMachineInner({
           const buf = await sampleFile.arrayBuffer();
           const bank = parseE2sBank(new Uint8Array(buf), sampleFile.name);
           sampleLink = makeE2sSampleResolver(bank);
+          // v3.320: Bank fürs Projekt merken. Ein Pattern vom GERÄT trägt nur
+          // Sample-Nummern, keine Namen und keinen Klang — mit der zuletzt
+          // geladenen Bank kann der Geräte-Pull sie trotzdem auflösen.
+          bankLinkRef.current = { link: sampleLink, quelle: sampleFile.name };
           publishedCount = publishBankSamples(bank, sampleLink, sampleFile.name);
 
           // Die Geometrie-Selbstpruefung des Readers gehoert genau hier
@@ -2354,15 +2367,33 @@ function DrumMachineInner({
       // fehlenden an und liefert die IDs sofort zurueck (der State-Update ist
       // asynchron, `getActivePattern()` kennt sie in diesem Tick noch nicht).
       const partIds = dm.ensureParts(decoded.parts.length);
+      // v3.320: Mit geladener .all-Bank werden die Sample-NUMMERN aus dem
+      // Pattern zu Name + Klang aufgeloest. Ohne Bank bleibt es bei der Nummer
+      // — das Pattern selbst traegt nichts weiter (unten als Hinweis gemeldet).
+      const bank = bankLinkRef.current;
+      let verlinkt = 0;
+      const angefragt: number[] = [];
       for (let i = 0; i < decoded.parts.length; i++) {
         const partId = partIds[i];
         const src = decoded.parts[i];
+        const treffer =
+          bank && src.sampleRef > 0 ? bank.link.resolve(src.sampleRef) : null;
+        if (src.sampleRef > 0) angefragt.push(src.sampleRef);
+        if (treffer) {
+          dm.setPartSample(partId, treffer.url, treffer.name);
+          verlinkt++;
+        }
         // v3.318: Sample-Nummer in den Part-Namen schreiben — der Push-Pfad
         // liest sie ueber `parseSampleIdFromName` von dort. Ohne das verliert
         // ein Pull->Push-Roundtrip die Sample-Zuordnung ans Init-Template.
         dm.renamePart(
           partId,
-          e2PulledPartName(active.parts[i]?.name, src.sampleRef, i)
+          e2PulledPartName(
+            active.parts[i]?.name,
+            src.sampleRef,
+            i,
+            treffer?.name
+          )
         );
         const target = active.stepCount;
         const steps = new Array<boolean>(target).fill(false);
@@ -2398,6 +2429,30 @@ function DrumMachineInner({
             filterQ: f.q,
           });
         }
+      }
+
+      // v3.320: Ohne Rueckmeldung sieht „keine Bank geladen" genauso aus wie
+      // „Bank kennt die Nummern nicht" — beides endet in stummen Kanaelen mit
+      // blossen Nummern. Also benennen, was der Fall war.
+      if (bank && verlinkt > 0) {
+        const info = summarizeE2sSampleLink(
+          true,
+          angefragt,
+          verlinkt,
+          bank.link.map
+        );
+        toast(
+          `${verlinkt} Parts mit Samples aus „${bank.quelle}" verlinkt${info.summary}`,
+          { kind: "success", duration: 4500 }
+        );
+        if (info.hint) toast(info.hint, { kind: "warning", duration: 6000 });
+      } else if (angefragt.length > 0) {
+        toast(
+          bank
+            ? `Keine der ${angefragt.length} Sample-Nummern steht in „${bank.quelle}" — passt die Bank zum Pattern?`
+            : "Das Pattern trägt nur Sample-Nummern. Lade die passende .all-Bank (Korg Import), dann bekommen die Kanäle Namen und Klang.",
+          { kind: "warning", duration: 7000 }
+        );
       }
     },
     [dm]
