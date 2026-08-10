@@ -155,6 +155,8 @@ function useRemoteDmAdapter(
       setPatternBpm: noop,
       setPatternStepResolution: noop,
       addPart: noop,
+      // Remote-Adapter legt keine Parts an — der Peer besitzt seinen Store.
+      ensureParts: () => [],
       removePart: noop,
       renamePart: noop,
       setPartSample: noop,

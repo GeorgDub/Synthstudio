@@ -34,6 +34,34 @@ function makeId(seed: string): string {
   return `e2imp-${seed}`;
 }
 
+/**
+ * v3.318: Part-Name nach einem Geräte-Pull — Basisname plus Sample-Nummer.
+ *
+ * Der Push-Pfad liest die Sample-Nummer über `parseSampleIdFromName` aus dem
+ * **Namen** (`"Kick · #519"`). Der Pull setzte die Namen bisher nicht, deshalb
+ * verlor jeder Pull→Push-Roundtrip die Sample-Zuordnung ans Init-Template.
+ *
+ * Der bestehende Name bleibt erhalten (der User hat seine Kanäle benannt), nur
+ * ein früher angehängtes `· #NNN` wird ersetzt statt verdoppelt. `sampleRef`
+ * 0 heißt „kein Sample" — dann fällt die Nummer wieder weg.
+ *
+ * ★ Der Fallback muss dieselbe Basis bilden wie `applyEnsureParts` beim Anlegen
+ * (`Kanal N`): der Pull benennt Parts um, die es beim Lesen des Namens noch gar
+ * nicht gab (`active.parts[i]` ist für neue Parts `undefined`). Liefen die
+ * beiden Stellen auseinander, hiesse derselbe Part vor und nach dem Umbenennen
+ * anders.
+ */
+export function e2PulledPartName(
+  existingName: string | undefined,
+  sampleRef: number,
+  index: number
+): string {
+  const basis =
+    (existingName ?? "").replace(/\s*·\s*#\d+\s*$/, "").trim() ||
+    `Kanal ${index + 1}`;
+  return sampleRef > 0 ? `${basis} · #${sampleRef}` : basis;
+}
+
 function mapStep(step: E2PartDecoded["steps"][number]): StepData {
   return {
     active: step.active,

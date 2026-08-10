@@ -100,6 +100,7 @@ import { synthstudioPatternToBody } from "@/utils/korg/synthstudioToE2Pattern";
 import { e2FilterToImportedFilter } from "@/utils/korg/e2FilterMap";
 import type { E2PatternDecoded } from "@/utils/korg/e2Sysex";
 import { stepChordNotes } from "@/utils/korg/e2Sysex";
+import { e2PulledPartName } from "@/utils/korg/e2PatternToSynthstudio";
 import { encodeWavStereo } from "@/audio/wavEncoder";
 import {
   requireProFeature,
@@ -2346,10 +2347,23 @@ function DrumMachineInner({
       const active = dm.getActivePattern();
       if (!active) return;
       dm.setPatternBpm(active.id, decoded.bpm);
-      const limit = Math.min(decoded.parts.length, active.parts.length);
+      // v3.318 (am Geraet gefunden): Ein E2/E2S liefert immer 16 Parts, ein
+      // neues Projekt hat 9 Kanaele. Vorher lief hier `Math.min(decoded, active)`
+      // — die Parts 10..16 des Geraets fielen still weg. `ensureParts` legt die
+      // fehlenden an und liefert die IDs sofort zurueck (der State-Update ist
+      // asynchron, `getActivePattern()` kennt sie in diesem Tick noch nicht).
+      const partIds = dm.ensureParts(decoded.parts.length);
+      const limit = Math.min(decoded.parts.length, partIds.length);
       for (let i = 0; i < limit; i++) {
-        const part = active.parts[i];
+        const partId = partIds[i];
         const src = decoded.parts[i];
+        // v3.318: Sample-Nummer in den Part-Namen schreiben — der Push-Pfad
+        // liest sie ueber `parseSampleIdFromName` von dort. Ohne das verliert
+        // ein Pull->Push-Roundtrip die Sample-Zuordnung ans Init-Template.
+        dm.renamePart(
+          partId,
+          e2PulledPartName(active.parts[i]?.name, src.sampleRef, i)
+        );
         const target = active.stepCount;
         const steps = new Array<boolean>(target).fill(false);
         const vels = new Array<number>(target).fill(100);
@@ -2358,15 +2372,15 @@ function DrumMachineInner({
           steps[s] = src.steps[s].active;
           vels[s] = src.steps[s].velocity || 100;
         }
-        dm.setPartSteps(part.id, steps, vels);
+        dm.setPartSteps(partId, steps, vels);
         // v3.309: Chord-Noten (Roh-Bytes 5..7) auch im Sysex-Pfad übernehmen.
         // Immer setzen — `undefined` räumt Akkorde eines früheren Imports ab.
         for (let s = 0; s < target; s++) {
           const chord = s < cap ? stepChordNotes(src.steps[s]) : [];
-          dm.setStepChordNotes(part.id, s, chord.length > 0 ? chord : undefined);
+          dm.setStepChordNotes(partId, s, chord.length > 0 ? chord : undefined);
         }
-        dm.setPartVolume(part.id, src.volume);
-        dm.setPartPan(part.id, src.pan);
+        dm.setPartVolume(partId, src.volume);
+        dm.setPartPan(partId, src.pan);
         // Verifizierten Part-Filter (Type/Cutoff/Res) auf die ChannelFx mappen.
         const f = e2FilterToImportedFilter(
           src.filterType,
@@ -2374,7 +2388,7 @@ function DrumMachineInner({
           src.resonance
         );
         if (f) {
-          dm.setPartFx(part.id, {
+          dm.setPartFx(partId, {
             filterEnabled: f.enabled,
             filterType: f.type,
             filterFreq: f.freq,

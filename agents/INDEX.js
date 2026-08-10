@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.317.0",
+    version: "3.318.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -15816,6 +15816,30 @@ const INDEX = {
       changed: [
         "client/src/utils/korg/synthstudioToE2Pattern.ts",
         "tests/features/korg-e2-pattern-push.test.ts",
+        "package.json",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "host",
+      timestamp: "2026-08-10T00:00:00.000Z",
+      done: [
+        "AM GERAET GEFUNDEN (HW-Sitzung 2026-08-10, Omnitribe docs/hwtest/sitzung_2026-08-10.md): Der Pull-Button 'Geraet' verlor die Parts 10..16. Ein E2/E2S liefert immer 16 Parts, ein neues Synthstudio-Projekt hat 9 Kanaele (DEFAULT_PART_NAMES) — applyE2DecodedToActivePattern (DrumMachine.tsx) lief ueber Math.min(decoded.parts.length, active.parts.length) und schnitt den Rest still ab. Keine Meldung, kein Toast: im Raster fehlten sie einfach. Der User sah es nur, weil er das Geraete-Pattern kannte.",
+        "Fix 1 — neue Store-Action ensureParts(count): legt fehlende Parts am aktiven Pattern an und liefert die IDs ALLER Parts sofort zurueck. Die IDs muessen vom Aufrufer kommen bzw. synchron zurueckfliessen, weil der Handler die frisch angelegten Parts unmittelbar per setPartSteps(id, ...) befuellt — getActivePattern() liest bis zum naechsten Render noch den alten Stand. Pure Transform applyEnsureParts(patterns, activePatternId, newIds) exportiert (Repo-Konvention wie applySoloUpdate).",
+        "Fix 2 (User-Entscheidung, gleicher Codeblock) — e2PulledPartName(existingName, sampleRef, index) in e2PatternToSynthstudio.ts: der Pull schreibt die Sample-Nummer jetzt in den Part-Namen ('Kick · #519'). Der Push-Pfad liest sie ueber parseSampleIdFromName von genau dort; ohne das verlor jeder Pull->Push-Roundtrip die Sample-Zuordnung ans Init-Template (Punkt 1 des §3b-Audits). Bestehende Namen bleiben erhalten, ein frueheres '· #NNN' wird ersetzt statt verdoppelt, sampleRef 0 nimmt die Nummer wieder weg.",
+        "TDD: 10 neue Tests in tests/features/korg-e2-pull-parts.test.ts, alle 10 zuerst rot verifiziert ('applyEnsureParts is not a function' / 'e2PulledPartName is not a function'), danach 10/10 gruen.",
+        "OFFEN und bewusst nicht geaendert: der Pull uebernimmt weiterhin NICHT die stepLength des Geraets (active.stepCount bleibt massgeblich). Steht das Projekt auf 16 Steps und das Geraet auf 64, fallen die Steps 17..64 still weg — dieselbe Fehlerklasse wie der Part-Abschnitt, aber eine eigene Entscheidung (Pattern-Laenge automatisch umzustellen ist sichtbar invasiv). Vor dem HW-Test manuell auf 64 stellen."
+      ],
+      next: [
+        "Omnitribe §3 am Geraet zu Ende fahren: Pull gegen die Geraete-Baseline (tools/hwtest/pattern_steps.py) pruefen, dann zwei Steps verschieben und pushen.",
+        "Entscheiden, ob der Pull die Pattern-Laenge (stepLength) des Geraets uebernehmen soll."
+      ],
+      changed: [
+        "client/src/store/useDrumMachineStore.ts",
+        "client/src/utils/korg/e2PatternToSynthstudio.ts",
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/components/CollabSplitView/CollabSplitView.tsx",
+        "tests/features/korg-e2-pull-parts.test.ts",
         "package.json",
         "agents/INDEX.js"
       ]

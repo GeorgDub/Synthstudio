@@ -102,6 +102,13 @@ export interface DrumMachineActions {
   ) => void;
 
   addPart: (name?: string) => void;
+  /**
+   * v3.318: Stellt sicher, dass das aktive Pattern mindestens `count` Parts hat,
+   * und liefert die IDs **aller** Parts in Reihenfolge zurück — auch der gerade
+   * erst angelegten. Für Importe, die eine feste Part-Zahl mitbringen (E2/E2S:
+   * immer 16) und die neuen Parts sofort befüllen müssen.
+   */
+  ensureParts: (count: number) => string[];
   removePart: (id: string) => void;
   renamePart: (id: string, name: string) => void;
   setPartSample: (
@@ -281,6 +288,42 @@ function clonePatternForInsert(
     name,
     parts: clone.parts.map(part => ({ ...part, id: makeId() })),
   };
+}
+
+/**
+ * v3.318: Pure Transform für `ensureParts` — hängt für jede übergebene ID einen
+ * leeren Part an das aktive Pattern.
+ *
+ * Anlass war ein Befund am Gerät: ein E2/E2S liefert beim Pull immer 16 Parts,
+ * ein neues Projekt hat aber 9 Kanäle. Der Pull-Pfad lief über
+ * `Math.min(decoded.parts.length, active.parts.length)` und ließ die Parts
+ * 10..16 still fallen.
+ *
+ * Die IDs kommen von außen, weil der Aufrufer sie **vor** dem State-Update
+ * braucht: er adressiert die frisch angelegten Parts unmittelbar danach per
+ * `setPartSteps(id, …)`, und `getActivePattern()` liest bis zum nächsten Render
+ * noch den alten Stand.
+ */
+export function applyEnsureParts(
+  patterns: PatternData[],
+  activePatternId: string,
+  newIds: string[]
+): PatternData[] {
+  if (newIds.length === 0) return patterns;
+  return patterns.map(p =>
+    p.id === activePatternId
+      ? {
+          ...p,
+          parts: [
+            ...p.parts,
+            ...newIds.map((id, i) => ({
+              ...makePart(`Kanal ${p.parts.length + i + 1}`, p.stepCount),
+              id,
+            })),
+          ],
+        }
+      : p
+  );
 }
 
 /**
@@ -803,6 +846,30 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
       });
     },
     [pushUndo]
+  );
+
+  const ensureParts = useCallback(
+    (count: number): string[] => {
+      const pattern = state.patterns.find(p => p.id === state.activePatternId);
+      if (!pattern) return [];
+      const fehlend = Math.max(0, count - pattern.parts.length);
+      const neueIds = Array.from({ length: fehlend }, makeId);
+      if (fehlend > 0) {
+        setState(prev => {
+          pushUndo(prev.patterns);
+          return {
+            ...prev,
+            patterns: applyEnsureParts(
+              prev.patterns,
+              prev.activePatternId,
+              neueIds
+            ),
+          };
+        });
+      }
+      return [...pattern.parts.map(p => p.id), ...neueIds];
+    },
+    [state.patterns, state.activePatternId, pushUndo]
   );
 
   const removePart = useCallback(
@@ -1659,6 +1726,7 @@ export function useDrumMachineStore(): DrumMachineState & DrumMachineActions {
     toggleStackedPattern,
     clearStackedPatterns,
     addPart,
+    ensureParts,
     removePart,
     renamePart,
     setPartSample,
