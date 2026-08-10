@@ -1,13 +1,21 @@
 /**
- * e2-sysex-toolbar.spec.ts — v3.268.0
+ * e2-sysex-toolbar.spec.ts — v3.268.0, umgeschrieben in v3.319.0
  *
- * Smoke für die beiden neuen Live-Sysex-Buttons im Sequencer:
- * „⬇ Von Korg" holt das Pattern per natives Korg-Sysex (F0 42 …) vom Gerät,
- * „⬆ Zur Korg" schickt das aktive Pattern in dessen Edit-Buffer.
+ * Smoke für das Pattern-Paar in der Sequencer-Toolbar:
+ * „⬇ Von Korg" holt das aktive Pattern per nativem Korg-Sysex (F0 42 …) vom
+ * Gerät, „⬆ Zur Korg" schickt es in dessen Edit-Buffer.
  *
- * Ohne angeschlossene Hardware kann hier nur die Erreichbarkeit geprüft werden
- * plus das Fehlerverhalten: ohne Web-MIDI/Port muss ein verständlicher Toast
- * erscheinen statt eines stillen Fehlschlags oder eines Crashes.
+ * ★ v3.319: Es gab bis dahin ZWEI Paare für denselben Vorgang — dieses hier
+ * (`e2-sysex-load`/`e2-sysex-send`) und ein zweites, im eingeklappten
+ * I/O-Cluster verstecktes (`e2s-pull-pattern`/`e2s-push-pattern`). Der Bug vom
+ * 2026-08-10 steckte in beiden Pfaden und musste zweimal behoben werden. Geblieben
+ * ist ein Paar unter den `e2s-*`-Testids; dieser Smoke zeigt auf das
+ * verbliebene.
+ *
+ * Ohne angeschlossene Hardware ist prüfbar: Erreichbarkeit, eindeutige
+ * Beschriftung — und dass die Buttons ohne verbundenes Gerät **gesperrt** sind
+ * statt in einen Fehlschlag zu laufen. Das ersetzt den früheren
+ * Fehler-Toast-Test: die Sperre ist die neue, bessere Antwort auf „kein Gerät".
  */
 import { test, expect } from "@playwright/test";
 import { seedActivation } from "./_seedApp";
@@ -20,9 +28,11 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
 });
 
-test("beide Sysex-Buttons sind in der Sequencer-Toolbar sichtbar", async ({ page }) => {
-  const load = page.getByTestId("e2-sysex-load");
-  const send = page.getByTestId("e2-sysex-send");
+test("beide Sysex-Buttons sind in der Sequencer-Toolbar sichtbar", async ({
+  page,
+}) => {
+  const load = page.getByTestId("e2s-pull-pattern");
+  const send = page.getByTestId("e2s-push-pattern");
 
   await expect(load).toBeVisible();
   await expect(send).toBeVisible();
@@ -30,27 +40,20 @@ test("beide Sysex-Buttons sind in der Sequencer-Toolbar sichtbar", async ({ page
   // Beschriftung + Tooltip erklären die Richtung eindeutig.
   await expect(load).toContainText("Von Korg");
   await expect(send).toContainText("Zur Korg");
-  await expect(send).toHaveAttribute("title", /Edit-Buffer/);
 });
 
-test("ohne Web-MIDI meldet der Laden-Button einen verständlichen Fehler statt still zu scheitern", async ({ page }) => {
-  // Web MIDI hart abschalten, damit der Fehlerpfad deterministisch greift.
-  // `delete navigator.requestMIDIAccess` genügt NICHT — die Methode liegt auf
-  // Navigator.prototype, nicht auf der Instanz. Also mit einer eigenen
-  // undefined-Property überschatten.
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "requestMIDIAccess", {
-      value: undefined,
-      configurable: true,
-    });
-  });
-  await page.reload();
-  await page.waitForSelector('[role="tablist"]', { timeout: 15_000 });
+test("es gibt nur EIN Paar — die alten Zwillinge sind weg", async ({ page }) => {
+  await expect(page.getByTestId("e2-sysex-load")).toHaveCount(0);
+  await expect(page.getByTestId("e2-sysex-send")).toHaveCount(0);
+});
 
-  await page.getByTestId("e2-sysex-load").click();
+test("ohne verbundenes Gerät sind beide Buttons gesperrt statt still zu scheitern", async ({
+  page,
+}) => {
+  const load = page.getByTestId("e2s-pull-pattern");
+  const send = page.getByTestId("e2s-push-pattern");
 
-  // Irgendein sichtbarer Hinweis auf fehlendes MIDI — kein stiller Abbruch.
-  await expect(page.getByText(/Web MIDI nicht verfügbar|MIDI-Ausgang/i).first()).toBeVisible({
-    timeout: 10_000,
-  });
+  await expect(load).toBeDisabled();
+  await expect(send).toBeDisabled();
+  await expect(load).toHaveAttribute("title", /im E2S-Tab verbinden/);
 });

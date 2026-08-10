@@ -268,6 +268,11 @@ export const PATTERN_NAME_LEN = 16;
 export const PART_TABLE_OFFSET = 0x800; // body-relativ
 export const PART_COUNT = 16;
 export const PART_STRIDE = 0x330;
+/** Mute-Flag (u8) @ Part+0x01 — 0 = spielt, 1 = stumm.
+ *  Quelle: Korg „electribe MIDI Implementation Rev 1.00", TABLE 6 (Part
+ *  Parameter, Offset 1 = „Mute, 0/1 = OFF/ON"); gegengeprüft mit keijiro/e2edit
+ *  und maks/elfer. Die Schreibseite (e2sExport.ts) nutzt dasselbe Offset. */
+export const PART_MUTE_OFFSET = 0x01;
 export const PART_OSC_REF_OFFSET = 0x08; // u16 LE innerhalb eines Parts (Sample/OSC-Ref)
 // v3.297-KORREKTUR (Gerätebefund + TABLE 6): Volume = Amp Level @0x18 (vorher
 // fälschlich 0x15 = EG Decay), Pan = Amp Pan @0x19 als i8 mit 0 = Center
@@ -356,6 +361,8 @@ export function stepChordNotes(step: E2Step): number[] {
   return step.motion.slice(0, 3).filter(n => n > 0 && n <= 127);
 }
 export interface E2PartDecoded {
+  /** v3.319: Mute-Flag @ +0x01 (true = am Gerät stumm geschaltet). */
+  muted: boolean;
   sampleRef: number; // u16 LE @ +0x08 (Sample/OSC-Nummer)
   volume: number; // = Amp Level @ +0x18 (v3.297; vorher falsch 0x15 = EG Decay)
   pan: number; // = Amp Pan @ +0x19, UI-0..127 (v3.297; vorher falsch 0x22 = IFX Edit)
@@ -426,6 +433,7 @@ export function decodePatternBody(body: Uint8Array): E2PatternDecoded {
     const egRaw = body[base + PART_FILTER_EGINT_OFFSET] ?? 0;
     const panRaw = body[base + PART_PAN_OFFSET] ?? 0;
     parts.push({
+      muted: (body[base + PART_MUTE_OFFSET] ?? 0) !== 0,
       sampleRef: readU16LE(body, base + PART_OSC_REF_OFFSET),
       volume: body[base + PART_VOLUME_OFFSET] ?? 0,
       // Amp Pan ist i8 (0 = Center) → in die UI-Konvention 0..127 (64=Center).

@@ -28,7 +28,7 @@ const INDEX = {
   // ─── PROJECT META ──────────────────────────────────────────
   project: {
     name: "Synthstudio",
-    version: "3.318.0",
+    version: "3.319.0",
     type: "Electron + Web App",
     stack: {
       runtime:    "Electron 40",
@@ -15840,6 +15840,33 @@ const INDEX = {
         "client/src/components/DrumMachine/DrumMachine.tsx",
         "client/src/components/CollabSplitView/CollabSplitView.tsx",
         "tests/features/korg-e2-pull-parts.test.ts",
+        "package.json",
+        "agents/INDEX.js"
+      ]
+    },
+    {
+      agent:     "host",
+      timestamp: "2026-08-10T12:00:00.000Z",
+      done: [
+        "ZWEITE FUNDSTELLE derselben Fehlerklasse, direkt am Geraet aufgedeckt: der v3.318-Fix griff nicht, weil der User einen ANDEREN Button drueckte. In der Toolbar lagen zwei unabhaengige Implementierungen desselben Vorgangs — 'Von Korg/Zur Korg' (immer sichtbar) und das 'Geraet'-Paar (im eingeklappten I/O-Cluster, also praktisch unsichtbar). importElectribePatternIntoActive (DrumMachine.tsx:1857) hatte exakt dasselbe Math.min(conv.drumParts.length, pattern.parts.length). Auch dort jetzt ensureParts + Iteration ueber die QUELLE; der Erfolgs-Toast meldet nicht mehr die gekappte Zahl.",
+        "META-GATE gegen die Fehlerklasse statt gegen die Fundstelle: tests/features/korg-import-part-truncation.test.ts scannt DrumMachine.tsx auf Math.min(..., parts.length) und verlangt ensureParts in BEIDEN Import-Pfaden. Kommentare werden vor dem Scan entfernt — die erste Fassung schlug an, weil der Fix-Kommentar die alte Zeile zitierte; ein Gate, das Prosa fuer Code haelt, wird umformuliert statt befolgt. Dazu ein Selbsttest, dass das Muster die alte Zeile wirklich faengt.",
+        "MUTE in beide Richtungen (User-Wunsch): Part+0x01, 0=spielt/1=stumm — Quelle Korg 'electribe MIDI Implementation Rev 1.00' TABLE 6, gegengeprueft mit keijiro/e2edit und maks/elfer. Leseseite neu (E2PartDecoded.muted in e2Sysex.ts), Schreibseite gefuellt (partToE2 setzt muted; buildE2PatternBody konnte das Byte laengst, nur setzte es nie jemand). Pull setzt dm.setPartMuted, e2PatternToSynthstudio gibt muted durch statt hart false. 4 Roundtrip-Tests, 3 davon zuerst rot.",
+        "TOOLBAR ZWEI PAARE -> EINS (User-Wunsch): die Zwillinge 'Von Korg/Zur Korg' entfernt, das verbliebene Paar aus dem einklappbaren I/O-Cluster in die feste Leiste geholt und mit den vertrauten Beschriftungen versehen. Testids sind jetzt e2s-pull-pattern/e2s-push-pattern. Pro-Gating (ELECTRIBE_IMPORT / E2_PATTERN_EXPORT) bewusst BEIBEHALTEN — es hing vorher nur am sichtbaren Paar, das versteckte umging es. Tote Reste entfernt: e2SysexBusy-State, Imports requestPatternFromDevice/sendPatternToDevice/wrapPatternBodyAsFile.",
+        "Verifikation: tsc --noEmit sauber; volle Vitest-Suite 11512 gruen / 0 rot / 37 skipped; Playwright tests/web/e2-sysex-toolbar.spec.ts (umgeschrieben auf das verbliebene Paar, inkl. Test 'die alten Zwillinge sind weg') 3/3 gruen unter playwright.web.config.ts."
+      ],
+      next: [
+        "Am Geraet: Pull gegen die Baseline pruefen, Mute hoerbar gegenpruefen, dann zwei Steps verschieben und pushen.",
+        "OFFEN: der Datei-Import ('Electribe'-Button) liest Mute gar nicht — electribeImport.ts parst das Byte nicht. Eigener Pfad, eigene Entscheidung.",
+        "OFFEN: Motion-Lanes gab es nur im entfernten 'Von Korg'-Pfad (automationLanes aus dem Datei-Parser). Das verbliebene Paar kennt sie nicht — bei Bedarf nachziehen."
+      ],
+      changed: [
+        "client/src/components/DrumMachine/DrumMachine.tsx",
+        "client/src/utils/korg/e2Sysex.ts",
+        "client/src/utils/korg/synthstudioToE2Pattern.ts",
+        "client/src/utils/korg/e2PatternToSynthstudio.ts",
+        "tests/features/korg-import-part-truncation.test.ts",
+        "tests/features/korg-e2-mute-roundtrip.test.ts",
+        "tests/web/e2-sysex-toolbar.spec.ts",
         "package.json",
         "agents/INDEX.js"
       ]

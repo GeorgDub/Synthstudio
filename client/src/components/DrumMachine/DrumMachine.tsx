@@ -116,8 +116,6 @@ import {
 import { verifyE2AllpatBank } from "@/utils/korg/e2AllpatVerify";
 import { convertSynthstudioPatternToE2 } from "@/utils/electribePatternConvert";
 import { buildE2ExportGuide, downloadGuideMarkdown } from "@/utils/e2ExportGuide";
-import { wrapPatternBodyAsFile } from "@/utils/korg/e2NativeSysex";
-import { requestPatternFromDevice, sendPatternToDevice } from "@/audio/E2NativeSysexTransfer";
 import { useElectron } from "../../../../electron/useElectron";
 import { ProLockBadge } from "@/components/License/ProLockBadge";
 import { GranularSynthPanel } from "./GranularSynthPanel";
@@ -1457,9 +1455,8 @@ function DrumMachineInner({
     stepIndex: number;
   } | null>(null);
   const [granularPartId, setGranularPartId] = useState<string | null>(null);
-  /** v3.268.0: laufender Sysex-Transfer mit der echten Electribe. Sperrt beide
-   *  Buttons, damit ein zweiter Transfer nicht in den ersten hineinfunkt. */
-  const [e2SysexBusy, setE2SysexBusy] = useState<"load" | "send" | null>(null);
+  // v3.319: `e2SysexBusy` entfiel mit den „Von/Zur Korg"-Zwillingen — das
+  // verbliebene Paar sperrt sich über `e2sDevice.busy` aus dem Geräte-Store.
   // TASK-237: nach Bank-Parse haelt der Dialog die Pattern-Liste fuer User-Auswahl.
   const [electribePicker, setElectribePicker] = useState<{
     fileName: string;
@@ -1853,13 +1850,17 @@ function DrumMachineInner({
       dm.renamePattern(pattern.id, conv.name || pattern.name);
       dm.setPatternBpm(pattern.id, conv.bpm);
 
-      // Per-Part Steps + Volume + Pan (so viele Parts wie im aktiven Pattern existieren).
-      const partLimit = Math.min(conv.drumParts.length, pattern.parts.length);
+      // Per-Part Steps + Volume + Pan — so viele Parts, wie die QUELLE mitbringt.
+      // v3.319 (am Gerät gefunden, zweite Fundstelle derselben Fehlerklasse):
+      // hier stand `Math.min(conv.drumParts.length, pattern.parts.length)`. Ein
+      // Korg-Pattern hat 16 Parts, ein neues Projekt 9 Kanäle — die Parts 10..16
+      // fielen still weg. Betrifft „⬇ Von Korg" UND den Datei-Import.
+      const partIds = dm.ensureParts(conv.drumParts.length);
       let linked = 0;
       // v3.297: Sample-Refs aktiver Parts sammeln → aussagekräftige Link-Diagnose.
       const requestedSampleIds: number[] = [];
-      for (let i = 0; i < partLimit; i++) {
-        const part = pattern.parts[i];
+      for (let i = 0; i < conv.drumParts.length; i++) {
+        const partId = partIds[i];
         const src = conv.drumParts[i];
         // Steps duerfen kuerzer/laenger als das aktive Pattern sein — clampen.
         const targetSteps = pattern.stepCount;
@@ -1870,16 +1871,16 @@ function DrumMachineInner({
           steps[s] = src.steps[s];
           vels[s] = src.velocities[s];
         }
-        dm.setPartSteps(part.id, steps, vels);
+        dm.setPartSteps(partId, steps, vels);
         // v3.309: Chord-Noten (E2-Bytes 5..7) in die Step-Daten übernehmen —
         // sichtbar im Step-Editor, verlustfrei beim Re-Export. Immer setzen:
         // `undefined` räumt Akkorde eines früheren Imports ab (setPartSteps
         // spreadet alte Step-Props weiter).
         for (let s = 0; s < targetSteps; s++) {
-          dm.setStepChordNotes(part.id, s, s < cap ? src.chords[s] : undefined);
+          dm.setStepChordNotes(partId, s, s < cap ? src.chords[s] : undefined);
         }
-        dm.setPartVolume(part.id, src.volume);
-        dm.setPartPan(part.id, src.pan);
+        dm.setPartVolume(partId, src.volume);
+        dm.setPartPan(partId, src.pan);
 
         // v3.272: Sample aus mitgeladener .all-Bank verlinken (Part-Ref +0x08
         // 501+ → OSC_0index). Nur Parts mit aktiven Steps; ohne Treffer bleibt der
@@ -1889,7 +1890,7 @@ function DrumMachineInner({
           if (sampleLink) {
             const s = sampleLink.resolve(src.sampleId);
             if (s) {
-              dm.setPartSample(part.id, s.url, s.name);
+              dm.setPartSample(partId, s.url, s.name);
               linked++;
             }
           }
@@ -1907,7 +1908,7 @@ function DrumMachineInner({
         sampleLink?.map ?? null
       );
       toast(
-        `Electribe importiert: ${fileName} → ${conv.name} (${partLimit}/16 Parts${motionInfo}${sampleInfo.summary})`,
+        `Electribe importiert: ${fileName} → ${conv.name} (${conv.drumParts.length}/16 Parts${motionInfo}${sampleInfo.summary})`,
         { kind: "success" }
       );
       if (sampleInfo.hint) {
@@ -2353,8 +2354,7 @@ function DrumMachineInner({
       // fehlenden an und liefert die IDs sofort zurueck (der State-Update ist
       // asynchron, `getActivePattern()` kennt sie in diesem Tick noch nicht).
       const partIds = dm.ensureParts(decoded.parts.length);
-      const limit = Math.min(decoded.parts.length, partIds.length);
-      for (let i = 0; i < limit; i++) {
+      for (let i = 0; i < decoded.parts.length; i++) {
         const partId = partIds[i];
         const src = decoded.parts[i];
         // v3.318: Sample-Nummer in den Part-Namen schreiben — der Push-Pfad
@@ -2381,6 +2381,9 @@ function DrumMachineInner({
         }
         dm.setPartVolume(partId, src.volume);
         dm.setPartPan(partId, src.pan);
+        // v3.319: Mute-Zustand vom Gerät übernehmen (Part+0x01). Ohne das war
+        // nach jedem Pull jeder Part aktiv — was am Gerät stumm war, klang hier.
+        dm.setPartMuted(partId, src.muted);
         // Verifizierten Part-Filter (Type/Cutoff/Res) auf die ChannelFx mappen.
         const f = e2FilterToImportedFilter(
           src.filterType,
@@ -4792,33 +4795,10 @@ function DrumMachineInner({
               data-testid="electribe-import-input"
             />
 
-            {/* v3.297: Pattern ⇄ Korg E2/E2S per SysEx direkt aus dem Sequenzer */}
-            <button
-              onClick={() => void handlePushPatternToDevice()}
-              disabled={e2sDevice.status !== "connected" || e2sDevice.busy}
-              title={
-                e2sDevice.status === "connected"
-                  ? "Aktives Pattern an das Korg E2/E2S senden (Current Pattern, SysEx)"
-                  : "Kein Korg E2/E2S verbunden — im E2S-Tab verbinden"
-              }
-              className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-40"
-              data-testid="e2s-push-pattern"
-            >
-              ⇧ Gerät
-            </button>
-            <button
-              onClick={() => void handlePullPatternFromDevice()}
-              disabled={e2sDevice.status !== "connected" || e2sDevice.busy}
-              title={
-                e2sDevice.status === "connected"
-                  ? "Aktuelles Pattern vom Korg E2/E2S holen und ins aktive Pattern laden (SysEx)"
-                  : "Kein Korg E2/E2S verbunden — im E2S-Tab verbinden"
-              }
-              className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-40"
-              data-testid="e2s-pull-pattern"
-            >
-              ⇩ Gerät
-            </button>
+            {/* v3.319: Die Sysex-Pattern-Buttons standen hier im einklappbaren
+                I/O-Cluster und waren deshalb unsichtbar — der User griff
+                stattdessen zu den „Von/Zur Korg"-Zwillingen. Sie sitzen jetzt
+                fest in der Leiste, und die Zwillinge sind weg. */}
 
             {/* v3.285: „📦 KORG Bank" entfernt — der eine „📥 Korg Import"-
                 Button (neben One-Shot) übernimmt Bank/Sample/Pattern-Import;
@@ -5028,88 +5008,48 @@ function DrumMachineInner({
           </div>
         </div>
 
-        {/* ── Live-Sysex mit echter Electribe 2 (v3.268.0) ────────────────────
-            Natives Korg-Protokoll F0 42 …, NICHT unser OTP. Holt bzw. schickt
-            das Pattern direkt über MIDI — ohne Umweg über SD-Karte. */}
+        {/* ── Pattern ⇄ echte Electribe 2 per Sysex ───────────────────────────
+            v3.319: Hier standen bis eben ZWEI Paare — „⬇ Von Korg/⬆ Zur Korg"
+            und, im eingeklappten I/O-Cluster versteckt, „⇩/⇧ Gerät". Zwei
+            eigenständig gepflegte Implementierungen desselben Vorgangs; der
+            Bug vom 2026-08-10 (Parts 10..16 fielen weg) steckte in beiden und
+            musste zweimal gefixt werden. Geblieben ist EIN Paar, verdrahtet
+            auf den Pfad mit Akkord-Noten, Filter-Übernahme, Mute und
+            Sample-Nummer im Part-Namen. Natives Korg-Protokoll F0 42 …,
+            NICHT unser OTP. */}
         <button
-          onClick={async () => {
+          onClick={() => {
             if (!requireProFeature(PRO_FEATURE_ELECTRIBE_IMPORT)) return;
-            if (!pattern) {
-              toast("Kein Pattern aktiv", { kind: "warning" });
-              return;
-            }
-            setE2SysexBusy("load");
-            try {
-              const res = await requestPatternFromDevice();
-              if (!res.ok) {
-                toast(res.error, { kind: "error" });
-                return;
-              }
-              const r = res.response;
-              if (r.kind !== "currentPatternDump" && r.kind !== "patternDump") {
-                toast(
-                  r.kind === "nak"
-                    ? `Gerät meldet Fehler: ${r.reason}`
-                    : `Unerwartete Antwort vom Gerät (${r.kind})`,
-                  { kind: "error" },
-                );
-                return;
-              }
-              // Roh-Body → .e2spat-Datei → bestehender, erprobter Import-Pfad.
-              const parsed = parseElectribePattern(wrapPatternBodyAsFile(r.body));
-              importElectribePatternIntoActive(parsed, "Korg Electribe (MIDI)");
-              toast(`Pattern von der Korg geladen: ${parsed.name || "(ohne Namen)"}`, { kind: "success" });
-            } catch (err) {
-              console.error("[E2 Sysex Load] error:", err);
-              toast(`Laden fehlgeschlagen: ${(err as Error)?.message ?? "unbekannt"}`, { kind: "error" });
-            } finally {
-              setE2SysexBusy(null);
-            }
+            void handlePullPatternFromDevice();
           }}
-          disabled={e2SysexBusy !== null}
-          title="Aktives Pattern per MIDI-Sysex von der angeschlossenen Electribe 2 holen (überschreibt das aktive Synthstudio-Pattern)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-wait"
-          data-testid="e2-sysex-load"
+          disabled={e2sDevice.status !== "connected" || e2sDevice.busy}
+          title={
+            e2sDevice.status === "connected"
+              ? "Aktuelles Pattern von der Korg holen und ins aktive Pattern laden (Sysex). Überschreibt das aktive Synthstudio-Pattern."
+              : "Kein Korg E2/E2S verbunden — im E2S-Tab verbinden"
+          }
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          data-testid="e2s-pull-pattern"
         >
-          {e2SysexBusy === "load" ? "⏳ Lade…" : "⬇ Von Korg"}
+          {e2sDevice.busy ? "⏳ …" : "⬇ Von Korg"}
           <ProLockBadge feature={PRO_FEATURE_ELECTRIBE_IMPORT} />
         </button>
 
         <button
-          onClick={async () => {
+          onClick={() => {
             if (!requireProFeature(PRO_FEATURE_E2_PATTERN_EXPORT)) return;
-            const currentPattern = dm.getActivePattern();
-            if (!currentPattern) {
-              toast("Kein Pattern aktiv", { kind: "warning" });
-              return;
-            }
-            setE2SysexBusy("send");
-            try {
-              const e2Input = convertSynthstudioPatternToE2(currentPattern, { globalBpm: bpm });
-              const body = buildE2PatternBody(e2Input);
-              const res = await sendPatternToDevice(body);
-              if (!res.ok) {
-                toast(res.error, { kind: "error" });
-                return;
-              }
-              if (res.response.kind === "nak") {
-                toast(`Gerät hat abgelehnt: ${res.response.reason}`, { kind: "error" });
-                return;
-              }
-              toast("Pattern an die Korg gesendet (Edit-Buffer — am Gerät speichern!)", { kind: "success" });
-            } catch (err) {
-              console.error("[E2 Sysex Send] error:", err);
-              toast(`Senden fehlgeschlagen: ${(err as Error)?.message ?? "unbekannt"}`, { kind: "error" });
-            } finally {
-              setE2SysexBusy(null);
-            }
+            void handlePushPatternToDevice();
           }}
-          disabled={e2SysexBusy !== null}
-          title="Aktives Pattern per MIDI-Sysex in den Edit-Buffer der Electribe 2 schicken (überschreibt KEIN gespeichertes Pattern — am Gerät selbst speichern)"
-          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-wait"
-          data-testid="e2-sysex-send"
+          disabled={e2sDevice.status !== "connected" || e2sDevice.busy}
+          title={
+            e2sDevice.status === "connected"
+              ? "Aktives Pattern an die Korg senden (Current Pattern / Edit-Buffer — am Gerät selbst speichern!). Geräte-Sequencer vorher stoppen."
+              : "Kein Korg E2/E2S verbunden — im E2S-Tab verbinden"
+          }
+          className="px-2 py-1 rounded text-[10px] bg-bg-elevated text-text-dim hover:text-text-primary transition-colors inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          data-testid="e2s-push-pattern"
         >
-          {e2SysexBusy === "send" ? "⏳ Sende…" : "⬆ Zur Korg"}
+          {e2sDevice.busy ? "⏳ …" : "⬆ Zur Korg"}
           <ProLockBadge feature={PRO_FEATURE_E2_PATTERN_EXPORT} />
         </button>
 

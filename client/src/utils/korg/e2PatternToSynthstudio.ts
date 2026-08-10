@@ -75,7 +75,8 @@ function mapPart(part: E2PartDecoded, index: number): PartData {
   return {
     id: makeId(`p${index}`),
     name: hasSample ? `P${index + 1} · #${part.sampleRef}` : `P${index + 1}`,
-    muted: false,
+    // v3.319: Mute kommt vom Gerät mit (Part+0x01) statt pauschal „klingt".
+    muted: part.muted,
     soloed: false,
     volume: Math.max(0, Math.min(1, part.volume / 127)),
     pan: Math.max(-1, Math.min(1, (part.pan - 64) / 64)),
