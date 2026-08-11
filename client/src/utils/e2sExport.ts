@@ -214,16 +214,56 @@ function writeFileHeader(bytes: Uint8Array): void {
 
 // ─── Body overlay ─────────────────────────────────────────────────────────────
 
+/** Optionen für {@link buildE2PatternBody}. */
+export interface E2PatternBodyOptions {
+  /**
+   * Der Original-Body, auf den überlagert wird — statt auf das Init-Template.
+   *
+   * ★ Der Grund, warum es diese Option gibt: ein Pattern-Body trägt weit mehr
+   * als SynthStudio liest (FX-Routing, Groove, Motion, alles hinter der
+   * Part-Tabelle). Ohne Original setzt ein Push diese Felder auf
+   * WERKSEINSTELLUNG zurück — bei jedem Push, unbemerkt, auch wenn der
+   * Bedienende gar nichts geändert hat. Mit Original bleiben sie stehen.
+   *
+   * Falsche Länge wird ignoriert; dann greift wieder das Init-Template.
+   */
+  base?: Uint8Array;
+}
+
 /**
  * Builds one 16384-byte PTST pattern body by overlaying `input` onto a fresh
- * copy of the real init-pattern template. Returns a new `Uint8Array`.
+ * copy of the real init-pattern template — or onto `opts.base`, wenn ein
+ * Original vorliegt (Geräte-Pull). Returns a new `Uint8Array`.
  */
-export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
-  const body = b64ToBytes(E2S_INIT_BODY_B64).slice(); // fresh 16384-byte copy
+export function buildE2PatternBody(
+  input: E2PatternInput,
+  opts: E2PatternBodyOptions = {}
+): Uint8Array {
+  const vorlage = b64ToBytes(E2S_INIT_BODY_B64);
+  const aufOriginal =
+    !!opts.base && opts.base.length === vorlage.length;
+  const body = aufOriginal
+    ? Uint8Array.from(opts.base as Uint8Array)
+    : vorlage.slice(); // fresh 16384-byte copy
   const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
 
   // Name @ +0x10
-  writeAsciiNul(body, NAME_OFF, input.name ?? "", 16);
+  //
+  // Auf dem Original-Body nur schreiben, wenn der Name sich tatsächlich
+  // geändert hat. Korg füllt das 16-Byte-Feld mit LEERZEICHEN auf, dieser
+  // Builder mit NUL, und der Dekoder trimmt beim Lesen — ein unveränderter
+  // Name käme also anders zurück, als er hereinkam. Das ist harmlos für den
+  // Klang und trotzdem falsch: es macht die Byte-Gleichheit unprüfbar, und
+  // damit auch jede echte Abweichung unsichtbar.
+  const basisName = aufOriginal
+    ? new TextDecoder("latin1")
+        .decode((opts.base as Uint8Array).subarray(NAME_OFF, NAME_OFF + 16))
+        .replace(/\0/g, " ")
+        .trim()
+    : null;
+  if (!aufOriginal || basisName !== (input.name ?? "").trim()) {
+    writeAsciiNul(body, NAME_OFF, input.name ?? "", 16);
+  }
 
   // BPM × 10 @ +0x22 (u16 LE)
   const bpmX10 = clampInt(
@@ -303,15 +343,24 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
         // Gate-Flag: default 1 (so schreibt es auch das Gerät bei Live-Input);
         // die Stock-Bank zeigt aber 38 % aktive Steps mit 0 — ein explizites
         // `gate: false` aus einem Parse-Roundtrip wird deshalb respektiert.
-        body[so + STEP_GATE] = step.gate === false ? 0x00 : 0x01;
+        // ☠ Auf dem Original-Body NUR überschreiben, was der Aufrufer wirklich
+        // liefert. SynthStudios StepData kennt weder Gate-Flag noch Gate-Länge
+        // — der Default hätte am Gerät jede Notenlänge plattgemacht (Werksbank
+        // e2s-2016: 0x1D wurde zu 0x3D, hörbar kürzer/länger). Dieselbe Regel
+        // gilt hier schon für `muted` und `sampleId`.
+        if (step.gate !== undefined || !aufOriginal) {
+          body[so + STEP_GATE] = step.gate === false ? 0x00 : 0x01;
+        }
         // v3.307: Gate-Länge aus dem Input übernehmen (Roundtrip-Treue);
         // Stock-Spanne ist 0..106, wir clampen auf 1..127 (0 wäre stumm).
-        body[so + STEP_GATELEN] = clampInt(
-          step.gateLength,
-          1,
-          127,
-          DEFAULT_GATELEN
-        );
+        if (step.gateLength !== undefined || !aufOriginal) {
+          body[so + STEP_GATELEN] = clampInt(
+            step.gateLength,
+            1,
+            127,
+            DEFAULT_GATELEN
+          );
+        }
         // v3.308: Chord-Noten 2..4 (bytes 5..7; 0 = unbenutzt). Die Werksbank
         // e2s-2016 trägt sie auf 4 392 aktiven Steps — vorher gingen sie bei
         // jedem Re-Export verloren (Template-Bytes blieben einfach 0).
@@ -319,7 +368,23 @@ export function buildE2PatternBody(input: E2PatternInput): Uint8Array {
         for (let c = 0; c < 3; c++) {
           body[so + STEP_CHORD + c] = clampInt(chord[c], 0, 127, 0);
         }
-      } else {
+      } else if (aufOriginal && s < steps.length) {
+        // Auf dem Original-Body reicht es, den Trigger zu löschen. Das Gerät
+        // MERKT sich Note, Velocity und Gate-Länge eines ausgeschalteten Steps
+        // (Werksbank: inaktive Steps tragen 0x56 als Note und 0x49 als
+        // Gate-Länge) — sie zu kanonisieren wäre Datenverlust, obwohl der
+        // Bedienende nur einen Step ausgeschaltet hat.
+        body[so + STEP_TRIGGER] = 0x00;
+      } else if (!aufOriginal) {
+        // ☠ Nur räumen, was SynthStudio auch wirklich kennt. Die Step-Liste ist
+        // so lang wie die Schrittzahl des Patterns; alles dahinter hat der
+        // Bedienende nie zu Gesicht bekommen. Auf dem Original-Body würde das
+        // Räumen echte Geräte-Daten löschen — genau das hat der Byte-Vergleich
+        // aufgedeckt (Steps 20, 24, 28 … waren aktiv und fielen weg).
+        // Ohne Original bleibt es beim bisherigen Verhalten.
+        //
+        // Ein Step INNERHALB der Liste, der inaktiv ist, wird sehr wohl
+        // geräumt — sonst käme ein ausgeschalteter Step nie beim Gerät an.
         // canonical inactive record (template already matches; enforce for safety)
         body[so + STEP_TRIGGER] = 0x00;
         body[so + STEP_NOTE] = DEFAULT_NOTE;

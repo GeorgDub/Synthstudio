@@ -30,6 +30,9 @@ function geraetePattern(
       active: s % 4 === 0,
       velocity: 100,
       note: 0x48,
+      // Ein dekodierter Step traegt immer die 7 Motion-Bytes (+0x05..+0x0B);
+      // die ersten drei sind die Akkord-Noten.
+      motion: [0, 0, 0, 0, 0, 0, 0],
     })),
   });
   return {
@@ -104,6 +107,7 @@ describe("Pull → Push ohne Änderung", () => {
         active: s % 8 === 0,
         velocity: 100,
         note: 0x48,
+        motion: [0, 0, 0, 0, 0, 0, 0],
       }));
     });
 

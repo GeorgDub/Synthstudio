@@ -94,7 +94,9 @@ export function synthstudioPatternToE2(
 /** SynthStudio-`PatternData` → E2-Pattern-Body (0x4000, ohne 0x100-Header). */
 export function synthstudioPatternToBody(
   pattern: PatternData,
-  opts: { bpm?: number } = {}
+  opts: { bpm?: number; base?: Uint8Array } = {}
 ): Uint8Array {
-  return buildE2PatternBody(synthstudioPatternToE2(pattern, opts));
+  return buildE2PatternBody(synthstudioPatternToE2(pattern, opts), {
+    base: opts.base,
+  });
 }

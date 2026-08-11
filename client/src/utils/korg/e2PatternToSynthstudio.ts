@@ -23,6 +23,7 @@ import {
   type StepData,
 } from "../../audio/AudioEngine";
 import type { E2PatternDecoded, E2PartDecoded } from "./e2Sysex";
+import { stepChordNotes } from "./e2Sysex";
 
 /** E2-Default-Note (C5) — Referenz für die Pitch-Umrechnung. */
 export const E2_DEFAULT_NOTE = 0x48;
@@ -72,10 +73,17 @@ export function e2PulledPartName(
 }
 
 function mapStep(step: E2PartDecoded["steps"][number]): StepData {
+  const chord = stepChordNotes(step);
   return {
     active: step.active,
     velocity: Math.max(1, Math.min(127, step.velocity || 1)),
     pitch: step.note - E2_DEFAULT_NOTE,
+    // Akkord-Noten mitführen (Roh-Bytes +0x05..+0x07). Der Geräte-Pfad in
+    // DrumMachine.tsx tat das längst; dieser hier nicht — ein Pattern aus einer
+    // Datei verlor die Akkorde beim Zurückschreiben still. `undefined` statt
+    // `[]`, damit ein Step ohne Akkord nicht so aussieht, als sei einer
+    // gelöscht worden.
+    chordNotes: chord.length > 0 ? chord : undefined,
   };
 }
 

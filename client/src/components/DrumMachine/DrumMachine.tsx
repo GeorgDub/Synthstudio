@@ -1471,6 +1471,17 @@ function DrumMachineInner({
   const bankLinkRef = useRef<{ link: E2sSampleLink; quelle: string } | null>(
     null
   );
+  /**
+   * In welches SynthStudio-Pattern der letzte Geräte-Pull gelaufen ist.
+   *
+   * Der Push setzt auf dem Original-Body auf (`currentBody` im Geräte-Store),
+   * damit alles erhalten bleibt, was SynthStudio gar nicht liest — FX-Routing,
+   * Groove, Motion. Der Body gehört aber zu GENAU EINEM Pattern: wer nach dem
+   * Pull auf ein anderes Pattern wechselt und dort pusht, bekäme sonst die
+   * fremden Felder des zuletzt gepullten untergeschoben. Ohne Übereinstimmung
+   * wird deshalb wie bisher aus dem Init-Template gebaut.
+   */
+  const e2PullZielRef = useRef<string | null>(null);
   // TASK-237: nach Bank-Parse haelt der Dialog die Pattern-Liste fuer User-Auswahl.
   const [electribePicker, setElectribePicker] = useState<{
     fileName: string;
@@ -2320,7 +2331,15 @@ function DrumMachineInner({
       return;
     }
     try {
-      const body = synthstudioPatternToBody(active);
+      // Auf dem gepullten Original aufsetzen, wenn es zu DIESEM Pattern gehört.
+      // Sonst schriebe der Push alles, was SynthStudio nicht liest, auf
+      // Werkseinstellung zurück — bei jedem Senden, auch ohne eine einzige
+      // Änderung.
+      const original =
+        e2PullZielRef.current === active.id
+          ? (getE2sDeviceState().currentBody ?? undefined)
+          : undefined;
+      const body = synthstudioPatternToBody(active, { base: original });
       const ok = await e2sDevice.pushCurrent(body);
       toast(
         ok
@@ -2357,6 +2376,9 @@ function DrumMachineInner({
         return;
       }
       applyE2DecodedToActivePattern(decoded);
+      // Merken, wohin der Pull gelaufen ist — der Push setzt nur dann auf dem
+      // Original-Body auf.
+      e2PullZielRef.current = active.id;
       toast(`Pattern „${decoded.name || summary.name}" vom Gerät geladen.`, {
         kind: "success",
         duration: 4000,
