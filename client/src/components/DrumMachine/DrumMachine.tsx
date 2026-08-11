@@ -106,6 +106,7 @@ import {
   e2PanToUnit,
   e2VolumeToUnit,
 } from "@/utils/korg/e2PatternToSynthstudio";
+import { diagSchritt, diagFehler } from "@/diag";
 import { encodeWavStereo } from "@/audio/wavEncoder";
 import {
   requireProFeature,
@@ -2340,6 +2341,13 @@ function DrumMachineInner({
           ? (getE2sDeviceState().currentBody ?? undefined)
           : undefined;
       const body = synthstudioPatternToBody(active, { base: original });
+      diagSchritt(
+        "e2.push",
+        `Pattern "${active.name}": ${body.length} B, ` +
+          (original
+            ? "auf dem Original-Body"
+            : "aus dem Init-Template (kein Original)")
+      );
       const ok = await e2sDevice.pushCurrent(body);
       toast(
         ok
@@ -2379,6 +2387,11 @@ function DrumMachineInner({
       // Merken, wohin der Pull gelaufen ist — der Push setzt nur dann auf dem
       // Original-Body auf.
       e2PullZielRef.current = active.id;
+      diagSchritt(
+        "e2.pull",
+        `"${decoded.name}", ${decoded.parts.length} Parts, ` +
+          `${decoded.stepLength} Steps`
+      );
       toast(`Pattern „${decoded.name || summary.name}" vom Gerät geladen.`, {
         kind: "success",
         duration: 4000,
@@ -2433,6 +2446,21 @@ function DrumMachineInner({
           dm.setPartSample(partId, treffer.url, treffer.name);
           verlinkt++;
         }
+        // Je Part eine Zeile. Ohne diese Aufloesung ist "kein Sample" nicht zu
+        // unterscheiden von "Bank nicht geladen", "Versatz falsch" und
+        // "Resolver gar nicht gelaufen".
+        // Je Part eine Zeile. Ohne diese Auflösung ist „kein Sample" nicht zu
+        // unterscheiden von „Bank nicht geladen", „Versatz falsch" und
+        // „Resolver gar nicht gelaufen" — alle drei enden in stummen Kanälen.
+        diagSchritt(
+          "e2.pull.resolver",
+          `Part ${i + 1}: ref ${src.sampleRef} → Slot ${bankNr} → ` +
+            (treffer
+              ? `"${treffer.name}"`
+              : bank
+                ? "kein Treffer in der Bank"
+                : "keine Bank geladen")
+        );
         // v3.318: Sample-Nummer in den Part-Namen schreiben — der Push-Pfad
         // liest sie ueber `parseSampleIdFromName` von dort. Ohne das verliert
         // ein Pull->Push-Roundtrip die Sample-Zuordnung ans Init-Template.

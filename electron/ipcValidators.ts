@@ -893,3 +893,23 @@ export function validateMidiHandle(input: unknown): MidiHandleCheck {
   }
   return { ok: true, handle: input };
 }
+
+/**
+ * Dateiname für eine Diagnose-Sitzung, oder `null` bei ungültiger Kennung.
+ *
+ * ☠ Der Renderer schickt NUR die Kennung, nie einen Pfad — den baut der
+ * Hauptprozess unter `userData/diagnose`. Ein Log, dessen Ziel der Renderer
+ * bestimmen könnte, wäre ein Schreib-Primitiv über die ganze Platte, und zwar
+ * eines, das in jeder Sitzung mitläuft.
+ *
+ * Erlaubt sind nur Buchstaben, Ziffern, Punkt, Strich und Unterstrich. Das
+ * schliesst Pfadtrenner ebenso aus wie den Doppelpunkt, mit dem man auf
+ * Windows statt einer Datei einen alternativen Datenstrom öffnet.
+ */
+export function diagSessionDateiname(kennung: unknown): string | null {
+  if (typeof kennung !== "string") return null;
+  if (kennung.length === 0 || kennung.length > 64) return null;
+  if (!/^[A-Za-z0-9._-]+$/.test(kennung)) return null;
+  if (kennung === "." || kennung === "..") return null;
+  return `session-${kennung}.jsonl`;
+}

@@ -1,7 +1,12 @@
+// ☠ MUSS der erste Import bleiben — er startet den MIDI-Tap noch bevor
+// irgendein anderes Modul ausgewertet wird. Siehe diag/boot.ts.
+import "./diag/boot";
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ConfirmDialogProvider } from "./components/common/ConfirmDialog";
+import DiagPanel from "./components/Diag/DiagPanel";
 import "./index.css";
 
 // MIG-1A + DIAG-2: globale Renderer-Crash-Handler.
@@ -66,6 +71,8 @@ if (isDockviewPopout) {
     <React.StrictMode>
       <ConfirmDialogProvider>
         <App />
+        {/* Strg+Umschalt+L — sichtbar nur auf Zuruf, kostet sonst nichts. */}
+        <DiagPanel />
       </ConfirmDialogProvider>
     </React.StrictMode>
   );

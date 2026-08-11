@@ -18,6 +18,7 @@
  */
 import { getE2MidiAccess, resolveE2Output } from "./E2NativeSysexTransfer";
 import { isE2SysexFrame } from "../utils/korg/e2NativeSysex";
+import { diagSchritt, diagFehler } from "../diag";
 import {
   RAM_READ_CHUNK,
   RAM_WRITE_CHUNK,
@@ -140,8 +141,16 @@ export async function readRam(
 
   for (const part of splitRamRead(addr, len, RAM_READ_CHUNK)) {
     const frame = buildRamReadRequest(part.addr, part.len, { globalChannel });
+    diagSchritt(
+      "hacktribeRam.readRam",
+      `lese 0x${part.addr.toString(16).toUpperCase()}, ${part.len} B`
+    );
     const res = await requestAndWait(ports.value, frame, RAM_TIMEOUT_MS);
     if (!res.ok) {
+      diagFehler(
+        "hacktribeRam.readRam",
+        `keine Antwort bei 0x${part.addr.toString(16).toUpperCase()} — ${res.error}`
+      );
       return {
         ok: false,
         error: `Lesen bei 0x${part.addr.toString(16).toUpperCase()} fehlgeschlagen: ${res.error}`,
@@ -149,11 +158,22 @@ export async function readRam(
     }
     const parsed = parseRamResponse(res.value);
     if (!parsed || parsed.kind !== "data") {
+      // ☠ Den ROHRAHMEN festhalten, nicht nur die Deutung. Genau hier ist der
+      // Befund vom 2026-08-11 verpufft: das Banner nannte „cmd 0x54", und
+      // hinterher liess sich nicht mehr feststellen, ob das Gerät wirklich so
+      // geantwortet hatte oder ob unser Parser danebenlag.
+      diagFehler(
+        "hacktribeRam.readRam",
+        `unerwartete Antwort bei 0x${part.addr.toString(16).toUpperCase()}: ` +
+          Array.from(res.value)
+            .map(b => b.toString(16).toUpperCase().padStart(2, "0"))
+            .join(" ")
+      );
       return {
         ok: false,
         error:
           parsed?.kind === "unknown"
-            ? `Unerwartete Antwort (cmd 0x${parsed.cmd.toString(16)}) — läuft auf dem Gerät wirklich Hacktribe?`
+            ? `Unerwartete Antwort (cmd 0x${parsed.cmd.toString(16)}) — läuft auf dem Gerät wirklich Hacktribe? Rohrahmen steht im Diagnose-Log (Strg+Umschalt+L).`
             : "Antwort war kein Datenblock",
       };
     }

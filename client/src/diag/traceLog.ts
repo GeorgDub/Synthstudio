@@ -42,6 +42,18 @@ export interface TraceLog {
   recent(): TraceEvent[];
   /** Wie viele Ereignisse der Puffer verworfen hat. */
   droppedCount(): number;
+  /**
+   * Eröffnet eine neue Kette und gibt ihre Kennung zurück. Alle folgenden
+   * Ereignisse ohne eigenes `corr` hängen daran.
+   *
+   * ☠ Bewusst eine laufende „aktuelle Kette" statt einer sauberen
+   * Ablaufverfolgung über `await` hinweg: im Browser gibt es kein
+   * AsyncLocalStorage. Überlappen zwei Vorgänge, landen ihre Ereignisse in
+   * derselben Kette. Die laufende Nummer bleibt trotzdem lückenlos, die
+   * Reihenfolge geht also nie verloren — nur die Zuordnung wird unscharf.
+   */
+  beginChain(): string;
+  currentChain(): string | null;
 }
 
 export function createTraceLog(options: TraceLogOptions): TraceLog {
@@ -49,11 +61,17 @@ export function createTraceLog(options: TraceLogOptions): TraceLog {
   const buffer: TraceEvent[] = [];
   let seq = 0;
   let dropped = 0;
+  let chain = 0;
+  let currentChain: string | null = null;
 
   return {
     push(input: TraceInput): TraceEvent {
       seq += 1;
-      const event: TraceEvent = { ...input, seq };
+      const event: TraceEvent = {
+        ...input,
+        seq,
+        corr: input.corr ?? currentChain ?? undefined,
+      };
       buffer.push(event);
       if (buffer.length > capacity) {
         buffer.shift();
@@ -66,6 +84,14 @@ export function createTraceLog(options: TraceLogOptions): TraceLog {
     },
     droppedCount(): number {
       return dropped;
+    },
+    beginChain(): string {
+      chain += 1;
+      currentChain = `c${chain}`;
+      return currentChain;
+    },
+    currentChain(): string | null {
+      return currentChain;
     },
   };
 }

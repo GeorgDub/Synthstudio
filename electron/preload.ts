@@ -1093,6 +1093,20 @@ const electronAPI = {
     return () => ipcRenderer.removeListener("midi:message", handler);
   },
 
+  /**
+   * Haengt eine Diagnose-Zeile an die Sitzungsdatei an.
+   * Nur die KENNUNG geht rueber — den Pfad baut der Hauptprozess.
+   */
+  diagAppend: (
+    kennung: string,
+    text: string
+  ): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke("diag:append", kennung, text),
+
+  /** Oeffnet den Diagnose-Ordner im Datei-Explorer. */
+  diagReveal: (): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke("diag:reveal"),
+
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

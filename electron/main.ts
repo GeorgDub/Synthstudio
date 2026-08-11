@@ -49,7 +49,7 @@ import {
   listMidiPorts, getMidiStatus, openMidiInput, openMidiOutput,
   sendMidi, closeMidiPort, closeAllMidi, setMidiEmitter,
 } from "./midi-native";
-import { validateMidiPortIndex, validateMidiBytes, validateMidiHandle } from "./ipcValidators";
+import { validateMidiPortIndex, validateMidiBytes, validateMidiHandle, diagSessionDateiname } from "./ipcValidators";
 import {
   initCrashLog,
   installMainProcessCrashHandlers,
@@ -2383,6 +2383,53 @@ function registerIpcHandlers(): void {
   function licenseFilePath(): string {
     return path.join(app.getPath("userData"), "license.json");
   }
+
+  // ── Diagnose-Log ─────────────────────────────────────────────────────────
+  //
+  // Der Renderer schickt NUR eine Sitzungskennung, nie einen Pfad — den baut
+  // der Hauptprozess unter userData/diagnose. Ein Log, dessen Ziel der
+  // Renderer bestimmen koennte, waere ein Schreib-Primitiv ueber die ganze
+  // Platte, und zwar eines das in JEDER Sitzung mitlaeuft.
+  const DIAG_MAX_BYTES = 64 * 1024 * 1024; // Deckel je Sitzungsdatei
+  ipcMain.handle(
+    "diag:append",
+    async (_event, kennung: unknown, text: unknown) => {
+      try {
+        const name = diagSessionDateiname(kennung);
+        if (!name) return { success: false, error: "Ungueltige Sitzungskennung" };
+        if (typeof text !== "string" || text.length === 0) {
+          return { success: false, error: "Nichts zu schreiben" };
+        }
+        const ordner = path.join(app.getPath("userData"), "diagnose");
+        await fs.promises.mkdir(ordner, { recursive: true });
+        const ziel = path.join(ordner, name);
+        try {
+          const st = await fs.promises.stat(ziel);
+          if (st.size > DIAG_MAX_BYTES) {
+            return { success: false, error: "Sitzungsdatei am Deckel" };
+          }
+        } catch {
+          /* gibt es noch nicht — dann ist sie auch nicht zu gross */
+        }
+        await fs.promises.appendFile(ziel, text, "utf-8");
+        return { success: true, path: ziel };
+      } catch (err) {
+        console.error("[IPC diag:append] error:", err);
+        return { success: false, error: "Schreibfehler" };
+      }
+    }
+  );
+
+  ipcMain.handle("diag:reveal", async () => {
+    try {
+      const ordner = path.join(app.getPath("userData"), "diagnose");
+      await fs.promises.mkdir(ordner, { recursive: true });
+      await shell.openPath(ordner);
+      return { success: true, path: ordner };
+    } catch {
+      return { success: false, error: "Ordner liess sich nicht oeffnen" };
+    }
+  });
 
   ipcMain.handle("license:read", async () => {
     try {
