@@ -49,14 +49,19 @@ function stepToE2(step: StepData): E2StepInput {
 
 function partToE2(part: PartData): E2PartInput {
   return {
-    sampleId: parseSampleIdFromName(part.name),
+    // Das Datenfeld gewinnt; der Name ist nur noch Rückfallebene für Patterns,
+    // die aus einer Datei stammen und nie durch den Geräte-Pull gelaufen sind.
+    sampleId: part.e2SampleRef ?? parseSampleIdFromName(part.name),
     // v3.319: Mute mitschicken (Byte Part+0x01). buildE2PatternBody kannte das
     // Feld laengst — gefuellt hat es nur nie jemand, also kam jedes gepushte
     // Pattern am Geraet mit 16 klingenden Parts an.
     muted: !!part.muted,
     volume: Math.round((part.volume ?? 1) * 127),
-    // −1..+1 → 0..127 mit center 64 (round(63.5) = 64, +1 → 127).
-    pan: Math.round(((part.pan ?? 0) + 1) * 63.5),
+    // ☠ Muss die exakte Umkehrung des Pull-Mappings sein: dort ist es
+    // `(pan − 64) / 64`. Vorher stand hier `× 63,5` — zwei verschiedene Teiler,
+    // und damit kam jeder Wert RECHTS der Mitte zu klein zurück (127 → 126,
+    // 96 → 95). Links der Mitte stimmte es, weshalb Stichproben es nicht fanden.
+    pan: Math.max(0, Math.min(127, Math.round((part.pan ?? 0) * 64) + 64)),
     steps: (part.steps ?? []).map(stepToE2),
   };
 }

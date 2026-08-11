@@ -84,6 +84,10 @@ function mapPart(part: E2PartDecoded, index: number): PartData {
   return {
     id: makeId(`p${index}`),
     name: hasSample ? `P${index + 1} · #${part.sampleRef}` : `P${index + 1}`,
+    // Die Referenz als Datenfeld mitführen. Der Name ist Anzeige — er darf
+    // umbenannt werden oder ohne Bank gar kein „#NNN" tragen, ohne dass der
+    // Push die Zuweisung verliert.
+    e2SampleRef: hasSample ? part.sampleRef : undefined,
     // v3.319: Mute kommt vom Gerät mit (Part+0x01) statt pauschal „klingt".
     muted: part.muted,
     soloed: false,

@@ -510,6 +510,16 @@ export interface PartData {
   soloed: boolean;
   volume: number; // 0–1
   pan: number; // -1..+1
+  /**
+   * Sample-Referenz aus einem E2/E2S-Pattern (Pattern-Byte Part+0x08).
+   *
+   * Ein **Datenfeld**, kein Anzeigename. Vorher hing die Referenz am „#NNN" im
+   * Kanalnamen, und der Push las sie dort wieder heraus. Das ging genau dann
+   * verloren, wenn beim Pull keine Bank geladen war — dann hängt niemand ein
+   * „· #NNN" an, und das zurückgeschickte Pattern trug einen leeren Slot.
+   * Anzeige und Daten dürfen nicht dieselbe Stelle benutzen.
+   */
+  e2SampleRef?: number;
   /** Step-Auflösung für diesen Kanal (überschreibt Pattern-Default) */
   stepResolution?: StepResolution;
   /**
