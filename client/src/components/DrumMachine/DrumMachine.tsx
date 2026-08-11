@@ -101,7 +101,11 @@ import { synthstudioPatternToBody } from "@/utils/korg/synthstudioToE2Pattern";
 import { e2FilterToImportedFilter } from "@/utils/korg/e2FilterMap";
 import type { E2PatternDecoded } from "@/utils/korg/e2Sysex";
 import { stepChordNotes } from "@/utils/korg/e2Sysex";
-import { e2PulledPartName } from "@/utils/korg/e2PatternToSynthstudio";
+import {
+  e2PulledPartName,
+  e2PanToUnit,
+  e2VolumeToUnit,
+} from "@/utils/korg/e2PatternToSynthstudio";
 import { encodeWavStereo } from "@/audio/wavEncoder";
 import {
   requireProFeature,
@@ -1889,8 +1893,14 @@ function DrumMachineInner({
         for (let s = 0; s < targetSteps; s++) {
           dm.setStepChordNotes(partId, s, s < cap ? src.chords[s] : undefined);
         }
-        dm.setPartVolume(partId, src.volume);
-        dm.setPartPan(partId, src.pan);
+        // ☠ Umrechnen, nicht durchreichen. `setPartVolume`/`setPartPan`
+        // schreiben unveraendert in Felder, die 0..1 bzw. −1..+1 halten — der
+        // rohe Geraetewert (0..127) stand danach als Pan von bis zu 127 im
+        // Store, und der Push machte daraus die Begrenzung 127. Das war die
+        // eigentliche Ursache von „der Pan ist falsch". BEIDE Pull-Pfade hatten
+        // die Zeile; ein Fix an einer Stelle waere kein Fix gewesen.
+        dm.setPartVolume(partId, e2VolumeToUnit(src.volume));
+        dm.setPartPan(partId, e2PanToUnit(src.pan));
 
         // v3.272: Sample aus mitgeladener .all-Bank verlinken (Part-Ref +0x08
         // 501+ → OSC_0index). Nur Parts mit aktiven Steps; ohne Treffer bleibt der
@@ -2372,6 +2382,15 @@ function DrumMachineInner({
       // fehlenden an und liefert die IDs sofort zurueck (der State-Update ist
       // asynchron, `getActivePattern()` kennt sie in diesem Tick noch nicht).
       const partIds = dm.ensureParts(decoded.parts.length);
+      // Die Schrittzahl des GERAETS uebernehmen. Vorher lief die Schleife gegen
+      // `active.stepCount` — ein 64-Step-Pattern wurde damit still auf die 16
+      // Steps des Projekts gekuerzt, ohne Meldung. `setStepCount` waechst nur
+      // und schneidet nie ab, ist hier also gefahrlos.
+      const geraeteSchritte =
+        decoded.stepLength === 32 || decoded.stepLength === 64
+          ? decoded.stepLength
+          : 16;
+      if (geraeteSchritte > active.stepCount) dm.setStepCount(geraeteSchritte);
       // v3.320: Mit geladener .all-Bank werden die Sample-NUMMERN aus dem
       // Pattern zu Name + Klang aufgeloest. Ohne Bank bleibt es bei der Nummer
       // — das Pattern selbst traegt nichts weiter (unten als Hinweis gemeldet).
@@ -2404,7 +2423,7 @@ function DrumMachineInner({
             treffer?.name
           )
         );
-        const target = active.stepCount;
+        const target = geraeteSchritte;
         const steps = new Array<boolean>(target).fill(false);
         const vels = new Array<number>(target).fill(100);
         const cap = Math.min(target, src.steps.length);
@@ -2419,8 +2438,14 @@ function DrumMachineInner({
           const chord = s < cap ? stepChordNotes(src.steps[s]) : [];
           dm.setStepChordNotes(partId, s, chord.length > 0 ? chord : undefined);
         }
-        dm.setPartVolume(partId, src.volume);
-        dm.setPartPan(partId, src.pan);
+        // ☠ Umrechnen, nicht durchreichen. `setPartVolume`/`setPartPan`
+        // schreiben unveraendert in Felder, die 0..1 bzw. −1..+1 halten — der
+        // rohe Geraetewert (0..127) stand danach als Pan von bis zu 127 im
+        // Store, und der Push machte daraus die Begrenzung 127. Das war die
+        // eigentliche Ursache von „der Pan ist falsch". BEIDE Pull-Pfade hatten
+        // die Zeile; ein Fix an einer Stelle waere kein Fix gewesen.
+        dm.setPartVolume(partId, e2VolumeToUnit(src.volume));
+        dm.setPartPan(partId, e2PanToUnit(src.pan));
         // v3.319: Mute-Zustand vom Gerät übernehmen (Part+0x01). Ohne das war
         // nach jedem Pull jeder Part aktiv — was am Gerät stumm war, klang hier.
         dm.setPartMuted(partId, src.muted);

@@ -79,6 +79,29 @@ function mapStep(step: E2PartDecoded["steps"][number]): StepData {
   };
 }
 
+/**
+ * Geräte-Pan (0..127, Mitte 64) → Store-Pan (−1..+1).
+ *
+ * ★ Die einzige Stelle, an der diese Umrechnung stehen darf. Der Pull-Handler
+ * in `DrumMachine.tsx` hatte seine eigene — nämlich gar keine: er reichte
+ * `src.pan` roh in `setPartPan` durch, das unverändert durchschreibt. Danach
+ * stand in jedem Part ein Pan von bis zu 127 statt höchstens 1.
+ *
+ * `synthstudioToE2Pattern.partToE2` ist die exakte Umkehrung (`× 64 + 64`).
+ * Wer eine der beiden ändert, muss die andere mitändern — der Roundtrip-Test
+ * `korg-e2-roundtrip-verlustfrei` fällt sonst durch.
+ */
+export function e2PanToUnit(pan: number): number {
+  if (!Number.isFinite(pan)) return 0;
+  return Math.max(-1, Math.min(1, (pan - 64) / 64));
+}
+
+/** Geräte-Lautstärke (0..127) → Store-Lautstärke (0..1). */
+export function e2VolumeToUnit(volume: number): number {
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(1, volume / 127));
+}
+
 function mapPart(part: E2PartDecoded, index: number): PartData {
   const hasSample = part.sampleRef > 0;
   return {
@@ -91,8 +114,8 @@ function mapPart(part: E2PartDecoded, index: number): PartData {
     // v3.319: Mute kommt vom Gerät mit (Part+0x01) statt pauschal „klingt".
     muted: part.muted,
     soloed: false,
-    volume: Math.max(0, Math.min(1, part.volume / 127)),
-    pan: Math.max(-1, Math.min(1, (part.pan - 64) / 64)),
+    volume: e2VolumeToUnit(part.volume),
+    pan: e2PanToUnit(part.pan),
     steps: part.steps.map(mapStep),
     fx: { ...DEFAULT_CHANNEL_FX },
   };
