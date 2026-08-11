@@ -7,9 +7,33 @@ Messung:
 
 | Befund | Was wir wissen | Was fehlt |
 |---|---|---|
-| FX Live Control tut nichts | Gerät antwortet mit `cmd 0x54`, Parser erwartet `0x52` | der Rohrahmen — die Deutung ist geraten |
+| FX Live Control tut nichts | Das Banner meldete ein unerwartetes Kommando-Byte (`0x54`) | **der Rohrahmen ist nie festgehalten worden.** Gedruckt wurde nur das gedeutete Byte — ob das Gerät wirklich so geantwortet hat, ist offen |
 | IFX/Groove-Lesen läuft in den Timeout | `@0xC003EFDC`, 3000 ms, keine Antwort | ob überhaupt gesendet wurde, und was |
 | Sample-Zuweisung beim Korg-Pull falsch | UI zeigt „kein Sample", zu hören ist für alle Parts dasselbe | welcher Slot zu welchem Namen aufgelöst wurde, Part für Part |
+
+☠ **Keine dieser Deutungen wird in einen Test gegossen, bevor ein echter Rahmen
+vorliegt.** Ein Test, der eine falsche Überzeugung festschreibt, ist schlimmer
+als keiner — die Überzeugung sieht ab dann bewiesen aus. Das Fixture für die
+Sysex-Deutung wartet auf die erste Aufzeichnung; das ist die erste Aufgabe des
+Logs, nicht seine Voraussetzung.
+
+### Nebenbefund aus dem Entwurf — statisch prüfbar, kein Gerät nötig
+
+Beim Nachlesen der beiden Parser fiel auf: sie sind sich über den Datenbeginn im
+Antwortrahmen **nicht einig**.
+
+| Quelle | Datenbeginn |
+|---|---|
+| `parseRamResponse` (RAM-Panel) | `b.subarray(7, end)` |
+| `parseSysex` (Bridge), selbe Codebasis | `b.subarray(9, end)` |
+| Protokoll-Kommentar **in `hacktribeRam.ts` selbst**, Z. 32 | „Daten in resp[9..-1]" |
+| `memory_peek.py`, am Gerät bewiesen | `resp[9:-1]` |
+
+Drei Quellen sagen 9, der Panel-Pfad nimmt 7 — gegen seinen eigenen
+Kopfkommentar. Wieder zwei Implementierungen desselben Vorgangs. Das wird
+**getrennt** behandelt, nicht im Zuge des Logs mitgefixt: erst das Log, dann
+eine Messung, dann der Fix. Sonst steht am Ende wieder eine Korrektur ohne
+Beleg.
 
 Am 2026-08-10 hat ein Fix nicht gegriffen, weil der Bedienende einen **anderen
 Knopf** drückte als der, den ich repariert hatte. Das kostete eine Sitzung und
@@ -133,15 +157,27 @@ vollständige Aufzeichnung.
 
 Vitest, in `tests/features/`:
 
-- Schema und Ringpuffer-Überlauf (`seq` bleibt lückenlos, auch nach Verdrängung)
-- Clock-Verdichtung (Zähler stimmt, Sysex dazwischen bleibt einzeln)
-- Sysex-Deutung gegen Fixtures, **darunter ein echter `0x54`-Antwortrahmen** —
-  der Fall, der heute als „unbekannt" durchfällt
-- Klick-Tap gegen ein DOM-Fragment (Beschriftung, `data-testid`)
-- MIDI-Tap gegen eine gefälschte `MIDIAccess`
-- ★ **Der Tap verschluckt fremde `onmidimessage`-Handler nicht** — Regression
-  gegen den Fehler, den `HacktribeRamTransfer` von Hand umschifft
-- Datei-Senke: Pfad landet unter `userData/diagnose`, Traversal wird abgewiesen
+In dieser Reihenfolge, riskantestes Stück zuerst:
+
+1. **Ringpuffer**: `seq` bleibt lückenlos, auch nachdem die ältesten Einträge
+   verdrängt wurden.
+2. ★ **Der MIDI-Tap verschluckt fremde `onmidimessage`-Handler nicht.** Die
+   Produktionsänderung, die diesen Test rot machen würde, ist benannt:
+   `onmidimessage` überschreiben, ohne `prev` aufzurufen. `HacktribeRamTransfer`
+   umschifft das schon von Hand — ein Tap, der es falsch macht, stellt beide
+   RAM-Pfade *und* den Monitor gegenseitig taub.
+3. ★ **Ein Aufrufer, der Zugriff NACH dem Umhüllen holt, bekommt getappte
+   Ports.** Ein einen Tick zu spät installierter Tap verpasst still, welcher
+   Pfad zuerst lief — und das läse sich als „dieser Pfad sendet nichts".
+4. Klick-Tap gegen ein DOM-Fragment (Beschriftung, `data-testid`).
+5. Clock-Verdichtung: Zähler stimmt, Sysex dazwischen bleibt einzeln.
+6. Roh-Hex wird **immer** festgehalten, auch wenn die Deutung `unbekannt`
+   ergibt. Das ist der Test, der den `0x54`-Fall überhaupt erst messbar macht.
+7. Datei-Senke: Pfad landet unter `userData/diagnose`, Traversal wird
+   abgewiesen.
+
+Die inhaltliche Sysex-Deutung bekommt Fixtures, **sobald echte Rahmen
+aufgezeichnet sind** — nicht vorher.
 
 ## Abgrenzung
 
