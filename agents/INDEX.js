@@ -4399,6 +4399,29 @@ const INDEX = {
       ]
     },
     {
+      agent:     "refactor",
+      timestamp: "2026-07-27T10:05:00.000Z",
+      done: [
+        "v3.312.0 — components/SampleSlicer/ geloescht (SampleSlicer.tsx 605 LOC + index.ts). Die Komponente war exportiert, wurde aber NIRGENDS gerendert: kein Import ausserhalb des eigenen Verzeichnisses, in keiner Datei unter client/, tests/ oder electron/. Der aktive Slicer ist SampleEditor/SampleSliceEditor.tsx, gemountet aus DrumMachine.tsx. Aufgefallen bei der Slicer-Arbeit in v3.300, geloescht auf ausdrueckliche Ansage.",
+        "pnpm check clean nach der Loeschung, volle Suite unveraendert gruen — nichts hing daran."
+      ],
+      next: [
+        "AUS DEM GELOESCHTEN CODE GERETTET — drei Faehigkeiten, die der aktive Editor NICHT hat und die beim Aufraeumen sonst mit verschwunden waeren:",
+        "(a) BPM-Raster ueber der Wellenform (drawBpmGrid: zeichnet Beat-Linien aus einer eingegebenen BPM). Bei Loops die schnellste Orientierung, wo ein Schnitt hingehoert.",
+        "(b) Snap-to-Beat beim Setzen der Marker (warpSnap + framesPerBeat = sampleRate*60/bpm). Ergaenzt den vorhandenen Zero-Crossing-Snap: der macht den Schnitt knackfrei, dieser macht ihn rhythmisch richtig. Beide zusammen waeren das eigentliche Ziel.",
+        "(c) Teilen in N GLEICHE Abschnitte (equalDivisions, Default 16) statt Onset-Erkennung. Bei sauber geschnittenen Loops zuverlaessiger als jede Transientenanalyse — dort ist das Raster bekannt, nicht zu erraten.",
+        "Die Implementierungen stehen in der Git-Historie (letzter Stand: 73aee66^, Datei client/src/components/SampleSlicer/SampleSlicer.tsx, Zeilen 34-79 drawBpmGrid, 288-300 warpSnap, 366-372 equalDivisions).",
+        "Offen aus der Vorwelle: Gegenprobe der Tabellen-Geometrie 0x0010 an einer echten Hacktribe-.all (auf 'offset-table geometry suspect' achten); Slicer-Gegenprobe am Geraet (Benennung/Reihenfolge auf dem Electribe-Display); RAM-Timeout-Test 0xC00A80F0 Laenge 524; GitHub-Release muss der Nutzer selbst anstossen (403 auf beiden Wegen); E2S_MAX_TOTAL_PCM_BYTES 224 vs 24 MB; source_control-Kodierung; C-Handler OTP CMD 0x10; Device->Parametername-Tabelle.",
+        "URSACHE des roten non-blocking Audio/Sim-Jobs gefunden — bisher als TASK-262-Env-Gate gefuehrt, das war falsch: der Workflow-Schritt 'Checkout omnitribe (sim WS server)' scheitert mit 'remote: Repository not found / fatal: repository https://github.com/GeorgDub/omnitribe/ not found', 3x Retry, dann Aufgabe. Der Schritt meldet trotzdem success (continue-on-error), deshalb faellt es erst weiter unten auf. Ohne das Repo laeuft tools/sim/sim_ws_server.py ins Leere, die Panels rendern nicht, ~30 Tests scheitern an fehlenden Test-IDs (erster: getByTestId('arp-output-synth') element not found). Kein Testfehler, ein Checkout-Fehler.",
+        "Fix waere ein Token mit Lesezugriff auf das private GeorgDub/omnitribe in jenem Schritt — GITHUB_TOKEN kann per Definition kein Fremd-Repo lesen. Gross-/Kleinschreibung ist NICHT die Ursache, GitHub-Repo-URLs sind case-insensitive. Braucht ein Repo-Secret, also Nutzer-Entscheidung.",
+        "Gegenprobe: derselbe Job ist am Merge-Commit 73aee66 auf main ebenfalls rot (Job 89943137056) — unabhaengig von der Slicer-Loeschung."
+      ],
+      changed: [
+        "client/src/components/SampleSlicer/SampleSlicer.tsx (geloescht)",
+        "client/src/components/SampleSlicer/index.ts (geloescht)"
+      ]
+    },
+    {
       agent:     "backend",
       timestamp: "2026-07-30T18:45:00.000Z",
       done: [
