@@ -136,12 +136,55 @@ export function disconnectE2sDevice(): void {
   set({ ...defaultState() });
 }
 
+/**
+ * Holt einen Body und verlangt, dass ZWEI Lesungen übereinstimmen.
+ *
+ * ★ Am 2026-08-11 am Gerät gemessen: ein 18,7-KB-Dump kommt regelmässig mit
+ * falscher Länge an — die Abweichung ist stets ein Vielfaches von 3, und ein
+ * USB-MIDI-Paket trägt genau 3 Datenbytes. Es gehen einzelne USB-Pakete
+ * verloren oder kommen doppelt an.
+ *
+ * ☠ Der Empfänger merkt davon nichts: alle Nutzbytes sind gültige 7-Bit-Werte,
+ * es gibt keine Prüfsumme, und der Dekoder liefert klaglos ein verschobenes
+ * Ergebnis. Das Pattern sieht danach plausibel aus — einzelne Parts ohne
+ * Sample, seltsame Pegel. Genau die Meldung „die Sample-Zuweisungen fehlen
+ * MANCHMAL komplett".
+ *
+ * Zwei übereinstimmende Lesungen sind die einzige Absicherung, die ohne
+ * Prüfsumme möglich ist: dieselbe Verfälschung zweimal an derselben Stelle
+ * ist unwahrscheinlich. Stimmen sie nie überein, ist das ein Befund und
+ * keine Kleinigkeit — dann wird geworfen statt geraten.
+ */
+async function pullMitPruefung(
+  lies: () => Promise<Uint8Array>,
+  versuche = 4
+): Promise<Uint8Array> {
+  const gesehen: Uint8Array[] = [];
+  for (let i = 0; i < versuche; i++) {
+    const b = await lies();
+    if (
+      gesehen.some(
+        alt => alt.length === b.length && alt.every((x, k) => x === b[k])
+      )
+    ) {
+      return b;
+    }
+    gesehen.push(b);
+  }
+  throw new Error(
+    `Der Dump kam in ${versuche} Lesungen nie zweimal gleich an — die ` +
+      `USB-MIDI-Verbindung verliert Pakete. Andere Buchse/anderes Kabel ` +
+      `probieren; ein einzeln gelesenes Pattern waere still verfaelscht.`
+  );
+}
+
 /** Holt den Edit-Buffer (Current Pattern) und legt die Zusammenfassung ab. */
 export async function pullE2sCurrentPattern(): Promise<PatternSummary | null> {
   if (!_bridge || _state.status !== "connected") return null;
   set({ busy: true, error: null });
   try {
-    const body = await _bridge.pullCurrentPattern();
+    const bridge = _bridge;
+    const body = await pullMitPruefung(() => bridge.pullCurrentPattern());
     const summary = summarizePatternBody(body);
     set({
       busy: false,

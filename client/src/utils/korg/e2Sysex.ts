@@ -633,3 +633,46 @@ export function parseSysex(bytes: Uint8Array | number[]): E2SysexParsed | null {
       return { kind: "unknown", func };
   }
 }
+
+// ─── Vollständigkeit eines Pattern-Dumps ─────────────────────────────────────
+//
+// ★ Am 2026-08-11 am Gerät gemessen: ein Pattern-Dump (18,7 KB) kommt auf dem
+// Arbeitsplatz regelmässig mit falscher Länge an — 18735 oder 18741 statt
+// 18738 Byte. Die Abweichung ist stets ein Vielfaches von 3, und ein
+// USB-MIDI-Paket trägt genau 3 Datenbytes: es gehen einzelne USB-Pakete
+// verloren oder kommen doppelt an.
+//
+// ☠ Für den Empfänger ist das sonst unsichtbar. Alle Nutzbytes sind gültige
+// 7-Bit-Werte, eine Prüfsumme gibt es nicht, und `decode7in8` liefert klaglos
+// ein Ergebnis — nur eben ein verschobenes. Das Pattern sieht danach plausibel
+// aus: einzelne Parts ohne Sample, seltsame Pegel. Genau die Meldung „die
+// Sample-Zuweisungen fehlen MANCHMAL komplett".
+//
+// Die Länge ist die einzige Prüfung, die VOR dem Dekodieren greift.
+
+/** Nutzbytes, zu denen ein 16384-B-Body 7-in-8-kodiert wird. */
+const DUMP_NUTZ_LEN = Math.ceil(E2_PATTERN_BODY_SIZE / 7) * 8; // 18728
+
+/**
+ * Die einzige richtige Rahmenlänge für einen Pattern-Dump, oder `null`, wenn
+ * die Funktion kein Dump ist.
+ */
+export function erwarteteDumpLaenge(func: number): number | null {
+  if (func === E2Func.CURRENT_PATTERN_DUMP) return 7 + DUMP_NUTZ_LEN + 1;
+  // Slot-Dumps tragen zusätzlich [lsb, msb] der Pattern-Nummer.
+  if (func === E2Func.PATTERN_DUMP) return 9 + DUMP_NUTZ_LEN + 1;
+  return null;
+}
+
+/**
+ * `false`, wenn der Rahmen ein Pattern-Dump ist und die falsche Länge hat.
+ *
+ * Rahmen, die keine Dumps sind (ACK, Identity, Global), gelten immer als
+ * masshaltig — sonst würde die Prüfung den halben Protokollverkehr verwerfen.
+ */
+export function istMasshaltigerDump(bytes: Uint8Array | number[]): boolean {
+  const b = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+  if (b.length < 8) return true;
+  const soll = erwarteteDumpLaenge(b[6]);
+  return soll === null || b.length === soll;
+}
