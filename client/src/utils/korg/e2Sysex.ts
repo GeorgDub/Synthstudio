@@ -617,6 +617,11 @@ export function parseSysex(bytes: Uint8Array | number[]): E2SysexParsed | null {
       };
     case E2Func.GLOBAL_DUMP:
       return { kind: "global", body: decode7in8(b.subarray(7, endIdx)) };
+    // ★ Am Gerät aufgezeichnet (2026-08-11): die Antwort auf ein Lesen trägt
+    // **0x54**, nicht das gesendete 0x52 — dieses steht als Echo an Index 7.
+    // Der 0x52-Zweig bleibt als Rückfallebene stehen, falls eine andere
+    // Firmware-Fassung anders antwortet; der Datenbeginn ist in beiden Fällen 9.
+    case E2Func.WRITE_CPU_RAM:
     case E2Func.READ_CPU_RAM:
       // RAM-Read-Reply: Daten ab Index 9 (e2sysex.py: syx_dec(response[9:-1])).
       return { kind: "cpuRamData", data: decode7in8(b.subarray(9, endIdx)) };

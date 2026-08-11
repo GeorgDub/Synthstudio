@@ -225,8 +225,26 @@ describe("Frame-Bau", () => {
 
 describe("parseRamResponse", () => {
   it("erkennt einen Datenblock und dekodiert ihn", () => {
+    // ★ 2026-08-11 am Gerät korrigiert. Dieser Test schrieb die FALSCHE
+    // Annahme fest: `buildFrame(RAM_CMD.read, …)` baut den Rahmen so, wie wir
+    // GLAUBTEN, dass das Gerät antwortet — 0x52 an Index 6, Daten ab 7. Der
+    // aufgezeichnete Rahmen sieht anders aus:
+    //
+    //     RX: F0 42 30 00 01 24 54 52 00 <7-in-8-Daten> F7
+    //
+    // Kommando 0x54, das gesendete 0x52 als Echo dahinter, Daten ab 9.
+    // Solange dieser Test grün war, sah die falsche Annahme bewiesen aus —
+    // und am Gerät kam „Unerwartete Antwort (cmd 0x54)" heraus.
+    // Gegen die echten Gerätebytes prüft `korg-ram-antwortrahmen.test.ts`.
     const payload = Uint8Array.from([1, 2, 3, 0x80, 0xff]);
-    const frame = buildFrame(RAM_CMD.read, encode7Bit(payload));
+    const frame = Uint8Array.from([
+      0xf0, 0x42, 0x30, 0x00, 0x01, 0x24,
+      RAM_CMD.writeData, // 0x54 — so antwortet das Gerät
+      RAM_CMD.read, // Echo des gesendeten Kommandos
+      0x00, // Status
+      ...encode7Bit(payload),
+      0xf7,
+    ]);
     const res = parseRamResponse(frame);
     expect(res?.kind).toBe("data");
     if (res?.kind === "data") {

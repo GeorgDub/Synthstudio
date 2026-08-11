@@ -262,9 +262,23 @@ export function parseRamResponse(frame: Uint8Array | number[]): RamReadResult | 
   if (!isE2SysexFrame(b)) return null;
   const cmd = b[6];
   if (cmd === RAM_ACK_CMD) return { kind: "ack" };
-  if (cmd === RAM_CMD.read) {
+  // ★ 2026-08-11 am GERÄT aufgezeichnet, nicht hergeleitet:
+  //
+  //     TX: F0 42 30 00 01 24 52 …          (Lesen)
+  //     RX: F0 42 30 00 01 24 54 52 00 …    (Antwort)
+  //
+  // Das Gerät antwortet mit **0x54**, nicht mit dem gesendeten 0x52 — das 0x52
+  // steht als Echo an Index 7 dahinter. Deshalb meldete dieser Parser bisher
+  // „Unerwartete Antwort (cmd 0x54) — läuft auf dem Gerät wirklich Hacktribe?".
+  // Das Gerät war nie das Problem.
+  //
+  // Zweiter Fehler in derselben Zeile: die Daten beginnen bei **9**, nicht 7.
+  // Das sagten der Protokoll-Kommentar oben in dieser Datei, `parseSysex` und
+  // das am Gerät bewiesene `memory_peek.py` schon vorher — nur diese
+  // Implementierung nicht.
+  if (cmd === RAM_CMD.writeData || cmd === RAM_CMD.read) {
     const end = b[b.length - 1] === 0xf7 ? b.length - 1 : b.length;
-    return { kind: "data", data: decode7Bit(b.subarray(7, end)) };
+    return { kind: "data", data: decode7Bit(b.subarray(9, end)) };
   }
   return { kind: "unknown", cmd };
 }
