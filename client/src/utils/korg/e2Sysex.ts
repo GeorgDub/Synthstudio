@@ -650,8 +650,25 @@ export function parseSysex(bytes: Uint8Array | number[]): E2SysexParsed | null {
 //
 // Die Länge ist die einzige Prüfung, die VOR dem Dekodieren greift.
 
-/** Nutzbytes, zu denen ein 16384-B-Body 7-in-8-kodiert wird. */
-const DUMP_NUTZ_LEN = Math.ceil(E2_PATTERN_BODY_SIZE / 7) * 8; // 18728
+/**
+ * Nutzbytes, zu denen ein 16384-B-Body 7-in-8-kodiert wird.
+ *
+ * ☠ NICHT `ceil(len/7)*8`. Das unterstellt, dass alle Gruppen acht Byte lang
+ * sind — die letzte ist kürzer: 16384 = 2340·7 + 4, also 2340 volle Gruppen
+ * plus eine Restgruppe aus 1 Kopfbyte + 4 Datenbytes.
+ *
+ *     2340·8 + 5 = 18725     (nicht 18728)
+ *
+ * Die falsche Rechnung hätte JEDEN gültigen Dump verworfen (Slot-Dumps kommen
+ * am Gerät mit 18735 B an, aktuelle Patterns mit 18733) und die verfälschten
+ * durchgelassen. Aufgefallen ist es erst am Gerät, weil der zugehörige Test
+ * dieselbe Formel benutzte wie die Produktion.
+ */
+const DUMP_NUTZ_LEN = (() => {
+  const voll = Math.floor(E2_PATTERN_BODY_SIZE / 7);
+  const rest = E2_PATTERN_BODY_SIZE % 7;
+  return voll * 8 + (rest > 0 ? 1 + rest : 0); // 18725
+})();
 
 /**
  * Die einzige richtige Rahmenlänge für einen Pattern-Dump, oder `null`, wenn

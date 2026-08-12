@@ -31,23 +31,29 @@ function rahmen(kopf: number[], nutzbytes: number): Uint8Array {
 
 describe("Vollständigkeit eines Pattern-Dumps", () => {
   it("kennt die einzige richtige Länge", () => {
-    // 16384 B -> ceil(16384/7) = 2341 Gruppen à 8 B = 18728 Nutzbytes.
-    expect(erwarteteDumpLaenge(0x40)).toBe(7 + 18728 + 1); // 18736
-    expect(erwarteteDumpLaenge(0x4c)).toBe(9 + 18728 + 1); // 18738
+    // ☠ Hier stand zuerst 18728 Nutzbytes (= ceil(16384/7)·8). Das ist falsch:
+    // die LETZTE 7-in-8-Gruppe ist kürzer. 16384 = 2340·7 + 4, also 2340 volle
+    // Gruppen à 8 B plus 1 Kopfbyte + 4 Datenbytes = 18725.
+    //
+    // Der Fehler überlebte, weil dieser Test dieselbe Formel benutzte wie die
+    // Produktion — er hätte jeden gültigen Dump als „falsche Länge" verworfen.
+    // Am Gerät gemessen (2026-08-12): 18733 bzw. 18735.
+    expect(erwarteteDumpLaenge(0x40)).toBe(18733);
+    expect(erwarteteDumpLaenge(0x4c)).toBe(18735);
   });
 
   it("nimmt einen masshaltigen Rahmen an", () => {
-    expect(istMasshaltigerDump(rahmen(KOPF_AKTUELL, 18728))).toBe(true);
-    expect(istMasshaltigerDump(rahmen(KOPF_SLOT, 18728))).toBe(true);
+    expect(istMasshaltigerDump(rahmen(KOPF_AKTUELL, 18725))).toBe(true);
+    expect(istMasshaltigerDump(rahmen(KOPF_SLOT, 18725))).toBe(true);
   });
 
   it("verwirft einen Rahmen, dem ein USB-Paket fehlt", () => {
     // 3 Byte zu wenig — am Gerät gemessen, nicht erdacht.
-    expect(istMasshaltigerDump(rahmen(KOPF_AKTUELL, 18725))).toBe(false);
+    expect(istMasshaltigerDump(rahmen(KOPF_AKTUELL, 18722))).toBe(false);
   });
 
   it("verwirft einen Rahmen mit einem USB-Paket zu viel", () => {
-    expect(istMasshaltigerDump(rahmen(KOPF_AKTUELL, 18731))).toBe(false);
+    expect(istMasshaltigerDump(rahmen(KOPF_AKTUELL, 18728))).toBe(false);
   });
 
   it("lässt Rahmen in Ruhe, die keine Pattern-Dumps sind", () => {
