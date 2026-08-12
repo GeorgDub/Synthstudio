@@ -178,6 +178,7 @@ import {
   E2_ALLPAT_PATTERN_STRIDE,
   E2_ALLPAT_SLOT_COUNT,
   E2_ALLPAT_FILE_SIZE,
+  E2_PATTERN_BODY_SIZE,
   e2PanDeviceToUi,
 } from "./korg/e2Layout";
 
@@ -585,6 +586,20 @@ export interface ParsedPattern {
    * Bei legacy/synthetic Files ist das Feld undefined.
    */
   patternMotion?: ParsedPatternMotionSlot[];
+  /**
+   * Der rohe 16384-Byte-PTST-Body dieses Patterns — als KOPIE, kein View
+   * (ein View hielte die ganze 4-MB-Bank am Leben und kippte bei
+   * Puffer-Mutation mit).
+   *
+   * ★ Der Grund: ein Body trägt weit mehr, als SynthStudio liest (Gate-Flag/
+   * -Länge, Motion-Bytes +0x05..+0x0B, Part-Config, FX, Groove …). Der Export
+   * überlagert nur adressierte Bytes auf diesem Original
+   * (`buildE2PatternBody(input, { base })`, wie der Geräte-Push seit dem
+   * 250/250-Beweis in korg-e2-push-original-body.test.ts) — ohne ihn käme
+   * alles Ungelesene als Init-Template zurück. Legacy/Synthetic-Layout hat
+   * keinen Body → undefined.
+   */
+  body?: Uint8Array;
 }
 
 export interface ParsedElectribeBank {
@@ -1007,7 +1022,18 @@ function parseRealPatternAt(
   // v3.15.0: Pattern-Level Motion-Slots aus PTST-relativ +0x100..+0x330.
   const patternMotion = parsePatternMotionTable(view, ptstOffset);
 
-  return { name, bpm, stepLength, swing, parts, patternMotion };
+  // Original-Body mitführen (Basis für den verlustfreien Re-Export).
+  // Defensive: nur wenn die vollen 16384 Bytes wirklich in der Datei liegen.
+  const body =
+    ptstOffset + E2_PATTERN_BODY_SIZE <= view.byteLength
+      ? new Uint8Array(
+          view.buffer,
+          view.byteOffset + ptstOffset,
+          E2_PATTERN_BODY_SIZE
+        ).slice()
+      : undefined;
+
+  return { name, bpm, stepLength, swing, parts, patternMotion, body };
 }
 
 /**
@@ -1492,6 +1518,14 @@ export interface SynthstudioPatternImport {
     steps: boolean[];
     velocities: number[];
     /**
+     * Per-Step-Pitch in Halbtönen relativ zur E2-Default-Note 0x48 (C5),
+     * index-aligned mit `steps` — exakt wie der Geräte-Pfad
+     * (e2PatternToSynthstudio: `note − 0x48`). Ohne dieses Feld drückte der
+     * Re-Export jede Melodie auf C5 platt; auch der Tie-Sentinel 0xFF bleibt
+     * als 0xFF−0x48 unterscheidbar und wird beim Export wieder zu 0xFF.
+     */
+    pitches: number[];
+    /**
      * v3.309 — Chord-Noten 2..4 pro Step (aus den E2-Step-Bytes 5..7),
      * undefined wenn der Step keinen Akkord trägt. Index-aligned mit `steps`.
      */
@@ -1538,11 +1572,16 @@ export function convertParsedPatternToSynthstudio(
       // Velocity-Bit aus Step-Byte trennen → eigene velocity-Arrays.
       const stepsArr = new Array<boolean>(stepCount).fill(false);
       const velocitiesArr = new Array<number>(stepCount).fill(100);
+      // Per-Step-Pitch (Note − 0x48); Legacy-Steps ohne Noten-Byte fallen
+      // auf den Part-Pitch zurück.
+      const pitchesArr = new Array<number>(stepCount).fill(p.pitch);
       // v3.309 — Chord-Noten (Bytes 5..7) index-aligned mitführen.
       const chordsArr = new Array<number[] | undefined>(stepCount).fill(undefined);
       for (let s = 0; s < cap; s++) {
         stepsArr[s] = p.steps[s].active;
         velocitiesArr[s] = p.steps[s].velocity > 0 ? p.steps[s].velocity : 100;
+        const note = p.steps[s].note;
+        if (typeof note === "number") pitchesArr[s] = note - 0x48;
         const chord = p.steps[s].chordNotes;
         if (Array.isArray(chord) && chord.some((n) => n > 0)) {
           chordsArr[s] = chord.slice(0, 3);
@@ -1565,6 +1604,7 @@ export function convertParsedPatternToSynthstudio(
         pitchSemitones: p.pitch,
         steps: stepsArr,
         velocities: velocitiesArr,
+        pitches: pitchesArr,
         chords: chordsArr,
       };
     }

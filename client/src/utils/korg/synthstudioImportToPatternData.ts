@@ -53,7 +53,10 @@ export function synthstudioImportToPatternData(
     steps: dp.steps.map((act, i) => ({
       active: act,
       velocity: dp.velocities[i] ?? 100,
-      pitch: dp.pitchSemitones,
+      // Per-Step-Pitch (Note − 0x48, inkl. Tie-Sentinel 0xFF → 183) — ohne
+      // ihn drückte der Re-Export jede Melodie auf C5 platt. Fallback auf
+      // den Part-Pitch (Legacy-Layout ohne Noten-Byte).
+      pitch: dp.pitches?.[i] ?? dp.pitchSemitones,
       // Akkord-Noten (E2-Bytes 5..7) index-aligned; undefined = kein Akkord.
       chordNotes: dp.chords[i],
     })),

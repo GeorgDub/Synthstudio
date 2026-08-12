@@ -89,6 +89,14 @@ import { ElectribePickerModal } from "./ElectribePickerModal";
 // (Einzel-Pattern + Bank) MÜSSEN hierüber laufen — Meta-Gate in
 // tests/features/korg-e2-file-import-mute.test.ts.
 import { synthstudioImportToPatternData } from "@/utils/korg/synthstudioImportToPatternData";
+// Original-Bodies je Pattern-ID: jeder Datei-Import MERKT sich den Body,
+// jeder Datei-Export FRAGT ihn ab (buildE2… { base }) — sonst käme alles,
+// was SynthStudio nicht liest, als Init-Template zurück. Meta-Gate in
+// tests/features/korg-e2-file-roundtrip-original-body.test.ts.
+import {
+  rememberE2OriginalBody,
+  getE2OriginalBody,
+} from "@/utils/korg/e2OriginalBodies";
 import { parseE2sBank } from "@/utils/korg/e2sBankReader";
 import {
   bankSamplesToLibraryEntries,
@@ -1883,6 +1891,9 @@ function DrumMachineInner({
       // „Schwester-Pfade rechnen selbst" endet im Mapper; Meta-Gate in
       // tests/features/korg-e2-file-import-mute.test.ts.
       const mapped = synthstudioImportToPatternData(conv);
+      // Original-Body fürs verlustfreie Zurückschreiben merken. Legacy-Dateien
+      // haben keinen (`undefined` räumt dann einen Alt-Eintrag weg).
+      rememberE2OriginalBody(pattern.id, parsed.body);
 
       // Pattern-Name + BPM uebernehmen.
       dm.renamePattern(pattern.id, mapped.name || pattern.name);
@@ -2012,6 +2023,9 @@ function DrumMachineInner({
         return mapped;
       });
       const ids = dm.addPatternsData(patternDatas);
+      // Original-Bodies je NEUER Pattern-ID merken (index-aligned mit
+      // `patterns`) — die Grundlage fürs verlustfreie Zurückschreiben.
+      ids.forEach((id, i) => rememberE2OriginalBody(id, patterns[i]?.body));
       const sampleInfo = summarizeE2sSampleLink(
         !!sampleLink,
         requestedSampleIds,
@@ -2332,9 +2346,13 @@ function DrumMachineInner({
       // Werkseinstellung zurück — bei jedem Senden, auch ohne eine einzige
       // Änderung.
       const original =
-        e2PullZielRef.current === active.id
+        (e2PullZielRef.current === active.id
           ? (getE2sDeviceState().currentBody ?? undefined)
-          : undefined;
+          : undefined) ??
+        // Kein Pull-Original? Dann der Original-Body eines DATEI-Imports —
+        // gleiche Fehlerklasse, andere Richtung: ein importiertes Pattern
+        // ans Gerät zu schicken setzte sonst alles Ungelesene auf Werk.
+        getE2OriginalBody(active.id);
       const body = synthstudioPatternToBody(active, { base: original });
       diagSchritt(
         "e2.push",
@@ -2382,6 +2400,9 @@ function DrumMachineInner({
       // Merken, wohin der Pull gelaufen ist — der Push setzt nur dann auf dem
       // Original-Body auf.
       e2PullZielRef.current = active.id;
+      // Auch für den DATEI-Export merken: ein gepulltes Pattern als .e2spat
+      // zu speichern soll genauso verlustfrei sein wie der Push zurück.
+      rememberE2OriginalBody(active.id, getE2sDeviceState().currentBody);
       diagSchritt(
         "e2.pull",
         `"${decoded.name}", ${decoded.parts.length} Parts, ` +
@@ -4972,7 +4993,13 @@ function DrumMachineInner({
                     currentPattern,
                     { globalBpm: bpm }
                   );
-                  const buffer = buildE2PatternFileV2(e2Input);
+                  // Auf dem Original-Body aufsetzen, wenn das Pattern aus
+                  // einem Datei-Import stammt — sonst käme alles, was
+                  // SynthStudio nicht liest (Gate-Längen, Motion, FX …),
+                  // als Werkseinstellung in der Datei an.
+                  const buffer = buildE2PatternFileV2(e2Input, {
+                    base: getE2OriginalBody(currentPattern.id),
+                  });
                   // Sanitize name for filename — only ASCII alnum + _ - .
                   const safeName =
                     (currentPattern.name || "pattern")
@@ -5045,12 +5072,15 @@ function DrumMachineInner({
                   return;
                 }
                 try {
-                  const e2Inputs = allPatterns
-                    .slice(0, 250)
-                    .map(p =>
-                      convertSynthstudioPatternToE2(p, { globalBpm: bpm })
-                    );
-                  const buffer = buildE2AllPatFile(e2Inputs);
+                  const exportiert = allPatterns.slice(0, 250);
+                  const e2Inputs = exportiert.map(p =>
+                    convertSynthstudioPatternToE2(p, { globalBpm: bpm })
+                  );
+                  // Je Slot der Original-Body des importierten Patterns —
+                  // Slots ohne Original bauen wie bisher aufs Init-Template.
+                  const buffer = buildE2AllPatFile(e2Inputs, {
+                    bases: exportiert.map(p => getE2OriginalBody(p.id)),
+                  });
                   // v3.307: Struktur-Check gegen die stock-verifizierten
                   // Bank-Invarianten, BEVOR die Datei gespeichert wird.
                   const verdict = verifyE2AllpatBank(new Uint8Array(buffer));

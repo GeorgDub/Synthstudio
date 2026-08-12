@@ -118,11 +118,19 @@ export function convertStepToE2(step: StepData | undefined): E2StepInput {
   const chord = Array.isArray(step.chordNotes)
     ? step.chordNotes.filter(n => Number.isFinite(n) && n > 0 && n <= 127).slice(0, 3)
     : [];
+  // ☠ Tie-Sentinel: 0xFF im Noten-Byte heißt „kein neuer Ton" und kommt als
+  // pitch 0xFF−0x48 aus dem Import zurück. `synthPitchToE2Note` würde ihn auf
+  // 127 klemmen — damit verlöre jeder Import→Export-Roundtrip die Ties (die
+  // Werksbank e2s-2016 trägt 14 448 davon). Der Geräte-Push-Pfad
+  // (synthstudioToE2Pattern.stepToE2) reicht ihn längst durch;
+  // buildE2PatternBody behandelt 0xFF gesondert.
+  const rohNote =
+    E2_BASE_NOTE + (typeof step.pitch === "number" ? Math.floor(step.pitch) : 0);
   return {
     active: !!step.active,
     velocity:
       typeof step.velocity === "number" ? clampInt(step.velocity, 0, 127) : undefined,
-    note: synthPitchToE2Note(step.pitch),
+    note: rohNote === 0xff ? 0xff : synthPitchToE2Note(step.pitch),
     accent: false, // Synthstudio has no first-class accent flag.
     ...(chord.length > 0 ? { chordNotes: chord } : {}),
   };
@@ -136,6 +144,11 @@ export function convertPartToE2(part: PartData | undefined): E2PartInput {
   // Steps: copy as-is (length up to 32). Builder pads to 64.
   const steps: E2StepInput[] = (part.steps ?? []).map(convertStepToE2);
   return {
+    // Mute-Flag (Part+0x01) mitschicken — Symmetrie zum Import (der es seit
+    // dem Datei-Mute-Fix liest) und zum Geräte-Push (v3.319). Vorher blieb
+    // beim Datei-Export immer der Template-/Original-Wert stehen; ein in der
+    // App gesetztes Mute kam in der Datei nie an.
+    muted: !!part.muted,
     volume: synthVolumeToE2(part.volume),
     pan: synthPanToE2(part.pan),
     pitch: 0,

@@ -404,15 +404,33 @@ export function buildE2PatternBody(
 /**
  * Builds a complete 16640-byte `.e2spat` file from an `E2PatternInput`.
  * Always exactly `E2S_SINGLE_FILE_SIZE` bytes.
+ *
+ * `opts.base`: Original-Body eines importierten Patterns — dann überlagert
+ * der Export nur die Bytes, die SynthStudio kennt (verlustfreier
+ * Import→Export-Roundtrip, gleicher Mechanismus wie der Geräte-Push).
  */
-export function buildE2PatternFileV2(input: E2PatternInput): ArrayBuffer {
+export function buildE2PatternFileV2(
+  input: E2PatternInput,
+  opts: E2PatternBodyOptions = {}
+): ArrayBuffer {
   const out = new Uint8Array(E2S_SINGLE_FILE_SIZE);
   writeFileHeader(out);
-  out.set(buildE2PatternBody(input), E2S_FILE_HEADER_SIZE);
+  out.set(buildE2PatternBody(input, opts), E2S_FILE_HEADER_SIZE);
   return out.buffer;
 }
 
 // ─── All patterns (.e2sallpat) ─────────────────────────────────────────────────
+
+/** Optionen für {@link buildE2AllPatFile}. */
+export interface E2AllPatFileOptions {
+  /**
+   * Original-Bodies je Slot (index-aligned mit `patterns`). Ein Eintrag
+   * `undefined` heißt: kein Original bekannt → Init-Template wie bisher.
+   * Gleicher Mechanismus wie `buildE2PatternBody({ base })` — importierte
+   * Patterns verlieren so beim Bank-Export nichts, was SynthStudio nicht liest.
+   */
+  bases?: Array<Uint8Array | undefined>;
+}
 
 /**
  * Builds a complete `.e2sallpat` bank (250 slots) from a list of patterns.
@@ -422,7 +440,10 @@ export function buildE2PatternFileV2(input: E2PatternInput): ArrayBuffer {
  *
  * Always exactly `E2S_ALLPAT_FILE_SIZE` bytes.
  */
-export function buildE2AllPatFile(patterns: E2PatternInput[]): ArrayBuffer {
+export function buildE2AllPatFile(
+  patterns: E2PatternInput[],
+  opts: E2AllPatFileOptions = {}
+): ArrayBuffer {
   const out = new Uint8Array(E2S_ALLPAT_FILE_SIZE);
 
   // Header (0x00..0x100). "GLST" then overwrites 0x100.
@@ -437,7 +458,10 @@ export function buildE2AllPatFile(patterns: E2PatternInput[]): ArrayBuffer {
   for (let i = 0; i < E2S_ALLPAT_SLOT_COUNT; i++) {
     const slotOff = E2S_ALLPAT_PREFIX_SIZE + i * E2S_BODY_SIZE;
     const pat = list[i];
-    out.set(pat ? buildE2PatternBody(pat) : initBody, slotOff);
+    out.set(
+      pat ? buildE2PatternBody(pat, { base: opts.bases?.[i] }) : initBody,
+      slotOff
+    );
   }
 
   return out.buffer;
