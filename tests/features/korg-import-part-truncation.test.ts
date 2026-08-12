@@ -71,6 +71,9 @@ describe("Korg-Import darf Parts nicht still abschneiden", () => {
     const quelle = readFileSync(DRUM_MACHINE, "utf8");
 
     expect(quelle).toContain("dm.ensureParts(decoded.parts.length)");
-    expect(quelle).toContain("dm.ensureParts(conv.drumParts.length)");
+    // Seit der Mapper-Vereinheitlichung liefert `mapped.parts` die Part-Zahl
+    // der QUELLE (synthstudioImportToPatternData mappt conv.drumParts 1:1) —
+    // die Invariante „über die Quelle wachsen, nie übers Ziel kappen" bleibt.
+    expect(quelle).toContain("dm.ensureParts(mapped.parts.length)");
   });
 });

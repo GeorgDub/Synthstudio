@@ -85,6 +85,10 @@ import {
   type SynthstudioPatternImport,
 } from "@/utils/electribeImport";
 import { ElectribePickerModal } from "./ElectribePickerModal";
+// DIE eine Übersetzung Datei-Import → Store-Format. Beide Schwester-Pfade
+// (Einzel-Pattern + Bank) MÜSSEN hierüber laufen — Meta-Gate in
+// tests/features/korg-e2-file-import-mute.test.ts.
+import { synthstudioImportToPatternData } from "@/utils/korg/synthstudioImportToPatternData";
 import { parseE2sBank } from "@/utils/korg/e2sBankReader";
 import {
   bankSamplesToLibraryEntries,
@@ -1871,9 +1875,17 @@ function DrumMachineInner({
       if (!pattern) return;
       const conv: SynthstudioPatternImport =
         convertParsedPatternToSynthstudio(parsed);
+      // DIE eine Übersetzung in Store-Werte — geteilt mit dem Bank-Pfad.
+      // ☠ Hier NICHTS nachrechnen: v3.319 hatte die Geräte-Umrechnung
+      // (`e2VolumeToUnit`/`e2PanToUnit`, erwartet rohe 0..127) auf diesen Pfad
+      // kopiert, dessen Werte aber SCHON normalisiert waren — Volume ÷127 ein
+      // zweites Mal (praktisch stumm), Pan hart links. Die Fehlerklasse
+      // „Schwester-Pfade rechnen selbst" endet im Mapper; Meta-Gate in
+      // tests/features/korg-e2-file-import-mute.test.ts.
+      const mapped = synthstudioImportToPatternData(conv);
 
       // Pattern-Name + BPM uebernehmen.
-      dm.renamePattern(pattern.id, conv.name || pattern.name);
+      dm.renamePattern(pattern.id, mapped.name || pattern.name);
       dm.setPatternBpm(pattern.id, conv.bpm);
 
       // Per-Part Steps + Volume + Pan — so viele Parts, wie die QUELLE mitbringt.
@@ -1881,21 +1893,21 @@ function DrumMachineInner({
       // hier stand `Math.min(conv.drumParts.length, pattern.parts.length)`. Ein
       // Korg-Pattern hat 16 Parts, ein neues Projekt 9 Kanäle — die Parts 10..16
       // fielen still weg. Betrifft „⬇ Von Korg" UND den Datei-Import.
-      const partIds = dm.ensureParts(conv.drumParts.length);
+      const partIds = dm.ensureParts(mapped.parts.length);
       let linked = 0;
       // v3.297: Sample-Refs aktiver Parts sammeln → aussagekräftige Link-Diagnose.
       const requestedSampleIds: number[] = [];
-      for (let i = 0; i < conv.drumParts.length; i++) {
+      for (let i = 0; i < mapped.parts.length; i++) {
         const partId = partIds[i];
-        const src = conv.drumParts[i];
+        const teil = mapped.parts[i];
         // Steps duerfen kuerzer/laenger als das aktive Pattern sein — clampen.
         const targetSteps = pattern.stepCount;
         const steps = new Array<boolean>(targetSteps).fill(false);
         const vels = new Array<number>(targetSteps).fill(100);
-        const cap = Math.min(targetSteps, src.steps.length);
+        const cap = Math.min(targetSteps, teil.steps.length);
         for (let s = 0; s < cap; s++) {
-          steps[s] = src.steps[s];
-          vels[s] = src.velocities[s];
+          steps[s] = teil.steps[s].active;
+          vels[s] = teil.steps[s].velocity ?? 100;
         }
         dm.setPartSteps(partId, steps, vels);
         // v3.309: Chord-Noten (E2-Bytes 5..7) in die Step-Daten übernehmen —
@@ -1903,22 +1915,24 @@ function DrumMachineInner({
         // `undefined` räumt Akkorde eines früheren Imports ab (setPartSteps
         // spreadet alte Step-Props weiter).
         for (let s = 0; s < targetSteps; s++) {
-          dm.setStepChordNotes(partId, s, s < cap ? src.chords[s] : undefined);
+          dm.setStepChordNotes(
+            partId,
+            s,
+            s < cap ? teil.steps[s].chordNotes : undefined
+          );
         }
-        // ☠ Umrechnen, nicht durchreichen. `setPartVolume`/`setPartPan`
-        // schreiben unveraendert in Felder, die 0..1 bzw. −1..+1 halten — der
-        // rohe Geraetewert (0..127) stand danach als Pan von bis zu 127 im
-        // Store, und der Push machte daraus die Begrenzung 127. Das war die
-        // eigentliche Ursache von „der Pan ist falsch". BEIDE Pull-Pfade hatten
-        // die Zeile; ein Fix an einer Stelle waere kein Fix gewesen.
-        dm.setPartVolume(partId, e2VolumeToUnit(src.volume));
-        dm.setPartPan(partId, e2PanToUnit(src.pan));
+        // Bereits Store-normalisiert (Mapper) — durchreichen.
+        dm.setPartVolume(partId, teil.volume);
+        dm.setPartPan(partId, teil.pan);
+        // Mute-Flag (Part+0x01): was am Gerät stumm war, bleibt stumm — wie
+        // im Sysex-Pull-Pfad (v3.319), der Datei-Pfad zog erst hiermit nach.
+        dm.setPartMuted(partId, teil.muted);
 
         // v3.272: Sample aus mitgeladener .all-Bank verlinken (Part-Ref +0x08
         // 501+ → OSC_0index). Nur Parts mit aktiven Steps; ohne Treffer bleibt der
         // Part unverändert (kein Mislink, kein Crash) — analog zum ESX-Pfad.
         // v3.321: gleiche Korrektur wie im Geraete-Pull — Bank-Slot = Ref + 1.
-        const bankNr = e2PatternRefToBankNumber(src.sampleId);
+        const bankNr = e2PatternRefToBankNumber(conv.drumParts[i].sampleId);
         if (steps.some(a => a) && bankNr > 0) {
           requestedSampleIds.push(bankNr);
           if (sampleLink) {
@@ -1977,44 +1991,25 @@ function DrumMachineInner({
       const requestedSampleIds: number[] = [];
       const patternDatas: PatternData[] = patterns.map(parsed => {
         const conv = convertParsedPatternToSynthstudio(parsed);
-        return {
-          id: "",
-          name: conv.name,
-          stepCount: conv.stepCount,
-          stepResolution: "1/16" as const,
-          bpm: conv.bpm,
-          parts: conv.drumParts.map(dp => {
-            const active = dp.steps.some(a => a);
-            // v3.321: Bank-Slot = Pattern-Referenz + 1 (am Gerät gemessen).
-            const bankNr = e2PatternRefToBankNumber(dp.sampleId);
-            if (active && bankNr > 0) requestedSampleIds.push(bankNr);
-            const linked =
-              sampleLink && active && bankNr > 0
-                ? sampleLink.resolve(bankNr)
-                : null;
-            if (linked) totalLinked++;
-            return {
-              id: "",
-              name: dp.sampleHint,
-              sampleName: linked?.name ?? dp.sampleHint,
-              sampleUrl: linked?.url,
-              sourceType: "sample" as const,
-              muted: false,
-              soloed: false,
-              volume: dp.volume,
-              pan: dp.pan,
-              steps: dp.steps.map((act, i) => ({
-                active: act,
-                velocity: dp.velocities[i] ?? 100,
-                pitch: dp.pitchSemitones,
-                // v3.309: Chord-Noten aus dem Bank-Import mitnehmen.
-                chordNotes: dp.chords[i],
-              })),
-              fx: { ...DEFAULT_CHANNEL_FX },
-            };
-          }),
-          followAction: { type: "none" as const, barsBeforeSwitch: 1 },
-        };
+        // Store-Werte kommen aus dem EINEN Mapper (geteilt mit dem
+        // Einzel-Pattern-Pfad) — nur die Sample-Verlinkung passiert hier,
+        // weil sie den Resolver der UI-Schicht braucht.
+        const mapped = synthstudioImportToPatternData(conv);
+        mapped.parts = mapped.parts.map((teil, i) => {
+          const dp = conv.drumParts[i];
+          const active = dp.steps.some(a => a);
+          // v3.321: Bank-Slot = Pattern-Referenz + 1 (am Gerät gemessen).
+          const bankNr = e2PatternRefToBankNumber(dp.sampleId);
+          if (active && bankNr > 0) requestedSampleIds.push(bankNr);
+          const linked =
+            sampleLink && active && bankNr > 0
+              ? sampleLink.resolve(bankNr)
+              : null;
+          if (!linked) return teil;
+          totalLinked++;
+          return { ...teil, sampleName: linked.name, sampleUrl: linked.url };
+        });
+        return mapped;
       });
       const ids = dm.addPatternsData(patternDatas);
       const sampleInfo = summarizeE2sSampleLink(

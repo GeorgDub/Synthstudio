@@ -290,6 +290,14 @@ export const ELECTRIBE_REAL_VELOCITY_DEFAULT_VALUE = 127;
 // 0 = Center (vorher fälschlich u8@0x22 = IFX Edit). Siehe korg/e2Layout.ts.
 export const ELECTRIBE_REAL_PART_VOLUME_OFFSET = 0x18;
 export const ELECTRIBE_REAL_PART_PAN_OFFSET = 0x19;
+/**
+ * Mute-Flag (u8) @ Part+0x01: 0 = spielt, 1 = stumm — am Gerät belegt
+ * (HW-Sitzung 2026-08-10) und identisch zu e2Sysex.ts (Geräte-Pull) sowie
+ * Korgs TABLE 6 (offset 1 = "Mute"). Der Datei-Import las das Byte bis
+ * dahin gar nicht: ein am Gerät gemuteter Part klang nach dem Import mit
+ * (die Werksbank e2s-2016 trägt 530 gemutete Parts in 122 Patterns).
+ */
+export const ELECTRIBE_REAL_PART_MUTE_OFFSET = 0x01;
 
 /** Hardware-Default fuer Part-Volume (beobachtet in 63.4% aller part-samples). */
 export const ELECTRIBE_REAL_PART_VOLUME_DEFAULT = 127;
@@ -515,6 +523,12 @@ export interface ParsedPartStep {
 export interface ParsedPart {
   /** 0..15 — der Part-Index im Pattern. */
   index: number;
+  /**
+   * Mute-Flag @ Part+0x01 (true = am Gerät stummgeschaltet). Nur der
+   * Real-File-Parser liest es; beim Legacy/Synthetic-Layout bleibt es
+   * undefined (dort gibt es das Byte nicht).
+   */
+  muted?: boolean;
   /** Sample/Patch-ID aus dem Electribe-File (NICHT auf Synthstudio-Sample gemappt). */
   sampleId: number;
   /** 0..127. */
@@ -835,6 +849,10 @@ function parseRealPartBlock(
   const pitch = 0;
   const fxSend = 0;
 
+  // Mute-Flag @ +0x01 — gleiche Deutung wie e2Sysex.decodePatternBody
+  // (`!== 0`), damit Datei- und Geräte-Pfad dasselbe Byte gleich lesen.
+  const muted = safeU8(ELECTRIBE_REAL_PART_MUTE_OFFSET) !== 0;
+
   // Steps: v3.12.0 — verifiziertes 12-byte-Record-Encoding.
   // Stop-Bedingung: wenn der Step-Bereich nicht vollstaendig in den verfuegbaren
   // Bytes liegt, fuelle die fehlenden Steps mit inactive auf.
@@ -904,6 +922,7 @@ function parseRealPartBlock(
 
   return {
     index: partIndex,
+    muted,
     sampleId,
     volume,
     pan,
@@ -1462,6 +1481,11 @@ export interface SynthstudioPatternImport {
     partIndex: number;
     sampleId: number;
     sampleHint: string;
+    /**
+     * Mute-Flag (Part+0x01). Am Gerät belegt (2026-08-10); der Geräte-Pull
+     * übernimmt es seit v3.319 — der Datei-Import zog erst hiermit nach.
+     */
+    muted: boolean;
     volume: number;
     pan: number;
     pitchSemitones: number;
@@ -1534,6 +1558,8 @@ export function convertParsedPatternToSynthstudio(
         partIndex: p.index,
         sampleId: p.sampleId,
         sampleHint,
+        // Legacy-Layout kennt kein Mute-Byte → undefined → spielt (false).
+        muted: p.muted === true,
         volume: clamp01(p.volume / 127),
         pan: clampPan((p.pan - 64) / 63),
         pitchSemitones: p.pitch,
