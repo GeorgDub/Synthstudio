@@ -194,7 +194,11 @@ describe("useE2sDeviceStore", () => {
       const f = funcOf(frame);
       if (f === -1) return [identityReply()];
       if (f === E2Func.CURRENT_PATTERN_DUMP_REQ)
-        return [buildCurrentPatternDump(makeBody("EDIT", { 0: 501 }))];
+        // Nach einem Push gibt das Fake-Geraet zurueck, was es bekommen hat —
+        // sonst kann die Gegenprobe (v3.322) nichts lesen. Ein Fake, das nur
+        // quittiert, bildet genau die Eigenschaft nicht ab, um derentwillen
+        // es die Gegenprobe gibt.
+        return [buildCurrentPatternDump(written ?? makeBody("EDIT", { 0: 501 }))];
       if (f === E2Func.CURRENT_PATTERN_DUMP) {
         // host write of the edit-buffer — capture + ACK
         written = decode7in8(frame.subarray(7, frame.length - 1));

@@ -233,13 +233,48 @@ export async function pushE2sCurrentBody(body: Uint8Array): Promise<boolean> {
   }
   set({ busy: true, error: null });
   try {
-    await _bridge.pushCurrentPattern(body);
-    set({ busy: false });
-    return true;
+    const bridge = _bridge;
+    await bridge.pushCurrentPattern(body);
+    // „⇧ Gerät" schreibt hierher — das ist der Weg, den der Bedienende
+    // benutzt, und damit der wichtigere der beiden.
+    return gegenprobe(body, () => bridge.pullCurrentPattern());
   } catch (e) {
     set({ busy: false, error: e instanceof Error ? e.message : String(e) });
     return false;
   }
+}
+
+/**
+ * Liest nach einem Push zurück und vergleicht Byte für Byte.
+ *
+ * ☠ Das ACK bestätigt den EMPFANG, nicht den Inhalt. Auf der USB-Strecke gehen
+ * einzelne Pakete verloren (die Rahmenlänge schwankt um Vielfache von 3, ein
+ * USB-MIDI-Paket trägt 3 Datenbytes). Alle Nutzbytes sind gültige 7-Bit-Werte
+ * und eine Prüfsumme gibt es nicht — ein verfälschter Push kommt also als
+ * plausibles Pattern an und wird trotzdem quittiert. Ohne Gegenprobe wäre das
+ * ein stiller Datenverlust mit grünem Haken daneben.
+ *
+ * `memory_poke.py` im Omnitribe-Repo hält es seit jeher so: ein Write ohne
+ * Gegenprobe ist ein Write, von dem man nichts weiß.
+ */
+async function gegenprobe(
+  gesendet: Uint8Array,
+  lies: () => Promise<Uint8Array>
+): Promise<boolean> {
+  const zurueck = await pullMitPruefung(lies);
+  if (gleicheBytes(gesendet, zurueck)) {
+    set({ busy: false });
+    return true;
+  }
+  const stelle = ersteAbweichung(gesendet, zurueck);
+  set({
+    busy: false,
+    error:
+      `Das Gerät hat den Push quittiert, aber etwas anderes abgelegt ` +
+      `(erste Abweichung bei Byte 0x${stelle.toString(16).toUpperCase()}). ` +
+      `Nicht als gespeichert behandeln — erneut senden.`,
+  });
+  return false;
 }
 
 /** Schreibt einen Roh-Body in einen nummerierten Slot (0..249). Wartet auf ACK. */
@@ -255,33 +290,7 @@ export async function pushE2sBody(
   try {
     const bridge = _bridge;
     await bridge.pushPattern(slot, body);
-
-    // ☠ Das ACK bestätigt den EMPFANG, nicht den Inhalt.
-    //
-    // Auf der USB-Strecke gehen einzelne Pakete verloren (die Rahmenlänge
-    // schwankt um Vielfache von 3, ein USB-MIDI-Paket trägt 3 Datenbytes).
-    // Alle Nutzbytes sind gültige 7-Bit-Werte und eine Prüfsumme gibt es
-    // nicht — ein verfälschter Push kommt also als plausibles Pattern an, und
-    // das Gerät quittiert ihn trotzdem. Ohne Gegenprobe wäre das ein stiller
-    // Datenverlust mit grünem Haken daneben.
-    //
-    // `memory_poke.py` im Omnitribe-Repo hält es seit jeher so: ein Write ohne
-    // Gegenprobe ist ein Write, von dem man nichts weiß.
-    const zurueck = await pullMitPruefung(() => bridge.pullPattern(slot));
-    if (!gleicheBytes(body, zurueck)) {
-      const abweichung = ersteAbweichung(body, zurueck);
-      set({
-        busy: false,
-        error:
-          `Das Gerät hat den Push quittiert, aber etwas anderes abgelegt ` +
-          `(erste Abweichung bei Byte 0x${abweichung.toString(16).toUpperCase()}). ` +
-          `Nicht als gespeichert behandeln — erneut senden.`,
-      });
-      return false;
-    }
-
-    set({ busy: false });
-    return true;
+    return gegenprobe(body, () => bridge.pullPattern(slot));
   } catch (e) {
     set({ busy: false, error: e instanceof Error ? e.message : String(e) });
     return false;

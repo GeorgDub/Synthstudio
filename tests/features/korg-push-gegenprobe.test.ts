@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   connectE2sDevice,
   pushE2sBody,
+  pushE2sCurrentBody,
   __setE2sMidiAccessProviderForTests,
   __resetE2sDeviceForTests,
 } from "../../client/src/store/useE2sDeviceStore";
@@ -26,6 +27,7 @@ import {
   E2Model,
   E2Func,
   buildPatternDump,
+  buildCurrentPatternDump,
 } from "../../client/src/utils/korg/e2Sysex";
 
 function body(fuellwert: number): Uint8Array {
@@ -62,9 +64,12 @@ function fakeAccess(abgelegt: Uint8Array): MIDIAccess {
           ? [identityReply()]
           : frame[6] === E2Func.PATTERN_DUMP_REQ
             ? [buildPatternDump(frame[7] + frame[8] * 128, abgelegt)]
-            : frame[6] === E2Func.PATTERN_DUMP
-              ? [ack()]
-              : [];
+            : frame[6] === E2Func.CURRENT_PATTERN_DUMP_REQ
+              ? [buildCurrentPatternDump(abgelegt)]
+              : frame[6] === E2Func.PATTERN_DUMP ||
+                  frame[6] === E2Func.CURRENT_PATTERN_DUMP
+                ? [ack()]
+                : [];
       for (const r of antworten) queueMicrotask(() => input.onmidimessage?.({ data: r }));
     },
   };
@@ -92,5 +97,19 @@ describe("Push mit Gegenprobe", () => {
     await connectE2sDevice();
 
     await expect(pushE2sBody(3, body(0x11))).resolves.toBe(false);
+  });
+
+  it("prüft den Edit-Buffer-Push genauso gegen", async () => {
+    // ☠ Hier war die Gegenprobe zuerst absichtlich weggelassen, mit der
+    // Begründung „das laufende Pattern ändert sich ohnehin von selbst".
+    // Am 2026-08-12 gemessen: zwei bestätigte Lesungen des aktuellen Patterns
+    // ergaben NULL abweichende Bytes. Die Begründung war eine Vermutung aus
+    // einer kaputten Messung — und hätte den gefährlicheren der beiden
+    // Schreibwege ungeprüft gelassen, denn „⇧ Gerät" schreibt in den
+    // Edit-Buffer, nicht in einen Slot.
+    __setE2sMidiAccessProviderForTests(async () => fakeAccess(body(0x22)));
+    await connectE2sDevice();
+
+    await expect(pushE2sCurrentBody(body(0x11))).resolves.toBe(false);
   });
 });

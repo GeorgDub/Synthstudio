@@ -23,6 +23,7 @@ import {
   E2Model,
   decode7in8,
   buildPatternDump,
+  buildCurrentPatternDump,
 } from "../../client/src/utils/korg/e2Sysex";
 
 function part(name: string, over: Partial<PatternData["parts"][number]> = {}) {
@@ -268,6 +269,19 @@ function fakeAccept() {
       // Eigenschaft nicht ab, um derentwillen es die Gegenprobe gibt.
       if (f[6] === E2Func.PATTERN_DUMP) {
         abgelegt.set(f[7] + f[8] * 128, decode7in8(f.subarray(9, f.length - 1)));
+      }
+      // Edit-Buffer: Slot -1 als Schluessel, damit derselbe Speicher reicht.
+      if (f[6] === E2Func.CURRENT_PATTERN_DUMP) {
+        abgelegt.set(-1, decode7in8(f.subarray(7, f.length - 1)));
+      }
+      if (f[6] === E2Func.CURRENT_PATTERN_DUMP_REQ) {
+        const body = abgelegt.get(-1);
+        if (body) {
+          queueMicrotask(() =>
+            input.onmidimessage?.({ data: buildCurrentPatternDump(body) })
+          );
+          return;
+        }
       }
       if (f[6] === E2Func.PATTERN_DUMP_REQ) {
         const n = f[7] + f[8] * 128;
