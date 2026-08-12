@@ -206,7 +206,8 @@ export async function pullE2sPattern(
   if (!_bridge || _state.status !== "connected") return null;
   set({ busy: true, error: null });
   try {
-    const body = await _bridge.pullPattern(patternNumber);
+    const bridge = _bridge;
+    const body = await pullMitPruefung(() => bridge.pullPattern(patternNumber));
     const summary = summarizePatternBody(body);
     set({
       busy: false,
@@ -252,13 +253,52 @@ export async function pushE2sBody(
   }
   set({ busy: true, error: null });
   try {
-    await _bridge.pushPattern(slot, body);
+    const bridge = _bridge;
+    await bridge.pushPattern(slot, body);
+
+    // ☠ Das ACK bestätigt den EMPFANG, nicht den Inhalt.
+    //
+    // Auf der USB-Strecke gehen einzelne Pakete verloren (die Rahmenlänge
+    // schwankt um Vielfache von 3, ein USB-MIDI-Paket trägt 3 Datenbytes).
+    // Alle Nutzbytes sind gültige 7-Bit-Werte und eine Prüfsumme gibt es
+    // nicht — ein verfälschter Push kommt also als plausibles Pattern an, und
+    // das Gerät quittiert ihn trotzdem. Ohne Gegenprobe wäre das ein stiller
+    // Datenverlust mit grünem Haken daneben.
+    //
+    // `memory_poke.py` im Omnitribe-Repo hält es seit jeher so: ein Write ohne
+    // Gegenprobe ist ein Write, von dem man nichts weiß.
+    const zurueck = await pullMitPruefung(() => bridge.pullPattern(slot));
+    if (!gleicheBytes(body, zurueck)) {
+      const abweichung = ersteAbweichung(body, zurueck);
+      set({
+        busy: false,
+        error:
+          `Das Gerät hat den Push quittiert, aber etwas anderes abgelegt ` +
+          `(erste Abweichung bei Byte 0x${abweichung.toString(16).toUpperCase()}). ` +
+          `Nicht als gespeichert behandeln — erneut senden.`,
+      });
+      return false;
+    }
+
     set({ busy: false });
     return true;
   } catch (e) {
     set({ busy: false, error: e instanceof Error ? e.message : String(e) });
     return false;
   }
+}
+
+function gleicheBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Erste abweichende Stelle — eine Zahl, mit der man weitersuchen kann. */
+function ersteAbweichung(a: Uint8Array, b: Uint8Array): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+  return n;
 }
 
 /** Liest die Global-Data (opaker Blob) und legt sie ab. */
@@ -269,7 +309,8 @@ export async function pullE2sGlobal(): Promise<Uint8Array | null> {
   }
   set({ busy: true, error: null });
   try {
-    const body = await _bridge.pullGlobal();
+    const bridge = _bridge;
+    const body = await pullMitPruefung(() => bridge.pullGlobal());
     set({ busy: false, globalData: body });
     return body;
   } catch (e) {

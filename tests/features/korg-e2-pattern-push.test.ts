@@ -18,7 +18,12 @@ import {
   getE2sDeviceState,
   __resetE2sDeviceForTests,
 } from "../../client/src/store/useE2sDeviceStore";
-import { E2Func, E2Model } from "../../client/src/utils/korg/e2Sysex";
+import {
+  E2Func,
+  E2Model,
+  decode7in8,
+  buildPatternDump,
+} from "../../client/src/utils/korg/e2Sysex";
 
 function part(name: string, over: Partial<PatternData["parts"][number]> = {}) {
   return {
@@ -228,6 +233,8 @@ function fakeAccept() {
     onmidimessage: null,
   };
   const sentFuncs: number[] = [];
+  /** Was das Fake-Geraet gespeichert hat — Slot -> Body. */
+  const abgelegt = new Map<number, Uint8Array>();
   const output = {
     name: "Electribe 2",
     send(bytes: number[]) {
@@ -255,6 +262,23 @@ function fakeAccept() {
         return;
       }
       sentFuncs.push(f[6]);
+      // Das Geraet MERKT sich, was es bekommen hat, und gibt es auf Anfrage
+      // wieder heraus. Ohne das kann die Gegenprobe nach dem Push (v3.322)
+      // nichts lesen — und ein Fake, der nur quittiert, bildet genau die
+      // Eigenschaft nicht ab, um derentwillen es die Gegenprobe gibt.
+      if (f[6] === E2Func.PATTERN_DUMP) {
+        abgelegt.set(f[7] + f[8] * 128, decode7in8(f.subarray(9, f.length - 1)));
+      }
+      if (f[6] === E2Func.PATTERN_DUMP_REQ) {
+        const n = f[7] + f[8] * 128;
+        const body = abgelegt.get(n);
+        if (body) {
+          queueMicrotask(() =>
+            input.onmidimessage?.({ data: buildPatternDump(n, body) })
+          );
+          return;
+        }
+      }
       queueMicrotask(() =>
         input.onmidimessage?.({
           data: Uint8Array.from([
@@ -275,7 +299,7 @@ function fakeAccept() {
     inputs: new Map([["in", input]]),
     outputs: new Map([["out", output]]),
   } as unknown as MIDIAccess;
-  return { access, sentFuncs };
+  return { access, sentFuncs, abgelegt };
 }
 
 describe("store push actions", () => {
