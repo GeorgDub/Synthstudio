@@ -18,6 +18,8 @@ import * as path from "node:path";
 import {
   decodeIfxPreset,
   setIfxPresetParam,
+  decodePresetControlMap,
+  PRESET_FX_SOURCES,
   IFX_PRESET_SIZE,
 } from "../../client/src/utils/korg/e2FxPreset";
 
@@ -77,5 +79,45 @@ describe("Echtes IFX-Preset vom Gerät (Slot 1)", () => {
     }
     expect(diff).toHaveLength(1);
     expect(nachher[diff[0]]).toBe(42);
+  });
+});
+
+/**
+ * §2 des Geräte-Prüfprotokolls: welche Kodierung tragen die Source-Controls?
+ *
+ * Das Datei-Format nutzt für dieselben Bedienelemente `0x41`–`0x4A`, die
+ * Live-FX-Map `0x01`–`0x0A`. Welche im **Preset-Blob** steht, war laut Protokoll
+ * „gerätefrei nicht entscheidbar" — beide Kodierungen sind in sich stimmig.
+ *
+ * ★ Am 2026-08-12 an acht echten Geräte-Presets entschieden: **jeder** belegte
+ * Control-Slot trägt `0x42`/`0x44`/`0x45`, also den `0x4x`-Bereich. Kein
+ * einziger nutzt `0x01`–`0x0A`. Die Werte sind zusätzlich semantisch stimmig —
+ * „FX Edit X", „X Hi", „X Lo" ist genau das, was man an einem FX-Preset
+ * festmacht.
+ */
+describe("§2 — Source-Control-Kodierung im Preset-Blob", () => {
+  it("nutzt den 0x4x-Bereich, nicht die Live-RAM-Codes", () => {
+    const slots = decodePresetControlMap(blob).filter(s => s.sourceControl !== 0);
+    expect(slots.length).toBeGreaterThan(0);
+    for (const s of slots) {
+      expect(s.sourceControl).toBeGreaterThanOrEqual(0x41);
+      expect(s.sourceControl).toBeLessThanOrEqual(0x4a);
+    }
+  });
+
+  it("benennt jeden gefundenen Code, statt ihn als unbekannt zu melden", () => {
+    // Eine Tabelle, die den Code nicht kennt, liefert etwas Plausibles-aber-
+    // Leeres — und das sieht in der Oberfläche wie „nicht belegt" aus.
+    const slots = decodePresetControlMap(blob).filter(s => s.sourceControl !== 0);
+    for (const s of slots) {
+      expect(PRESET_FX_SOURCES[s.sourceControl]).toBeTruthy();
+    }
+  });
+
+  it("trägt in diesem Preset die vier erwarteten Zuordnungen", () => {
+    // Am Gerät abgelesen — X Lo und X Hi auf je zwei Zielparameter.
+    const slots = decodePresetControlMap(blob).filter(s => s.sourceControl !== 0);
+    expect(slots.map(s => s.sourceControl)).toEqual([0x45, 0x44, 0x45, 0x44]);
+    expect(slots.map(s => s.targetParam)).toEqual([0, 0, 1, 1]);
   });
 });
