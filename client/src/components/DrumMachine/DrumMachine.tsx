@@ -1905,14 +1905,19 @@ function DrumMachineInner({
       // Korg-Pattern hat 16 Parts, ein neues Projekt 9 Kanäle — die Parts 10..16
       // fielen still weg. Betrifft „⬇ Von Korg" UND den Datei-Import.
       const partIds = dm.ensureParts(mapped.parts.length);
+      // Die Schrittzahl der DATEI übernehmen — wie der Geräte-Pfad (v3.318).
+      // Vorher lief die Schleife gegen `pattern.stepCount`: ein 64-Step-
+      // Pattern wurde in einem 16-Step-Projekt still auf 16 gekürzt, ohne
+      // Meldung. `setStepCount` wächst nur und schneidet nie ab.
+      if (mapped.stepCount > pattern.stepCount)
+        dm.setStepCount(mapped.stepCount);
       let linked = 0;
       // v3.297: Sample-Refs aktiver Parts sammeln → aussagekräftige Link-Diagnose.
       const requestedSampleIds: number[] = [];
       for (let i = 0; i < mapped.parts.length; i++) {
         const partId = partIds[i];
         const teil = mapped.parts[i];
-        // Steps duerfen kuerzer/laenger als das aktive Pattern sein — clampen.
-        const targetSteps = pattern.stepCount;
+        const targetSteps = mapped.stepCount;
         const steps = new Array<boolean>(targetSteps).fill(false);
         const vels = new Array<number>(targetSteps).fill(100);
         const cap = Math.min(targetSteps, teil.steps.length);

@@ -363,4 +363,19 @@ describe("Gate: DrumMachine.tsx verdrahtet die Original-Bodies", () => {
     const abfragen = code.match(/getE2OriginalBody\(/g) ?? [];
     expect(abfragen.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("der Einzel-Import übernimmt die Schrittzahl der DATEI (setStepCount)", () => {
+    // Der Geräte-Pfad wächst seit v3.318 über setStepCount — ein 64-Step-
+    // Pattern in einem 16-Step-Projekt wurde sonst still auf 16 gekürzt.
+    // Der Datei-Pfad hatte exakt dieselbe Kürzung: „verlustfrei auf
+    // Step-Ebene" schließt die Steps 17..64 ein.
+    const code = ohneKommentare(readFileSync(DRUM_MACHINE, "utf8"));
+    const start = code.indexOf("const importElectribePatternIntoActive");
+    const ende = code.indexOf("const importElectribeBankAsPatterns");
+    expect(start).toBeGreaterThan(-1);
+    const rumpf = code.slice(start, ende);
+    expect(rumpf).toMatch(/dm\.setStepCount\(/);
+    // …und die Ziellänge ist die der Quelle, nicht die des aktiven Patterns.
+    expect(rumpf).not.toMatch(/targetSteps = pattern\.stepCount/);
+  });
 });
