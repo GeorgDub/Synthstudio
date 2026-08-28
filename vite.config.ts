@@ -237,6 +237,11 @@ export default defineConfig({
       // Remote-Preview-Tunnel (Dev-only): Cloudflare Quick Tunnel + localtunnel
       ".trycloudflare.com",
       ".loca.lt",
+      // Tailscale MagicDNS (Dev-only): Dev-Server auf einem Remote-Host, der
+      // ueber das eigene Tailnet erreicht wird — z.B. "pnpm dev" auf einem
+      // VPS, geoeffnet als https://<host>.<tailnet>.ts.net vom Handy aus.
+      // Ohne diesen Eintrag antwortet Vite mit "Blocked request".
+      ".ts.net",
     ],
     fs: {
       strict: true,
